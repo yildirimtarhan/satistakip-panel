@@ -48,7 +48,8 @@ export default function AmazonPanel() {
       </button>
 
       <br /><br />
-      <a href="/panel">← Geri Dön</a>
+      import Link from 'next/link';
+      <Link href="/panel">Geri dön</Link>
     </div>
   );
 }
