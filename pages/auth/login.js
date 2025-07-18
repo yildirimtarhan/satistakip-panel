@@ -1,9 +1,9 @@
-// /pages/auth/login.js
+// pages/auth/login.js
 
 import { useState } from "react";
 import { useRouter } from "next/router";
 
-export default function Login() {
+export default function LoginPage() {
   const router = useRouter();
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
@@ -14,22 +14,32 @@ export default function Login() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError("");
 
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(form),
-    });
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(form),
+      });
 
-    const data = await res.json();
+      const data = await res.json();
 
-    if (res.ok) {
+      if (!res.ok) {
+        setError(data.message || "Giriş başarısız");
+        return;
+      }
+
+      // Token'ı localStorage'a kaydet
       localStorage.setItem("token", data.token);
-      router.push("/dashboard"); // ✅ Giriş başarılı → dashboard'a yönlendir
-    } else {
-      setError(data.message || "Giriş başarısız.");
+
+      // Başarılı giriş sonrası yönlendir
+      router.push("/dashboard");
+    } catch (err) {
+      console.error("Giriş hatası:", err);
+      setError("Bir hata oluştu.");
     }
   };
 
@@ -37,28 +47,17 @@ export default function Login() {
     <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
       <h1>Giriş Yap</h1>
       <form onSubmit={handleSubmit}>
-        <input
-          type="email"
-          name="email"
-          placeholder="E-posta"
-          value={form.email}
-          onChange={handleChange}
-          required
-          style={{ display: "block", marginBottom: "1rem", padding: "0.5rem" }}
-        />
-        <input
-          type="password"
-          name="password"
-          placeholder="Şifre"
-          value={form.password}
-          onChange={handleChange}
-          required
-          style={{ display: "block", marginBottom: "1rem", padding: "0.5rem" }}
-        />
-        <button type="submit">Giriş Yap</button>
+        <div>
+          <label>Email:</label>
+          <input type="email" name="email" value={form.email} onChange={handleChange} required />
+        </div>
+        <div style={{ marginTop: "1rem" }}>
+          <label>Şifre:</label>
+          <input type="password" name="password" value={form.password} onChange={handleChange} required />
+        </div>
+        <button type="submit" style={{ marginTop: "1rem" }}>Giriş Yap</button>
+        {error && <p style={{ color: "red" }}>{error}</p>}
       </form>
-
-      {error && <p style={{ color: "red" }}>{error}</p>}
     </div>
   );
 }

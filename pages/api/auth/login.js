@@ -6,7 +6,7 @@ import jwt from "jsonwebtoken";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ message: "Sadece POST isteği kabul edilir." });
+    return res.status(405).json({ message: "Yalnızca POST istekleri desteklenir" });
   }
 
   const { email, password } = req.body;
@@ -18,27 +18,28 @@ export default async function handler(req, res) {
   try {
     const client = await clientPromise;
     const db = client.db("satistakip");
+
     const user = await db.collection("users").findOne({ email });
 
     if (!user) {
-      return res.status(401).json({ message: "Geçersiz e-posta veya şifre." });
+      return res.status(401).json({ message: "Kullanıcı bulunamadı" });
     }
 
     const isPasswordCorrect = await bcrypt.compare(password, user.password);
 
     if (!isPasswordCorrect) {
-      return res.status(401).json({ message: "Geçersiz e-posta veya şifre." });
+      return res.status(401).json({ message: "Geçersiz şifre" });
     }
 
     const token = jwt.sign(
-      { email: user.email, id: user._id },
+      { email: user.email },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" }
+      { expiresIn: "1d" }
     );
 
-    return res.status(200).json({ message: "Giriş başarılı", token });
+    res.status(200).json({ token });
   } catch (error) {
-    console.error("Login error:", error);
-    return res.status(500).json({ message: "Sunucu hatası" });
+    console.error("Login hatası:", error);
+    res.status(500).json({ message: "Sunucu hatası" });
   }
 }
