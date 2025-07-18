@@ -14,14 +14,20 @@ export default async function handler(req, res) {
   if (!email || !password) {
     return res.status(400).json({ message: "Email ve şifre zorunludur." });
   }
+    try {
+    console.log("JWT_SECRET:", process.env.JWT_SECRET);
+    console.log("MongoDB’ye bağlanılıyor...");
 
-  try {
     const client = await clientPromise;
     const db = client.db("satistakip");
+
+    console.log("Veritabanı bağlantısı başarılı");
 
     const user = await db.collection("users").findOne({ email });
 
     if (!user) {
+      console.log("Kullanıcı bulundu:", user);
+
       return res.status(401).json({ message: "Kullanıcı bulunamadı" });
     }
 
