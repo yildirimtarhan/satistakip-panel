@@ -1,0 +1,12 @@
+echo services: > .render.yaml
+echo "  - type: web" >> .render.yaml
+echo "    name: satistakip-panel" >> .render.yaml
+echo "    env: node" >> .render.yaml
+echo "    repo: https://github.com/yildirimtarhan/satistakip-panel" >> .render.yaml
+echo "    branch: main" >> .render.yaml
+echo "    buildCommand: npm install && npm run build" >> .render.yaml
+echo "    startCommand: npm start" >> .render.yaml
+echo "    envVars:" >> .render.yaml
+echo "      - key: NODE_VERSION" >> .render.yaml
+echo "        value: 20" >> .render.yaml
+echo "    autoDeploy: true" >> .render.yaml

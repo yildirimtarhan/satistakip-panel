@@ -16,7 +16,9 @@ export default function Home() {
           <h1 style={{ fontSize: "2rem", marginBottom: "1rem" }}>
             Satış Takip Paneline Hoş Geldiniz
           </h1>
-          <p>Sisteme giriş yapmak için yukarıdan &quot;Giriş Yap&quot; butonunu kullanın.</p>
+          <p>
+            Sisteme giriş yapmak için yukarıdan &quot;Giriş Yap&quot; butonunu kullanın.
+          </p>
         </main>
 
         <footer className={styles.footer} style={{ marginTop: "3rem" }}>
