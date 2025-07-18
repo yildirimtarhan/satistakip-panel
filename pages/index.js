@@ -1,5 +1,5 @@
 import Head from "next/head";
-import styles from "@/styles/Home.module.css";
+import Link from "next/link";
 
 export default function Home() {
   return (
@@ -11,15 +11,21 @@ export default function Home() {
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
-      <div className={styles.page} style={{ fontFamily: "sans-serif", padding: "2rem" }}>
-        <main className={styles.main}>
-          <h1 style={{ fontSize: "2rem", marginBottom: "1rem" }}>
-            Satış Takip Paneline Hoş Geldiniz
-          </h1>
-          <p>Sisteme giriş yapmak için yukarıdan &quot;Giriş Yap&quot; butonunu kullanın.</p>
-        </main>
+      <div style={{ fontFamily: "sans-serif", padding: "2rem", textAlign: "center" }}>
+        <h1 style={{ fontSize: "2rem", marginBottom: "1rem" }}>
+          Satış Takip Paneline Hoş Geldiniz
+        </h1>
+        <p>
+          Sisteme giriş yapmak için{" "}
+          <Link href="/auth/login">
+            <strong style={{ color: "#0070f3", cursor: "pointer" }}>
+              Giriş Yap
+            </strong>
+          </Link>{" "}
+          sayfasını kullanın.
+        </p>
 
-        <footer className={styles.footer} style={{ marginTop: "3rem" }}>
+        <footer style={{ marginTop: "3rem" }}>
           <p>© {new Date().getFullYear()} Satış Takip</p>
         </footer>
       </div>
