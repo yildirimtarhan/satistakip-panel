@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useRouter } from "next/router";
+import Link from "next/link";  // <- Bunu ekliyoruz
 
 export default function LoginPage() {
   const router = useRouter();
@@ -41,9 +42,9 @@ export default function LoginPage() {
         </button>
         <p className="text-center mt-4">
           Hesabınız yok mu?{" "}
-          <a href="/auth/register" className="text-blue-600 underline">
-            Kayıt Ol
-          </a>
+          <Link href="/auth/register">
+            <span className="text-blue-600 underline cursor-pointer">Kayıt Ol</span>
+          </Link>
         </p>
       </form>
     </div>
