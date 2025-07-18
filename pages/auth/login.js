@@ -1,52 +1,64 @@
+// /pages/auth/login.js
+
 import { useState } from "react";
 import { useRouter } from "next/router";
-import Link from "next/link";  // <- Bunu ekliyoruz
 
-export default function LoginPage() {
+export default function Login() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [form, setForm] = useState({ email: "", password: "" });
+  const [error, setError] = useState("");
 
-  const handleLogin = (e) => {
+  const handleChange = (e) => {
+    setForm({ ...form, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // Geçici giriş kontrolü (örnek)
-    if (email === "demo@example.com" && password === "123456") {
-      router.push("/dashboard"); // Örnek yönlendirme
+
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(form),
+    });
+
+    const data = await res.json();
+
+    if (res.ok) {
+      localStorage.setItem("token", data.token);
+      router.push("/dashboard"); // ✅ Giriş başarılı → dashboard'a yönlendir
     } else {
-      alert("Geçersiz e-posta veya şifre.");
+      setError(data.message || "Giriş başarısız.");
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <form onSubmit={handleLogin} className="bg-white p-6 rounded shadow-md w-full max-w-sm">
-        <h2 className="text-2xl font-bold mb-4 text-center">Giriş Yap</h2>
+    <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
+      <h1>Giriş Yap</h1>
+      <form onSubmit={handleSubmit}>
         <input
           type="email"
+          name="email"
           placeholder="E-posta"
-          className="w-full p-2 mb-3 border border-gray-300 rounded"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          value={form.email}
+          onChange={handleChange}
           required
+          style={{ display: "block", marginBottom: "1rem", padding: "0.5rem" }}
         />
         <input
           type="password"
+          name="password"
           placeholder="Şifre"
-          className="w-full p-2 mb-4 border border-gray-300 rounded"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          value={form.password}
+          onChange={handleChange}
           required
+          style={{ display: "block", marginBottom: "1rem", padding: "0.5rem" }}
         />
-        <button type="submit" className="w-full bg-blue-600 text-white p-2 rounded">
-          Giriş Yap
-        </button>
-        <p className="text-center mt-4">
-          Hesabınız yok mu?{" "}
-          <Link href="/auth/register">
-            <span className="text-blue-600 underline cursor-pointer">Kayıt Ol</span>
-          </Link>
-        </p>
+        <button type="submit">Giriş Yap</button>
       </form>
+
+      {error && <p style={{ color: "red" }}>{error}</p>}
     </div>
   );
 }

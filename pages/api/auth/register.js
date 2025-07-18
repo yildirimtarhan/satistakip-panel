@@ -1,50 +1,41 @@
+// pages/api/auth/register.js
+
+import clientPromise from "@/lib/mongodb";
 import bcrypt from "bcryptjs";
-import fs from "fs";
-import path from "path";
-
-// Kullanıcı verilerinin tutulduğu JSON dosyası
-const dataFile = path.join(process.cwd(), "data", "users.json");
-
-function readUsers() {
-  return fs.existsSync(dataFile)
-    ? JSON.parse(fs.readFileSync(dataFile, "utf8"))
-    : [];
-}
-
-function writeUsers(users) {
-  fs.mkdirSync(path.dirname(dataFile), { recursive: true });
-  fs.writeFileSync(dataFile, JSON.stringify(users, null, 2));
-}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Sadece POST isteklerine izin verilir." });
+    return res.status(405).json({ message: "Sadece POST istekleri desteklenir." });
   }
 
-  const { email, password } = req.body;
+  const { name, email, password } = req.body;
 
-  if (!email || !password) {
-    return res.status(400).json({ error: "Email ve şifre zorunludur." });
+  if (!name || !email || !password) {
+    return res.status(400).json({ message: "Tüm alanlar zorunludur." });
   }
 
-  const users = readUsers();
+  try {
+    const client = await clientPromise;
+    const db = client.db(); // Veritabanı ismini MONGODB_URI'den alır
 
-  const userExists = users.find((user) => user.email === email);
-  if (userExists) {
-    return res.status(400).json({ error: "Bu e-posta zaten kayıtlı." });
+    const existingUser = await db.collection("users").findOne({ email });
+
+    if (existingUser) {
+      return res.status(400).json({ message: "Bu e-posta zaten kayıtlı." });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    await db.collection("users").insertOne({
+      name,
+      email,
+      password: hashedPassword,
+      createdAt: new Date(),
+    });
+
+    return res.status(201).json({ message: "Kayıt başarılı." });
+  } catch (error) {
+    console.error("Kayıt hatası:", error);
+    return res.status(500).json({ message: "Sunucu hatası." });
   }
-
-  const salt = await bcrypt.genSalt(10);
-  const hashedPassword = await bcrypt.hash(password, salt);
-
-  const newUser = {
-    id: Date.now(),
-    email,
-    password: hashedPassword,
-  };
-
-  users.push(newUser);
-  writeUsers(users);
-
-  return res.status(201).json({ message: "Kullanıcı başarıyla kaydedildi." });
 }

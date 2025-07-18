@@ -1,60 +1,75 @@
 import { useState } from "react";
 import { useRouter } from "next/router";
 
-export default function Register() {
+export default function RegisterPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    password: "",
+  });
+  const [message, setMessage] = useState("");
 
-  const handleRegister = async (e) => {
+  const handleChange = (e) => {
+    setForm({ ...form, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setError("");
-    setSuccess("");
+    setMessage("");
 
     const res = await fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify(form),
     });
 
     const data = await res.json();
 
-    if (!res.ok) {
-      setError(data.error || "Kayıt başarısız.");
+    if (res.ok) {
+      setMessage("Kayıt başarılı! Giriş sayfasına yönlendiriliyorsunuz...");
+      setTimeout(() => router.push("/auth/login"), 2000);
     } else {
-      setSuccess("Kayıt başarılı, giriş sayfasına yönlendiriliyorsunuz...");
-      setTimeout(() => {
-        router.push("/login");
-      }, 1500);
+      setMessage(data.message || "Bir hata oluştu.");
     }
   };
 
   return (
-    <div style={{ maxWidth: 400, margin: "auto", padding: "2rem" }}>
+    <div style={{ padding: "2rem", maxWidth: "400px", margin: "auto" }}>
       <h2>Kayıt Ol</h2>
-      <form onSubmit={handleRegister}>
+      <form onSubmit={handleSubmit}>
+        <input
+          type="text"
+          name="name"
+          placeholder="Adınız"
+          value={form.name}
+          onChange={handleChange}
+          required
+          style={{ display: "block", marginBottom: "1rem", width: "100%" }}
+        />
         <input
           type="email"
+          name="email"
           placeholder="E-posta"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          value={form.email}
+          onChange={handleChange}
           required
-          style={{ width: "100%", padding: 8, margin: "8px 0" }}
+          style={{ display: "block", marginBottom: "1rem", width: "100%" }}
         />
         <input
           type="password"
+          name="password"
           placeholder="Şifre"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          value={form.password}
+          onChange={handleChange}
           required
-          style={{ width: "100%", padding: 8, margin: "8px 0" }}
+          style={{ display: "block", marginBottom: "1rem", width: "100%" }}
         />
-        {error && <p style={{ color: "red" }}>{error}</p>}
-        {success && <p style={{ color: "green" }}>{success}</p>}
-        <button type="submit" style={{ padding: "10px 20px" }}>Kayıt Ol</button>
+        <button type="submit" style={{ padding: "0.5rem 1rem" }}>
+          Kayıt Ol
+        </button>
       </form>
+      {message && <p style={{ marginTop: "1rem" }}>{message}</p>}
     </div>
   );
 }
