@@ -1,46 +1,43 @@
-import clientPromise from "../../../lib/mongodb";
-import bcrypt from "bcrypt";
-import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
+import fs from "fs";
+import path from "path";
+
+// Kullanıcı verileri dosyası
+const dataFile = path.join(process.cwd(), "data", "users.json");
+
+function readUsers() {
+  return fs.existsSync(dataFile)
+    ? JSON.parse(fs.readFileSync(dataFile, "utf8"))
+    : [];
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ message: "Yalnızca POST isteği desteklenir" });
+    return res.status(405).json({ error: "Sadece POST isteklerine izin verilir." });
   }
 
   const { email, password } = req.body;
 
   if (!email || !password) {
-    return res.status(400).json({ message: "E-posta ve şifre gerekli" });
+    return res.status(400).json({ error: "Email ve şifre zorunludur." });
   }
 
-  try {
-    const client = await clientPromise;
-    const db = client.db("satistakip");
-    const users = db.collection("users");
+  const users = readUsers();
+  const user = users.find((u) => u.email === email);
 
-    const user = await users.findOne({ email });
-
-    if (!user) {
-      return res.status(401).json({ message: "E-posta bulunamadı" });
-    }
-
-    const isMatch = await bcrypt.compare(password, user.password);
-
-    if (!isMatch) {
-      return res.status(401).json({ message: "Geçersiz şifre" });
-    }
-
-    // ✅ JWT Token oluştur
-    const token = jwt.sign(
-      { email: user.email, id: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: "2h" }
-    );
-
-    // ✅ Cookie yerine JSON response içinde token dönüyoruz
-    return res.status(200).json({ message: "Giriş başarılı", token });
-  } catch (error) {
-    console.error("Giriş hatası:", error);
-    return res.status(500).json({ message: "Sunucu hatası" });
+  if (!user) {
+    return res.status(401).json({ error: "Kullanıcı bulunamadı." });
   }
+
+  const passwordMatch = await bcrypt.compare(password, user.password);
+
+  if (!passwordMatch) {
+    return res.status(401).json({ error: "Şifre yanlış." });
+  }
+
+  // Gerçek uygulamada burada JWT döndürmelisin
+  return res.status(200).json({
+    message: "Giriş başarılı.",
+    user: { id: user.id, email: user.email },
+  });
 }

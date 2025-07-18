@@ -1,17 +1,19 @@
 import { useState } from "react";
 import { useRouter } from "next/router";
 
-export default function Login() {
+export default function Register() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
-  const handleLogin = async (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault();
     setError("");
+    setSuccess("");
 
-    const res = await fetch("/api/auth/login", {
+    const res = await fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
@@ -20,17 +22,19 @@ export default function Login() {
     const data = await res.json();
 
     if (!res.ok) {
-      setError(data.error || "Giriş başarısız.");
+      setError(data.error || "Kayıt başarısız.");
     } else {
-      // Başarılı girişten sonra yönlendirme
-      router.push("/dashboard");
+      setSuccess("Kayıt başarılı, giriş sayfasına yönlendiriliyorsunuz...");
+      setTimeout(() => {
+        router.push("/login");
+      }, 1500);
     }
   };
 
   return (
     <div style={{ maxWidth: 400, margin: "auto", padding: "2rem" }}>
-      <h2>Giriş Yap</h2>
-      <form onSubmit={handleLogin}>
+      <h2>Kayıt Ol</h2>
+      <form onSubmit={handleRegister}>
         <input
           type="email"
           placeholder="E-posta"
@@ -48,7 +52,8 @@ export default function Login() {
           style={{ width: "100%", padding: 8, margin: "8px 0" }}
         />
         {error && <p style={{ color: "red" }}>{error}</p>}
-        <button type="submit" style={{ padding: "10px 20px" }}>Giriş Yap</button>
+        {success && <p style={{ color: "green" }}>{success}</p>}
+        <button type="submit" style={{ padding: "10px 20px" }}>Kayıt Ol</button>
       </form>
     </div>
   );
