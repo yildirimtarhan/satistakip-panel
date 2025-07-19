@@ -14,38 +14,38 @@ export default async function handler(req, res) {
   if (!email || !password) {
     return res.status(400).json({ message: "Email ve şifre zorunludur." });
   }
-    try {
-    console.log("JWT_SECRET:", process.env.JWT_SECRET);
-    console.log("MongoDB’ye bağlanılıyor...");
 
+  try {
+    // MongoDB bağlantısı
     const client = await clientPromise;
     const db = client.db("satistakip");
 
-    console.log("Veritabanı bağlantısı başarılı");
-
+    // Kullanıcıyı bul
     const user = await db.collection("users").findOne({ email });
 
     if (!user) {
-      console.log("Kullanıcı bulundu:", user);
-
       return res.status(401).json({ message: "Kullanıcı bulunamadı" });
     }
 
+    // Şifre karşılaştırması
     const isPasswordCorrect = await bcrypt.compare(password, user.password);
 
     if (!isPasswordCorrect) {
       return res.status(401).json({ message: "Geçersiz şifre" });
     }
 
+    // JWT token oluştur
     const token = jwt.sign(
       { email: user.email },
       process.env.JWT_SECRET,
       { expiresIn: "1d" }
     );
 
-    res.status(200).json({ token });
+    // Başarılı cevap
+    return res.status(200).json({ token });
+
   } catch (error) {
     console.error("Login hatası:", error);
-    res.status(500).json({ message: "Sunucu hatası" });
+    return res.status(500).json({ message: "Sunucu hatası" });
   }
 }
