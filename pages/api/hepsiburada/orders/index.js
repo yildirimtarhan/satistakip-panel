@@ -1,43 +1,36 @@
+// pages/api/hepsiburada/orders/index.js
+
 export default async function handler(req, res) {
-  const merchantId = '07283889-aa00-4809-9d19-b76d97f9bebd';
-  const secretKey = 'ttFE8CrzpC8a';
-  const userAgent = 'tigdes_dev';
+  if (req.method !== "GET") {
+    return res.status(405).json({ message: "Sadece GET istekleri desteklenmektedir." });
+  }
 
-  const url = 'https://api-sit.hepsiburada.com/orders/merchant-order-list';
+  const url = "https://mp-test.hepsiburada.com/order/merchant-orders?status=New";
 
-  const auth = Buffer.from(`${merchantId}:${secretKey}`).toString('base64');
-  console.log("🔥 AUTH HEADER:", auth);
+  const username = "07283889-aa00-4809-9d19-b76d97f9bebd"; // Merchant ID
+  const password = "ttFE8CrzpC8a"; // Secret Key
+  const userAgent = "tigdes_dev"; // Developer Username
+
+  const headers = {
+    Authorization: "Basic " + Buffer.from(`${username}:${password}`).toString("base64"),
+    "User-Agent": userAgent,
+    "Content-Type": "application/json",
+  };
 
   try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'User-Agent': userAgent,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    const text = await response.text();
-    console.log("🔥 API Yanıtı:", text);
+    const response = await fetch(url, { method: "GET", headers });
 
     if (!response.ok) {
-      return res.status(response.status).json({
-        success: false,
-        message: "Veri alınamadı",
-        detail: text,
-      });
+      const text = await response.text(); // hata html olabilir
+      console.error("Hepsiburada API hatası:", text);
+      return res.status(response.status).json({ message: "API hatası", detay: text });
     }
 
-    const data = JSON.parse(text);
-    return res.status(200).json({ success: true, orders: data });
+    const data = await response.json();
+    return res.status(200).json(data);
 
   } catch (error) {
-    console.error("🔥 Sunucu Hatası:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Sunucu hatası",
-      error: error.message,
-    });
+    console.error("Bağlantı hatası:", error);
+    return res.status(500).json({ message: "Sunucu hatası", error: error.message });
   }
 }
