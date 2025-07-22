@@ -1,56 +1,34 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import jwtDecode from "jwt-decode";
+import { jwtDecode } from "jwt-decode"; // ✅ Doğru import
+import Cookies from "js-cookie";
 
 export default function Dashboard() {
-  const [user, setUser] = useState(null);
   const router = useRouter();
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-
+    const token = Cookies.get("token");
     if (!token) {
-      router.push("/auth/login");
-    } else {
-      try {
-        const decoded = jwtDecode(token);
-        setUser(decoded);
-      } catch (error) {
-        console.error("Token çözümlenemedi:", error);
-        router.push("/auth/login");
-      }
+      router.push("/auth/login"); // Token yoksa login'e yönlendir
+      return;
     }
-  }, []);
 
-  const handleLogout = () => {
-    router.push("/auth/logout");
-  };
+    try {
+      const decoded = jwtDecode(token); // ✅ Hatalı değil artık
+      setUser(decoded);
+    } catch (error) {
+      console.error("Token çözümlenemedi:", error);
+      router.push("/auth/login");
+    }
+  }, [router]); // ✅ useEffect bağımlılığı düzeltildi
+
+  if (!user) return <div>Yükleniyor...</div>;
 
   return (
-    <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
-      <h1>📊 Satış Takip Paneli</h1>
-
-      {user ? (
-        <>
-          <p>Hoş geldin, {user.email}</p>
-          <button
-            onClick={handleLogout}
-            style={{
-              marginTop: "1rem",
-              padding: "0.5rem 1rem",
-              background: "#f44336",
-              color: "#fff",
-              border: "none",
-              borderRadius: "5px",
-              cursor: "pointer",
-            }}
-          >
-            Çıkış Yap
-          </button>
-        </>
-      ) : (
-        <p>Yükleniyor...</p>
-      )}
+    <div>
+      <h1>Merhaba, {user.name || user.email} 👋</h1>
+      <p>Dashboard sayfasına hoş geldiniz.</p>
     </div>
   );
 }
