@@ -1,34 +1,65 @@
-import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import { jwtDecode } from "jwt-decode"; // ✅ Doğru import
-import Cookies from "js-cookie";
+import jwt from "jsonwebtoken";
+import { useEffect } from "react";
 
 export default function Dashboard() {
   const router = useRouter();
-  const [user, setUser] = useState(null);
 
-  useEffect(() => {
-    const token = Cookies.get("token");
-    if (!token) {
-      router.push("/auth/login"); // Token yoksa login'e yönlendir
-      return;
-    }
-
+  const handleLogout = async () => {
     try {
-      const decoded = jwtDecode(token); // ✅ Hatalı değil artık
-      setUser(decoded);
-    } catch (error) {
-      console.error("Token çözümlenemedi:", error);
+      await fetch("/api/auth/logout");
+      localStorage.removeItem("token");
       router.push("/auth/login");
+    } catch (error) {
+      console.error("Çıkış işlemi başarısız:", error);
     }
-  }, [router]); // ✅ useEffect bağımlılığı düzeltildi
-
-  if (!user) return <div>Yükleniyor...</div>;
+  };
 
   return (
-    <div>
-      <h1>Merhaba, {user.name || user.email} 👋</h1>
-      <p>Dashboard sayfasına hoş geldiniz.</p>
+    <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
+      <h1>Hoş geldiniz Dashboard</h1>
+
+      <button
+        onClick={handleLogout}
+        style={{
+          marginTop: "1rem",
+          padding: "0.5rem 1rem",
+          background: "#e74c3c",
+          color: "#fff",
+          border: "none",
+          borderRadius: "5px",
+          cursor: "pointer",
+        }}
+      >
+        Çıkış Yap
+      </button>
     </div>
   );
+}
+
+// JWT doğrulaması sunucu tarafında
+export async function getServerSideProps(context) {
+  const { req } = context;
+  const token = req.cookies.token;
+
+  if (!token) {
+    return {
+      redirect: {
+        destination: "/auth/login",
+        permanent: false,
+      },
+    };
+  }
+
+  try {
+    jwt.verify(token, process.env.JWT_SECRET);
+    return { props: {} };
+  } catch (error) {
+    return {
+      redirect: {
+        destination: "/auth/login",
+        permanent: false,
+      },
+    };
+  }
 }
