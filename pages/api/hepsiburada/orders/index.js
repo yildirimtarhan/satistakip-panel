@@ -1,37 +1,47 @@
+import axios from "axios";
+
 export default async function handler(req, res) {
-  if (req.method !== "GET") {
-    return res.status(405).json({ message: "Sadece GET istekleri desteklenmektedir." });
-  }
-
-  const url = "https://mp-test.hepsiburada.com/order/merchant-orders?status=New";
-
-  const username = process.env.HEPSIBURADA_MERCHANT_ID;
-  const password = process.env.HEPSIBURADA_SECRET_KEY;
-  const userAgent = process.env.HEPSIBURADA_USER_AGENT;
-
-  const headers = {
-    Authorization: "Basic " + Buffer.from(`${username}:${password}`).toString("base64"),
-    "User-Agent": userAgent,
-    "Content-Type": "application/json",
-  };
-
   try {
-    const response = await fetch(url, { method: "GET", headers });
+    const {
+      HEPSIBURADA_MERCHANT_ID,
+      HEPSIBURADA_PASSWORD,
+      HEPSIBURADA_USER_AGENT,
+      HEPSIBURADA_ORDERS_ENDPOINT,
+    } = process.env;
 
-    // Eğer response'da hata varsa, text formatında al
-    if (!response.ok) {
-      const text = await response.text();
-      console.error("Hepsiburada API Hatası:", text); // Hata mesajını konsola yazdır
-      return res.status(response.status).json({ message: "API hatası", detay: text });
+    if (!HEPSIBURADA_MERCHANT_ID || !HEPSIBURADA_PASSWORD) {
+      return res.status(500).json({ message: "Eksik Hepsiburada API bilgisi" });
     }
 
-    // Yanıtı JSON formatında al ve konsola yazdır
-    const data = await response.json();
-    console.log("API Yanıtı:", data);
-    return res.status(200).json(data);
+    // Basic Auth için merchantId:password birleşimi
+    const auth = Buffer.from(
+      `${HEPSIBURADA_MERCHANT_ID}:${HEPSIBURADA_PASSWORD}`
+    ).toString("base64");
 
+    // Örnek: son 1 günün siparişlerini çekelim
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 1);
+
+    const url = `${HEPSIBURADA_ORDERS_ENDPOINT}/orders?status=Created&startDate=${startDate.toISOString()}`;
+
+    console.log("➡️ Hepsiburada API isteği:", url);
+
+    const response = await axios.get(url, {
+      headers: {
+        Authorization: `Basic ${auth}`,
+        "User-Agent": HEPSIBURADA_USER_AGENT,
+        "Content-Type": "application/json",
+      },
+    });
+
+    console.log("✅ Hepsiburada API cevabı:", response.data);
+
+    return res.status(200).json(response.data);
   } catch (error) {
-    console.error("Bağlantı Hatası:", error);
-    return res.status(500).json({ message: "Sunucu hatası", error: error.message });
+    console.error("❌ Hepsiburada API hatası:", error.response?.data || error.message);
+    return res.status(500).json({
+      message: "Hepsiburada API hatası",
+      error: error.response?.data || error.message,
+    });
   }
 }
