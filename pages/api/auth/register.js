@@ -1,6 +1,7 @@
 // pages/api/auth/register.js
 
-import clientPromise from "@/lib/mongodb";
+import dbConnect from "../../../lib/mongodb";
+import User from "../../../models/User";
 import bcrypt from "bcryptjs";
 
 export default async function handler(req, res) {
@@ -15,23 +16,29 @@ export default async function handler(req, res) {
   }
 
   try {
-    const client = await clientPromise;
-    const db = client.db("satistakip");
-    const usersCollection = db.collection("users");
+    // MongoDB bağlantısı
+    await dbConnect();
 
-    const existingUser = await usersCollection.findOne({ email });
-
+    // Kullanıcı zaten var mı kontrol et
+    const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res.status(409).json({ message: "Bu email zaten kayıtlı." });
+      return res.status(400).json({ message: "Bu email zaten kayıtlı." });
     }
 
+    // Şifreyi hashle
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    await usersCollection.insertOne({ email, password: hashedPassword });
+    // Yeni kullanıcı oluştur
+    const newUser = new User({
+      email,
+      password: hashedPassword,
+    });
 
-    return res.status(201).json({ message: "Kayıt başarılı." });
+    await newUser.save();
+
+    return res.status(201).json({ message: "Kullanıcı başarıyla oluşturuldu." });
   } catch (error) {
-    console.error("Kayıt sırasında hata:", error);
-    return res.status(500).json({ message: "Sunucu hatası." });
+    console.error("Register API Hatası:", error);
+    return res.status(500).json({ message: "Sunucu hatası" });
   }
 }

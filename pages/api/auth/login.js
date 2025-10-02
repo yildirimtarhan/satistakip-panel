@@ -1,50 +1,49 @@
 // pages/api/auth/login.js
-import clientPromise from "../../../lib/mongodb";
+
+import dbConnect from "../../../lib/mongodb";
+import User from "../../../models/User";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ message: "Method not allowed" });
+    return res.status(405).json({ message: "Yalnızca POST istekleri desteklenir" });
+  }
+
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ message: "Email ve şifre zorunludur." });
   }
 
   try {
-    const client = await clientPromise;
-    const db = client.db(process.env.MONGODB_DB); // .env.local içinde MONGODB_DB olmalı
-    const { email, password } = req.body;
+    // MongoDB bağlantısı
+    await dbConnect();
 
-    if (!email || !password) {
-      return res.status(400).json({ message: "Email ve şifre zorunludur" });
-    }
+    // Kullanıcıyı veritabanında ara
+    const user = await User.findOne({ email });
 
-    const user = await db.collection("users").findOne({ email });
     if (!user) {
       return res.status(401).json({ message: "Kullanıcı bulunamadı" });
     }
 
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
-      return res.status(401).json({ message: "Şifre hatalı" });
+    // Şifre kontrolü
+    const isPasswordCorrect = await bcrypt.compare(password, user.password);
+
+    if (!isPasswordCorrect) {
+      return res.status(401).json({ message: "Geçersiz şifre" });
     }
 
+    // JWT token üret
     const token = jwt.sign(
-      { userId: user._id, email: user.email },
+      { email: user.email, id: user._id },
       process.env.JWT_SECRET,
       { expiresIn: "1d" }
     );
 
-    res.status(200).json({
-      message: "Giriş başarılı",
-      token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email
-      }
-    });
-
+    return res.status(200).json({ token });
   } catch (error) {
-    console.error("Login API error:", error);
-    res.status(500).json({ message: "Sunucu hatası" });
+    console.error("Login API Hatası:", error);
+    return res.status(500).json({ message: "Sunucu hatası" });
   }
 }

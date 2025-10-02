@@ -1,65 +1,46 @@
+// pages/dashboard.js
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import jwt from "jsonwebtoken";
-import { useEffect } from "react";
+import jwtDecode from "jwt-decode";
 
 export default function Dashboard() {
+  const [user, setUser] = useState(null);
   const router = useRouter();
 
-  const handleLogout = async () => {
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      router.push("/auth/login"); // Token yoksa login sayfasına
+      return;
+    }
+
     try {
-      await fetch("/api/auth/logout");
+      const decoded = jwtDecode(token);
+      setUser(decoded); // Token içindeki bilgileri state’e al
+    } catch (err) {
+      console.error("Token hatalı:", err);
       localStorage.removeItem("token");
       router.push("/auth/login");
-    } catch (error) {
-      console.error("Çıkış işlemi başarısız:", error);
     }
-  };
+  }, [router]);
 
   return (
     <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
-      <h1>Hoş geldiniz Dashboard</h1>
+      <h1>📊 Satış Takip Kontrol Paneli</h1>
+      {user ? (
+        <p>Hoş geldin, <b>{user.email}</b></p>
+      ) : (
+        <p>Yükleniyor...</p>
+      )}
 
-      <button
-        onClick={handleLogout}
-        style={{
-          marginTop: "1rem",
-          padding: "0.5rem 1rem",
-          background: "#e74c3c",
-          color: "#fff",
-          border: "none",
-          borderRadius: "5px",
-          cursor: "pointer",
-        }}
-      >
-        Çıkış Yap
-      </button>
+      <div style={{ marginTop: "2rem" }}>
+        <button onClick={() => router.push("/dashboard/orders")}>
+          📦 Siparişlerim
+        </button>
+        <button onClick={() => router.push("/dashboard/api-settings")}>
+          ⚙️ API Ayarları
+        </button>
+      </div>
     </div>
   );
-}
-
-// JWT doğrulaması sunucu tarafında
-export async function getServerSideProps(context) {
-  const { req } = context;
-  const token = req.cookies.token;
-
-  if (!token) {
-    return {
-      redirect: {
-        destination: "/auth/login",
-        permanent: false,
-      },
-    };
-  }
-
-  try {
-    jwt.verify(token, process.env.JWT_SECRET);
-    return { props: {} };
-  } catch (error) {
-    return {
-      redirect: {
-        destination: "/auth/login",
-        permanent: false,
-      },
-    };
-  }
 }

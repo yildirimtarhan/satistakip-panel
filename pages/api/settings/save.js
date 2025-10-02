@@ -1,55 +1,52 @@
-import clientPromise from "@/lib/mongodb";
+// pages/api/settings/save.js
+import dbConnect from "@/lib/mongodb";
+import User from "@/models/User";
 import jwt from "jsonwebtoken";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ message: "Yalnızca POST isteklerine izin verilir" });
+    return res.status(405).json({ message: "Sadece POST istekleri destekleniyor." });
   }
 
   try {
-    // 1. Token kontrolü (giriş yapan kullanıcıyı bulmak için)
+    await dbConnect();
+
+    // Token kontrolü (giriş yapan kullanıcıyı bulmak için)
     const token = req.headers.authorization?.split(" ")[1];
-    if (!token) {
-      return res.status(401).json({ message: "Token bulunamadı" });
-    }
+    if (!token) return res.status(401).json({ message: "Token eksik" });
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const userId = decoded.userId;
+    const email = decoded.email;
 
-    // 2. MongoDB bağlantısı
-    const client = await clientPromise;
-    const db = client.db("satistakip");
-
-    // 3. Kullanıcıya ait ayarları al
-    const { 
-      trendyolApiKey, 
-      trendyolApiSecret, 
-      trendyolSupplierId, 
-      hepsiMerchantId, 
-      hepsiSecretKey, 
-      hepsiUserAgent 
+    const {
+      hepsiburadaMerchantId,
+      hepsiburadaSecretKey,
+      hepsiburadaUserAgent,
+      trendyolSupplierId,
+      trendyolApiKey,
+      trendyolApiSecret,
     } = req.body;
 
-    // 4. MongoDB’ye kaydet veya güncelle
-    await db.collection("settings").updateOne(
-      { userId },
+    const updatedUser = await User.findOneAndUpdate(
+      { email },
       {
-        $set: {
-          trendyolApiKey,
-          trendyolApiSecret,
-          trendyolSupplierId,
-          hepsiMerchantId,
-          hepsiSecretKey,
-          hepsiUserAgent,
-          updatedAt: new Date(),
+        hepsiburada: {
+          merchantId: hepsiburadaMerchantId,
+          secretKey: hepsiburadaSecretKey,
+          userAgent: hepsiburadaUserAgent,
+        },
+        trendyol: {
+          supplierId: trendyolSupplierId,
+          apiKey: trendyolApiKey,
+          apiSecret: trendyolApiSecret,
         },
       },
-      { upsert: true }
+      { new: true, upsert: true }
     );
 
-    return res.status(200).json({ message: "Ayarlar kaydedildi" });
+    return res.status(200).json({ message: "API bilgileri kaydedildi", user: updatedUser });
   } catch (error) {
-    console.error("Hata:", error);
+    console.error("API Settings Save Error:", error);
     return res.status(500).json({ message: "Sunucu hatası" });
   }
 }

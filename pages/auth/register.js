@@ -7,6 +7,7 @@ export default function RegisterPage() {
   const router = useRouter();
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -15,6 +16,7 @@ export default function RegisterPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setSuccess("");
 
     try {
       const res = await fetch("/api/auth/register", {
@@ -32,11 +34,11 @@ export default function RegisterPage() {
         return;
       }
 
-      // Token'ı localStorage'a kaydet
-      localStorage.setItem("token", data.token);
+      setSuccess("Kayıt başarılı! Şimdi giriş yapabilirsiniz.");
+      setTimeout(() => {
+        router.push("/auth/login");
+      }, 1500);
 
-      // Başarılı kayıt sonrası yönlendir
-      router.push("/dashboard");
     } catch (err) {
       console.error("Kayıt hatası:", err);
       setError("Bir hata oluştu.");
@@ -49,14 +51,29 @@ export default function RegisterPage() {
       <form onSubmit={handleSubmit}>
         <div>
           <label>Email:</label>
-          <input type="email" name="email" value={form.email} onChange={handleChange} required />
+          <input 
+            type="email" 
+            name="email" 
+            value={form.email} 
+            onChange={handleChange} 
+            required 
+          />
         </div>
         <div style={{ marginTop: "1rem" }}>
           <label>Şifre:</label>
-          <input type="password" name="password" value={form.password} onChange={handleChange} required />
+          <input 
+            type="password" 
+            name="password" 
+            value={form.password} 
+            onChange={handleChange} 
+            required 
+          />
         </div>
-        <button type="submit" style={{ marginTop: "1rem" }}>Kayıt Ol</button>
+        <button type="submit" style={{ marginTop: "1rem" }}>
+          Kayıt Ol
+        </button>
         {error && <p style={{ color: "red" }}>{error}</p>}
+        {success && <p style={{ color: "green" }}>{success}</p>}
       </form>
     </div>
   );
