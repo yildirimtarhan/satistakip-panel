@@ -5,24 +5,31 @@ import jwtDecode from "jwt-decode";
 
 export default function Dashboard() {
   const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true); // ✅ Yükleniyor durumu
   const router = useRouter();
 
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) {
-      router.push("/auth/login"); // Token yoksa login sayfasına
+      router.push("/auth/login");
       return;
     }
 
     try {
       const decoded = jwtDecode(token);
-      setUser(decoded); // Token içindeki bilgileri state’e al
+      setUser(decoded);
     } catch (err) {
       console.error("Token hatalı:", err);
       localStorage.removeItem("token");
       router.push("/auth/login");
+    } finally {
+      setLoading(false); // ✅ kontrol bittiğinde loading kapat
     }
   }, [router]);
+
+  if (loading) {
+    return <p style={{ padding: "2rem", fontFamily: "sans-serif" }}>Kontrol ediliyor...</p>;
+  }
 
   return (
     <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
@@ -30,7 +37,7 @@ export default function Dashboard() {
       {user ? (
         <p>Hoş geldin, <b>{user.email}</b></p>
       ) : (
-        <p>Yükleniyor...</p>
+        <p>Giriş bilgileri doğrulanamadı</p>
       )}
 
       <div style={{ marginTop: "2rem" }}>
@@ -39,6 +46,14 @@ export default function Dashboard() {
         </button>
         <button onClick={() => router.push("/dashboard/api-settings")}>
           ⚙️ API Ayarları
+        </button>
+        <button
+          onClick={() => {
+            localStorage.removeItem("token");
+            router.push("/auth/login");
+          }}
+        >
+          🚪 Çıkış Yap
         </button>
       </div>
     </div>
