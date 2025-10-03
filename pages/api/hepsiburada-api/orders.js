@@ -5,26 +5,26 @@ export default async function handler(req, res) {
     return res.status(405).json({ message: "Sadece GET istekleri desteklenmektedir." });
   }
 
-  const baseUrl = process.env.HEPSIBURADA_ORDERS_ENDPOINT;
+  const endpoint = process.env.HEPSIBURADA_ORDERS_ENDPOINT;
   const merchantId = process.env.HEPSIBURADA_MERCHANT_ID;
-  const password = process.env.HEPSIBURADA_PASSWORD;
+  const secretKey = process.env.HEPSIBURADA_SECRET_KEY;
   const userAgent = process.env.HEPSIBURADA_USER_AGENT;
 
-  if (!baseUrl || !merchantId || !password || !userAgent) {
-    console.error("❌ Ortam değişkenlerinden biri eksik");
+  if (!endpoint || !merchantId || !secretKey || !userAgent) {
     return res.status(500).json({ message: "Sunucu yapılandırma hatası (env eksik)" });
   }
 
-  const url = `${baseUrl}/order/merchant-orders?status=New`;
-
-  const headers = {
-    Authorization: "Basic " + Buffer.from(`${merchantId}:${password}`).toString("base64"),
-    "User-Agent": userAgent,
-    "Content-Type": "application/json",
-  };
-
   try {
-    const response = await fetch(url, { method: "GET", headers });
+    const url = `${endpoint}/order/merchant-orders?status=New`;
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: "Basic " + Buffer.from(`${merchantId}:${secretKey}`).toString("base64"),
+        "User-Agent": userAgent,
+        "Content-Type": "application/json",
+      },
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -38,7 +38,7 @@ export default async function handler(req, res) {
     const data = await response.json();
     return res.status(200).json(data);
   } catch (error) {
-    console.error("Bağlantı hatası:", error);
+    console.error("Sunucu Hatası:", error);
     return res.status(500).json({ message: "Sunucu hatası", error: error.message });
   }
 }
