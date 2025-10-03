@@ -5,25 +5,34 @@ export default async function handler(req, res) {
     return res.status(405).json({ message: "Sadece GET istekleri desteklenmektedir." });
   }
 
-  const url = `${process.env.HEPSIBURADA_ORDERS_ENDPOINT}/order/merchant-orders?status=New`;
-
-  const username = process.env.HEPSIBURADA_MERCHANT_ID;
-  const password = process.env.HEPSIBURADA_SECRET_KEY; // canlı ortam için secret key
+  const baseUrl = process.env.HEPSIBURADA_ORDERS_ENDPOINT;
+  const merchantId = process.env.HEPSIBURADA_MERCHANT_ID;
+  const password = process.env.HEPSIBURADA_PASSWORD;
   const userAgent = process.env.HEPSIBURADA_USER_AGENT;
 
+  if (!baseUrl || !merchantId || !password || !userAgent) {
+    console.error("❌ Ortam değişkenlerinden biri eksik");
+    return res.status(500).json({ message: "Sunucu yapılandırma hatası (env eksik)" });
+  }
+
+  const url = `${baseUrl}/order/merchant-orders?status=New`;
+
   const headers = {
-    Authorization: "Basic " + Buffer.from(`${username}:${password}`).toString("base64"),
+    Authorization: "Basic " + Buffer.from(`${merchantId}:${password}`).toString("base64"),
     "User-Agent": userAgent,
     "Content-Type": "application/json",
   };
 
   try {
-    const response = await fetch(url, { headers });
+    const response = await fetch(url, { method: "GET", headers });
 
     if (!response.ok) {
-      const text = await response.text();
-      console.error("Hepsiburada API hatası:", text);
-      return res.status(response.status).json({ message: "Hepsiburada API hatası", error: text });
+      const errorText = await response.text();
+      console.error("Hepsiburada API Hatası:", errorText);
+      return res.status(response.status).json({
+        message: "Hepsiburada API hatası",
+        error: errorText,
+      });
     }
 
     const data = await response.json();
