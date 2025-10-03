@@ -1,23 +1,21 @@
 // pages/dashboard.js
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import jwtDecode from "jwt-decode";
+import { jwtDecode } from "jwt-decode"; // ✅ Doğru import şekli
 
 export default function Dashboard() {
   const [user, setUser] = useState(null);
-  const [testResult, setTestResult] = useState(null);
-  const [loading, setLoading] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) {
-      router.push("/auth/login");
+      router.push("/auth/login"); // Token yoksa login sayfasına yönlendir
       return;
     }
 
     try {
-      const decoded = jwtDecode(token);
+      const decoded = jwtDecode(token); // ✅ Token'ı decode et
       setUser(decoded);
     } catch (err) {
       console.error("Token hatalı:", err);
@@ -26,48 +24,32 @@ export default function Dashboard() {
     }
   }, [router]);
 
-  const handleTestHepsiburada = async () => {
-    setLoading(true);
-    setTestResult(null);
-
-    try {
-      const res = await fetch("/api/hepsiburada-api/orders");
-      const data = await res.json();
-
-      if (!res.ok) {
-        setTestResult(`❌ Hata: ${data.message || "Bilinmeyen hata"}`);
-      } else if (Array.isArray(data) && data.length === 0) {
-        setTestResult("✅ API bağlantısı başarılı ama sipariş bulunamadı.");
-      } else {
-        setTestResult("✅ API bağlantısı başarılı. Konsolu kontrol et 👇");
-        console.log("Hepsiburada API Verisi:", data);
-      }
-    } catch (err) {
-      setTestResult(`❌ İstek başarısız: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
       <h1>📊 Satış Takip Kontrol Paneli</h1>
+
       {user ? (
         <p>Hoş geldin, <b>{user.email}</b></p>
       ) : (
         <p>Yükleniyor...</p>
       )}
 
-      <div style={{ marginTop: "2rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
-        <button onClick={() => router.push("/dashboard/orders")}>📦 Siparişlerim</button>
-        <button onClick={() => router.push("/dashboard/api-settings")}>⚙️ API Ayarları</button>
-        <button onClick={handleTestHepsiburada} disabled={loading}>
-          🧪 Hepsiburada API Test Et
+      <div style={{ marginTop: "2rem", display: "flex", gap: "1rem" }}>
+        <button onClick={() => router.push("/dashboard/orders")}>
+          📦 Siparişlerim
+        </button>
+        <button onClick={() => router.push("/dashboard/api-settings")}>
+          ⚙️ API Ayarları
+        </button>
+        <button
+          onClick={() => {
+            localStorage.removeItem("token");
+            router.push("/auth/login");
+          }}
+        >
+          🚪 Çıkış Yap
         </button>
       </div>
-
-      {loading && <p>⏳ Test ediliyor...</p>}
-      {testResult && <p style={{ marginTop: "1rem" }}>{testResult}</p>}
     </div>
   );
 }

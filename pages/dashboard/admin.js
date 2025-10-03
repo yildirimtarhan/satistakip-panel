@@ -1,15 +1,15 @@
 // pages/dashboard/admin.js
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import jwtDecode from "jwt-decode";
+import { jwtDecode } from "jwt-decode"; // ✅ Doğru import
 
-export default function AdminPanel() {
-  const router = useRouter();
+export default function AdminDashboard() {
   const [user, setUser] = useState(null);
-  const [users, setUsers] = useState([]);
+  const router = useRouter();
 
   useEffect(() => {
     const token = localStorage.getItem("token");
+
     if (!token) {
       router.push("/auth/login");
       return;
@@ -18,17 +18,8 @@ export default function AdminPanel() {
     try {
       const decoded = jwtDecode(token);
       setUser(decoded);
-
-      if (decoded.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
-        router.push("/dashboard"); // admin değilse dashboard'a at
-        return;
-      }
-
-      fetch("/api/admin/users")
-        .then((res) => res.json())
-        .then((data) => setUsers(data.users || []));
     } catch (err) {
-      console.error("Token hatalı:", err);
+      console.error("Token çözümleme hatası:", err);
       localStorage.removeItem("token");
       router.push("/auth/login");
     }
@@ -36,26 +27,32 @@ export default function AdminPanel() {
 
   return (
     <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
-      <h1>👑 Admin Paneli</h1>
-      {user && <p>Hoş geldin <b>{user.email}</b></p>}
+      <h1>👑 Yönetici Paneli</h1>
 
-      <h2 style={{ marginTop: "2rem" }}>Kayıtlı Kullanıcılar</h2>
-      <table border="1" cellPadding="8" style={{ marginTop: "1rem", width: "100%" }}>
-        <thead>
-          <tr>
-            <th>Email</th>
-            <th>Kayıt Tarihi</th>
-          </tr>
-        </thead>
-        <tbody>
-          {users.map((u) => (
-            <tr key={u._id}>
-              <td>{u.email}</td>
-              <td>{new Date(u.createdAt).toLocaleString()}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {user ? (
+        <p>
+          Hoş geldin <b>{user.email}</b>
+        </p>
+      ) : (
+        <p>Yükleniyor...</p>
+      )}
+
+      <div style={{ marginTop: "2rem", display: "flex", gap: "1rem" }}>
+        <button onClick={() => router.push("/dashboard/orders")}>
+          📦 Siparişler
+        </button>
+        <button onClick={() => router.push("/dashboard/api-settings")}>
+          ⚙️ API Ayarları
+        </button>
+        <button
+          onClick={() => {
+            localStorage.removeItem("token");
+            router.push("/auth/login");
+          }}
+        >
+          🚪 Çıkış Yap
+        </button>
+      </div>
     </div>
   );
 }
