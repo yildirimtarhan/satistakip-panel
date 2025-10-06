@@ -47,3 +47,15 @@ export default function OrderDetail() {
     </div>
   );
 }
+// pages/api/hepsiburada-api/[id].js
+
+export default function handler(req, res) {
+  const { id } = req.query;
+
+  // ✅ Şimdilik gerçek API çağrısı yapmıyoruz.
+  // Sadece test amaçlı örnek (dummy) bir yanıt dönüyoruz.
+  return res.status(200).json({
+    message: "Tekil sipariş endpoint çalışıyor ✅",
+    id,
+  });
+}
