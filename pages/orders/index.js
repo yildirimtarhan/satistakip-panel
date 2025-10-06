@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import { jwtDecode } from "jwt-decode"; // ✅ Doğru import
+import { jwtDecode } from "jwt-decode"; // ✅ named export
 
-export default function DashboardOrdersPage() {
+export default function OrdersPage() {
   const [orders, setOrders] = useState([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -12,7 +12,7 @@ export default function DashboardOrdersPage() {
     const fetchOrders = async () => {
       const token = localStorage.getItem("token");
 
-      // Token yoksa login sayfasına yönlendir
+      // Token yoksa login ekranına yönlendir
       if (!token) {
         router.push("/auth/login");
         return;
@@ -41,7 +41,7 @@ export default function DashboardOrdersPage() {
         if (!res.ok) {
           setError(data.error || data.message || "Siparişleri çekerken bir hata oluştu");
         } else {
-          setOrders(data.content || []);
+          setOrders(data.content || []); // Hepsiburada API'sinde "content" listede yer alır
         }
       } catch (err) {
         console.error("Sipariş istek hatası:", err);
@@ -52,7 +52,7 @@ export default function DashboardOrdersPage() {
     };
 
     fetchOrders();
-  }, [router]);
+  }, []);
 
   if (loading) {
     return <div className="p-4">Yükleniyor...</div>;
