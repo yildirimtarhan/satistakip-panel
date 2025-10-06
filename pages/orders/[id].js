@@ -1,56 +1,50 @@
-import { useEffect, useState } from "react";
-import { useRouter } from "next/router";
-import Cookies from "js-cookie";
+// pages/orders/[id].js
 
-export default function OrderDetail() {
+import { useRouter } from "next/router";
+import { useEffect, useState } from "react";
+
+export default function OrderDetailPage() {
   const router = useRouter();
-  const { id } = router.query;
+  const { id } = router.query; // URL'den ID al
   const [order, setOrder] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const token = Cookies.get("token");
-    if (!token) {
-      router.replace("/auth/login");
-      return;
-    }
+    if (!id) return; // id gelmeden fetch yapma
 
-    if (!id) return;
-
-    const fetchOrderDetail = async () => {
+    const fetchOrder = async () => {
       try {
-        const res = await fetch(`/api/hepsiburada-api/orders/${id}`);
+        const res = await fetch(`/api/hepsiburada-api/${id}`);
         const data = await res.json();
 
         if (!res.ok) {
-          setError(data.message || "Sipariş detayı alınamadı");
-        } else {
-          setOrder(data);
+          throw new Error(data.message || "Sipariş alınamadı");
         }
+
+        setOrder(data.data);
       } catch (err) {
-        console.error("İstek hatası:", err);
-        setError("Sunucuya ulaşılamıyor.");
+        console.error("Sipariş detay hatası:", err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
       }
     };
 
-    fetchOrderDetail();
-  }, [router, id]); // ✅ router + id dependency eklendi
+    fetchOrder();
+  }, [id]);
 
-  if (error) {
-    return <div className="text-red-500 font-bold">⚠ {error}</div>;
-  }
-
-  if (!order) {
-    return <p>Yükleniyor...</p>;
-  }
+  if (loading) return <p>⏳ Yükleniyor...</p>;
+  if (error) return <p style={{ color: "red" }}>⚠ {error}</p>;
 
   return (
-    <div>
-      <h1 className="text-xl font-bold mb-4">Sipariş Detayı</h1>
-      <p>Müşteri: {order.customerFirstName} {order.customerLastName}</p>
-      <p>Durum: {order.status}</p>
-      <p>Sipariş ID: {order.id}</p>
-      {/* Buraya diğer sipariş alanlarını ekleyebilirsin */}
+    <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
+      <h1>Sipariş Detayı</h1>
+      <p><strong>Sipariş No:</strong> {order.orderNumber}</p>
+      <p><strong>Müşteri:</strong> {order.customerName}</p>
+      <p><strong>Durum:</strong> {order.status}</p>
+      <p><strong>Tutar:</strong> {order.totalAmount} ₺</p>
+      <p><strong>Oluşturulma:</strong> {new Date(order.createdAt).toLocaleString()}</p>
     </div>
   );
 }
