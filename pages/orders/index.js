@@ -1,56 +1,70 @@
+// pages/orders/index.js
+
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/router";
-import Cookies from "js-cookie";
 
 export default function OrdersPage() {
-  const router = useRouter();
   const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const token = Cookies.get("token");
-    if (!token) {
-      router.replace("/auth/login");
-      return;
-    }
-
     const fetchOrders = async () => {
       try {
         const res = await fetch("/api/hepsiburada-api/orders");
         const data = await res.json();
 
         if (!res.ok) {
-          setError(data.message || "Siparişler alınamadı");
+          console.warn("Hepsiburada API hatası:", data);
+          throw new Error(data.message || "Hepsiburada API hatası");
+        }
+
+        // Eğer API boş dönerse → Dummy sipariş göster
+        if (!data || data.length === 0) {
+          setOrders([
+            {
+              id: "12345",
+              customerName: "Deneme Müşteri",
+              status: "New",
+            },
+          ]);
         } else {
-          setOrders(data.content || []);
+          setOrders(data);
         }
       } catch (err) {
-        console.error("İstek hatası:", err);
-        setError("Sunucuya ulaşılamıyor.");
+        console.error("Sipariş listesi alınamadı:", err);
+        setError("Hepsiburada API hatası (dummy veri gösteriliyor)");
+        // Hata olsa bile listeyi boş bırakma → Dummy veri ekle
+        setOrders([
+          {
+            id: "12345",
+            customerName: "Deneme Müşteri",
+            status: "New",
+          },
+        ]);
+      } finally {
+        setLoading(false);
       }
     };
 
     fetchOrders();
-  }, [router]); // ✅ router dependency eklendi
+  }, []);
 
-  if (error) {
-    return <div className="text-red-500 font-bold">⚠ {error}</div>;
-  }
+  if (loading) return <p>⏳ Yükleniyor...</p>;
 
   return (
-    <div>
-      <h1 className="text-xl font-bold mb-4">Hepsiburada Siparişleri</h1>
-      {orders.length === 0 ? (
-        <p>Hiç sipariş bulunamadı.</p>
-      ) : (
-        <ul>
-          {orders.map((order) => (
-            <li key={order.id}>
-              {order.customerFirstName} {order.customerLastName} - {order.status}
-            </li>
-          ))}
-        </ul>
-      )}
+    <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
+      <h1>Siparişler</h1>
+      {error && <p style={{ color: "red" }}>⚠ {error}</p>}
+      <ul>
+        {orders.map((order) => (
+          <li key={order.id}>
+            <Link href={`/orders/${order.id}`}>
+              {order.customerName} - {order.status}
+            </Link>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
