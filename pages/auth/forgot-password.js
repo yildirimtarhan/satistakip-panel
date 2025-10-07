@@ -1,3 +1,5 @@
+// pages/auth/forgot-password.js
+
 import { useState } from "react";
 import Link from "next/link";
 
@@ -7,59 +9,46 @@ export default function ForgotPasswordPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setStatus(null);
 
-    // Şimdilik dummy cevap veriyoruz
-    // Burada normalde: fetch("/api/auth/forgot-password") çağrısı olurdu.
-    setTimeout(() => {
-      setStatus({
-        type: "success",
-        message: "Eğer e-posta adresiniz kayıtlıysa şifre sıfırlama bağlantısı gönderildi ✅",
+    try {
+      const res = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
       });
-    }, 1000);
+
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.message);
+
+      setStatus({ type: "success", message: data.message });
+    } catch (err) {
+      setStatus({ type: "error", message: err.message || "Bir hata oluştu" });
+    }
   };
 
   return (
     <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
-      <h1>Şifremi Unuttum</h1>
-      <p style={{ marginBottom: "1rem" }}>
-        E-posta adresinizi girin, şifre sıfırlama bağlantısı e-posta ile gönderilecektir.
-      </p>
-
+      <h1>🔐 Şifremi Unuttum</h1>
       <form onSubmit={handleSubmit}>
-        <div>
-          <label htmlFor="email">E-posta:</label>
-          <input
-            type="email"
-            id="email"
-            name="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            style={{ display: "block", marginTop: "0.5rem" }}
-          />
-        </div>
-
-        <button
-          type="submit"
-          style={{
-            marginTop: "1rem",
-            background: "#000",
-            color: "#fff",
-            padding: "0.5rem 1rem",
-            cursor: "pointer",
-          }}
-        >
-          Sıfırlama Bağlantısı Gönder
+        <label htmlFor="email">E-posta:</label>
+        <input
+          type="email"
+          id="email"
+          name="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          style={{ display: "block", marginTop: "0.5rem" }}
+        />
+        <button type="submit" style={{ marginTop: "1rem" }}>
+          Bağlantıyı Gönder
         </button>
       </form>
 
       {status && (
-        <p
-          style={{
-            marginTop: "1rem",
-            color: status.type === "success" ? "green" : "red",
-          }}
-        >
+        <p style={{ marginTop: "1rem", color: status.type === "success" ? "green" : "red" }}>
           {status.message}
         </p>
       )}

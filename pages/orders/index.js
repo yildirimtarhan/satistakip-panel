@@ -12,16 +12,14 @@ export default function OrdersPage() {
     setLoading(true);
     setError("");
     try {
-      // İstediğin statü ile çağırabilirsin: ?status=New | Invoiced | Shipped ...
       const res = await fetch("/api/hepsiburada-api/orders?status=New");
       const data = await res.json();
 
       if (!res.ok) {
         console.warn("Hepsiburada API hatası:", data);
-        throw new Error(data.message || "Hepsiburada API hatası");
+        throw new Error(data.message || "Hepsiburada API bağlantı hatası");
       }
 
-      // Hepsiburada yanıt yapısı değişebileceği için esnek eşleme:
       let items =
         data?.content?.orders ||
         data?.content ||
@@ -32,19 +30,16 @@ export default function OrdersPage() {
 
       if (!Array.isArray(items)) items = [];
 
-      // Boşsa yine dummy göster
       if (items.length === 0) {
-        setError("Hepsiburada API hatası (dummy veri gösteriliyor)");
-        setOrders([
-          { id: "12345", customerName: "Deneme Müşteri", status: "New" },
-        ]);
+        setError("Hepsiburada API bağlantı hatası (örnek veri gösteriliyor)");
+        setOrders([{ id: "12345", customerName: "Deneme Müşteri", status: "Yeni" }]);
       } else {
         setOrders(items);
       }
     } catch (err) {
       console.error("Sipariş listesi alınamadı:", err);
-      setError("Hepsiburada API hatası (dummy veri gösteriliyor)");
-      setOrders([{ id: "12345", customerName: "Deneme Müşteri", status: "New" }]);
+      setError("Hepsiburada API bağlantı hatası (örnek veri gösteriliyor)");
+      setOrders([{ id: "12345", customerName: "Deneme Müşteri", status: "Yeni" }]);
     } finally {
       setLoading(false);
     }
@@ -57,7 +52,7 @@ export default function OrdersPage() {
   if (loading) return <p>⏳ Yükleniyor...</p>;
 
   const displayId = (o) =>
-    o.id || o.orderNumber || o.merchantOrderId || o.orderId || o.orderNo || "unknown";
+    o.id || o.orderNumber || o.merchantOrderId || o.orderId || o.orderNo || "bilinmiyor";
 
   const displayName = (o) =>
     o.customerName ||
@@ -69,7 +64,7 @@ export default function OrdersPage() {
 
   return (
     <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
-      <h1 style={{ marginBottom: "1rem" }}>Siparişler</h1>
+      <h1 style={{ marginBottom: "1rem" }}>📦 Siparişler</h1>
 
       <div style={{ marginBottom: "1rem", display: "flex", gap: "8px" }}>
         <button onClick={fetchOrders}>🔄 Yenile</button>
@@ -81,7 +76,7 @@ export default function OrdersPage() {
           const oid = displayId(order);
           const name = displayName(order);
           const st = displayStatus(order);
-          const href = oid !== "unknown" ? `/orders/${oid}` : undefined;
+          const href = oid !== "bilinmiyor" ? `/orders/${oid}` : undefined;
 
           return (
             <li key={oid + "-" + idx} style={{ marginBottom: 8 }}>
