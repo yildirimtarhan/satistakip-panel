@@ -1,12 +1,18 @@
 // pages/trendyol/orders/index.js
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import * as XLSX from "xlsx";
 
 export default function TrendyolOrdersPage() {
   const [orders, setOrders] = useState([]);
+  const [filteredOrders, setFilteredOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
 
+  const [searchQuery, setSearchQuery] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+
+  // 🔄 Siparişleri API'den çek
   const fetchOrders = async () => {
     setLoading(true);
     setError("");
@@ -14,42 +20,53 @@ export default function TrendyolOrdersPage() {
       const res = await fetch("/api/trendyol/orders");
       const data = await res.json();
 
-      if (!res.ok) {
-        console.warn("⚠ Trendyol API hatası:", data);
-        throw new Error(data.message || "Trendyol API bağlantı hatası");
-      }
+      if (!res.ok) throw new Error(data.message || "Trendyol API bağlantı hatası");
 
-      let items = data?.content?.orders || data?.result || data?.data || [];
+      let items = data?.content?.orders || data?.result || data?.orders || data?.data || [];
       if (!Array.isArray(items)) items = [];
 
       if (items.length === 0) {
-        setError("Trendyol API bağlantı hatası (örnek veri gösteriliyor)");
+        setError("⚠ Trendyol API bağlantı hatası (örnek veri gösteriliyor)");
         setOrders([
           {
-            id: "TREN12345",
+            id: "T-001",
             customerName: "Deneme Müşteri",
-            status: "Yeni",
             productName: "Test Ürünü",
+            status: "Yeni",
+            totalPrice: 199.9,
+            createdDate: "2025-10-01",
+          },
+          {
+            id: "T-002",
+            customerName: "Ahmet Yılmaz",
+            productName: "Bluetooth Kulaklık",
+            status: "Kargoya Verildi",
+            totalPrice: 349.9,
+            createdDate: "2025-10-05",
           },
         ]);
       } else {
         setOrders(items);
       }
     } catch (err) {
-      console.error("Trendyol sipariş listesi alınamadı:", err);
-      setError("Trendyol API bağlantı hatası (örnek veri gösteriliyor)");
+      console.error("Siparişler alınamadı:", err);
+      setError("⚠ Trendyol API bağlantı hatası (örnek veri gösteriliyor)");
       setOrders([
         {
-          id: "TREN12345",
+          id: "T-001",
           customerName: "Deneme Müşteri",
-          status: "Yeni",
           productName: "Test Ürünü",
+          status: "Yeni",
+          totalPrice: 199.9,
+          createdDate: "2025-10-01",
         },
         {
-          id: "TREN54321",
+          id: "T-002",
           customerName: "Ahmet Yılmaz",
-          status: "Kargoya Verildi",
           productName: "Bluetooth Kulaklık",
+          status: "Kargoya Verildi",
+          totalPrice: 349.9,
+          createdDate: "2025-10-05",
         },
       ]);
     } finally {
@@ -61,41 +78,68 @@ export default function TrendyolOrdersPage() {
     fetchOrders();
   }, []);
 
-  const filteredOrders = orders.filter(
-    (o) =>
-      o.id?.toLowerCase().includes(search.toLowerCase()) ||
-      o.customerName?.toLowerCase().includes(search.toLowerCase()) ||
-      o.productName?.toLowerCase().includes(search.toLowerCase())
-  );
+  // 🔍 Filtreleme işlemleri
+  useEffect(() => {
+    let filtered = [...orders];
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (o) =>
+          o.customerName?.toLowerCase().includes(q) ||
+          o.productName?.toLowerCase().includes(q) ||
+          o.id?.toLowerCase().includes(q)
+      );
+    }
+
+    if (startDate) {
+      filtered = filtered.filter((o) => new Date(o.createdDate) >= new Date(startDate));
+    }
+
+    if (endDate) {
+      filtered = filtered.filter((o) => new Date(o.createdDate) <= new Date(endDate));
+    }
+
+    setFilteredOrders(filtered);
+  }, [orders, searchQuery, startDate, endDate]);
+
+  // 📤 Excel'e Aktar
+  const exportToExcel = () => {
+    const worksheet = XLSX.utils.json_to_sheet(filteredOrders);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Siparişler");
+    XLSX.writeFile(workbook, "trendyol_siparisler.xlsx");
+  };
+
+  if (loading) return <p>⏳ Yükleniyor...</p>;
 
   return (
     <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
       <h1>🛍 Trendyol Siparişleri</h1>
 
-      <div style={{ marginBottom: "1rem", display: "flex", gap: "8px" }}>
+      <div style={{ display: "flex", gap: "10px", marginBottom: "1rem", flexWrap: "wrap" }}>
         <button onClick={fetchOrders}>🔄 Yenile</button>
         <input
           type="text"
           placeholder="Ara (isim / sipariş no / ürün)"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
         />
-        {error && <span style={{ color: "red" }}>⚠ {error}</span>}
+        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+        <button onClick={exportToExcel}>📊 Excel'e Aktar</button>
       </div>
 
-      {loading ? (
-        <p>⏳ Yükleniyor...</p>
-      ) : filteredOrders.length > 0 ? (
-        <ul>
-          {filteredOrders.map((order, idx) => (
-            <li key={idx} style={{ marginBottom: "8px" }}>
-              <strong>{order.customerName}</strong> — {order.productName} — {order.status}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p>Hiç sipariş bulunamadı.</p>
-      )}
+      {error && <p style={{ color: "red" }}>{error}</p>}
+
+      <ul>
+        {filteredOrders.map((order) => (
+          <li key={order.id} style={{ marginBottom: 8 }}>
+            <strong>{order.customerName}</strong> — {order.productName} — {order.status} —{" "}
+            {order.totalPrice} ₺ ({order.createdDate})
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
