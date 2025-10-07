@@ -1,4 +1,5 @@
 // pages/trendyol/orders/index.js
+/* eslint-disable react/no-unescaped-entities */
 import { useEffect, useState, useMemo } from "react";
 import * as XLSX from "xlsx";
 
