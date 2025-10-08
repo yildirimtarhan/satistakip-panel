@@ -1,178 +1,134 @@
-// pages/trendyol/orders/index.js
-
+// pages/orders/index.js
+import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
-import * as XLSX from "xlsx";
 
-export default function TrendyolOrdersPage() {
+export default function OrdersPage() {
   const [orders, setOrders] = useState([]);
-  const [filteredOrders, setFilteredOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("Hepsi");
-  const [dateRange, setDateRange] = useState({ start: "", end: "" });
+  const [search, setSearch] = useState("");
 
-  // 🧠 Siparişleri çek
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/trendyol/orders");
+      const res = await fetch("/api/hepsiburada-api/orders?status=New");
       const data = await res.json();
 
-      if (!res.ok || !data.success) {
-        throw new Error(data.message || "Trendyol API bağlantı hatası");
+      if (!res.ok) {
+        console.warn("Hepsiburada API hatası:", data);
+        throw new Error(data.message || "Hepsiburada API bağlantı hatası");
       }
 
-      setOrders(data.content.orders || []);
-      setFilteredOrders(data.content.orders || []);
+      let items =
+        data?.content?.orders ||
+        data?.content ||
+        data?.result ||
+        data?.data ||
+        data?.orders ||
+        [];
+
+      if (!Array.isArray(items)) items = [];
+
+      if (items.length === 0) {
+        setError("Hepsiburada API bağlantı hatası (örnek veri gösteriliyor)");
+        setOrders([
+          {
+            id: "12345",
+            customerName: "Deneme Müşteri",
+            status: "Yeni",
+            productName: "Test Ürünü",
+            date: "2025-10-08",
+          },
+        ]);
+      } else {
+        setOrders(items);
+      }
     } catch (err) {
       console.error("Sipariş listesi alınamadı:", err);
-      setError("Trendyol API bağlantı hatası (dummy veri gösteriliyor)");
-      const dummy = [
+      setError("Hepsiburada API bağlantı hatası (örnek veri gösteriliyor)");
+      setOrders([
         {
-          id: "TREN12345",
+          id: "12345",
           customerName: "Deneme Müşteri",
           status: "Yeni",
           productName: "Test Ürünü",
-          date: "2025-10-01",
-          total: 149.9,
+          date: "2025-10-08",
         },
-        {
-          id: "TREN54321",
-          customerName: "Ahmet Yılmaz",
-          status: "Kargoya Verildi",
-          productName: "Bluetooth Kulaklık",
-          date: "2025-10-05",
-          total: 349.0,
-        },
-      ];
-      setOrders(dummy);
-      setFilteredOrders(dummy);
+      ]);
     } finally {
       setLoading(false);
     }
-  };
-
-  // 🧠 Filtreleme işlemleri
-  const handleFilter = useCallback(() => {
-    let filtered = [...orders];
-
-    if (searchTerm.trim() !== "") {
-      filtered = filtered.filter((o) =>
-        o.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        o.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        o.productName.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-
-    if (statusFilter !== "Hepsi") {
-      filtered = filtered.filter((o) => o.status === statusFilter);
-    }
-
-    if (dateRange.start && dateRange.end) {
-      filtered = filtered.filter((o) => {
-        const d = new Date(o.date);
-        return d >= new Date(dateRange.start) && d <= new Date(dateRange.end);
-      });
-    }
-
-    setFilteredOrders(filtered);
-  }, [orders, searchTerm, statusFilter, dateRange]);
-
-  useEffect(() => {
-    fetchOrders();
   }, []);
 
   useEffect(() => {
-    handleFilter();
-  }, [handleFilter]); // ✅ dependency eklendi
+    fetchOrders();
+  }, [fetchOrders]);
 
-  // 🧠 Excel'e aktar
-  const exportToExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(filteredOrders);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Siparişler");
-    XLSX.writeFile(wb, "trendyol_siparisler.xlsx");
+  const handleSearch = (e) => {
+    setSearch(e.target.value);
   };
+
+  const filteredOrders = orders.filter((o) => {
+    const id = o.id?.toString().toLowerCase() || "";
+    const name = o.customerName?.toLowerCase() || "";
+    const product = o.productName?.toLowerCase() || "";
+    const searchTerm = search.toLowerCase();
+    return id.includes(searchTerm) || name.includes(searchTerm) || product.includes(searchTerm);
+  });
+
+  const displayId = (o) =>
+    o.id || o.orderNumber || o.merchantOrderId || o.orderId || o.orderNo || "bilinmiyor";
+
+  const displayName = (o) =>
+    o.customerName ||
+    `${o.customerFirstName || ""} ${o.customerLastName || ""}`.trim() ||
+    "Müşteri";
+
+  const displayStatus = (o) =>
+    o.status || o.orderStatus || o.statusName || "—";
 
   if (loading) return <p>⏳ Yükleniyor...</p>;
 
   return (
-    <div style={{ padding: "1.5rem", fontFamily: "sans-serif" }}>
-      <h1 style={{ marginBottom: "1rem" }}>🛍️ Trendyol Siparişleri</h1>
+    <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
+      <h1 style={{ marginBottom: "1rem" }}>📦 Hepsiburada Siparişleri</h1>
 
-      {/* Filtre Alanı */}
-      <div style={{ display: "flex", gap: "8px", marginBottom: "1rem", flexWrap: "wrap" }}>
+      <div style={{ marginBottom: "1rem", display: "flex", gap: "8px" }}>
+        <button onClick={fetchOrders}>🔄 Yenile</button>
         <input
           type="text"
-          placeholder="🔍 Sipariş veya müşteri ara"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="🔍 Sipariş ara..."
+          value={search}
+          onChange={handleSearch}
         />
-
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-          <option>Hepsi</option>
-          <option>Yeni</option>
-          <option>Kargoya Verildi</option>
-          <option>İptal Edildi</option>
-          <option>İade Edildi</option>
-        </select>
-
-        <div>
-          <label>Başlangıç: </label>
-          <input
-            type="date"
-            value={dateRange.start}
-            onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-          />
-        </div>
-        <div>
-          <label>Bitiş: </label>
-          <input
-            type="date"
-            value={dateRange.end}
-            onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-          />
-        </div>
-
-        <button onClick={exportToExcel}>📊 Excel'e Aktar</button>
         {error && <span style={{ color: "red" }}>⚠ {error}</span>}
       </div>
 
-      {/* Tablo */}
-      <table border="1" cellPadding="8" style={{ borderCollapse: "collapse", width: "100%" }}>
-        <thead style={{ background: "#f4f4f4" }}>
-          <tr>
-            <th>Sipariş No</th>
-            <th>Müşteri</th>
-            <th>Ürün Adı</th>
-            <th>Durum</th>
-            <th>Tarih</th>
-            <th>Tutar (₺)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {filteredOrders.length === 0 ? (
-            <tr>
-              <td colSpan="6" style={{ textAlign: "center" }}>
-                Kriterlere uygun sipariş bulunamadı.
-              </td>
-            </tr>
-          ) : (
-            filteredOrders.map((order) => (
-              <tr key={order.id}>
-                <td>{order.id}</td>
-                <td>{order.customerName}</td>
-                <td>{order.productName}</td>
-                <td>{order.status}</td>
-                <td>{order.date}</td>
-                <td>{order.total}</td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+      <ul>
+        {filteredOrders.map((order, idx) => {
+          const oid = displayId(order);
+          const name = displayName(order);
+          const st = displayStatus(order);
+          const product = order.productName || "Ürün adı yok";
+          const date = order.date || "Tarih yok";
+          const href = oid !== "bilinmiyor" ? `/orders/${oid}` : undefined;
+
+          return (
+            <li key={oid + "-" + idx} style={{ marginBottom: 8 }}>
+              {href ? (
+                <Link href={href}>
+                  {name} - {st} - 🛍 {product} - 📅 {date}
+                </Link>
+              ) : (
+                <span>
+                  {name} - {st} - 🛍 {product} - 📅 {date}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
