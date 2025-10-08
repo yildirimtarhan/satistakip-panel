@@ -1,5 +1,6 @@
+// pages/orders/index.js
 import Link from "next/link";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import * as XLSX from "xlsx";
 
 export default function OrdersPage() {
@@ -7,12 +8,10 @@ export default function OrdersPage() {
   const [filteredOrders, setFilteredOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
 
-  // ✅ useCallback ile ESLint uyarısını çözüyoruz
-  const fetchOrders = useCallback(async () => {
+  // 📡 Hepsiburada API'den siparişleri çek
+  const fetchOrders = async () => {
     setLoading(true);
     setError("");
     try {
@@ -21,18 +20,7 @@ export default function OrdersPage() {
 
       if (!res.ok) {
         console.warn("Hepsiburada API hatası:", data);
-        setError("Hepsiburada API bağlantı hatası (dummy veri gösteriliyor)");
-        setOrders([
-          {
-            id: "12345",
-            customerName: "Deneme Müşteri",
-            status: "Yeni",
-            totalPrice: 149.9,
-            createdDate: new Date().toISOString(),
-            productName: "Deneme Ürünü",
-          },
-        ]);
-        return;
+        throw new Error(data.message || "Hepsiburada API bağlantı hatası");
       }
 
       let items =
@@ -47,131 +35,133 @@ export default function OrdersPage() {
 
       if (items.length === 0) {
         setError("Hepsiburada API bağlantı hatası (örnek veri gösteriliyor)");
-        setOrders([
+        items = [
           {
             id: "12345",
             customerName: "Deneme Müşteri",
             status: "Yeni",
-            totalPrice: 149.9,
-            createdDate: new Date().toISOString(),
             productName: "Deneme Ürünü",
+            salePrice: 250,
+            purchasePrice: 200,
+            createdDate: new Date().toISOString(),
           },
-        ]);
-      } else {
-        items = items.map((o) => ({
-          ...o,
-          productName:
-            o?.lines?.[0]?.productName ||
-            o?.orderLines?.[0]?.productName ||
-            o?.items?.[0]?.title ||
-            "—",
-        }));
-        setOrders(items);
+        ];
       }
+
+      setOrders(items);
+      setFilteredOrders(items);
     } catch (err) {
       console.error("Sipariş listesi alınamadı:", err);
-      setError("Hepsiburada API bağlantı hatası (dummy veri gösteriliyor)");
-      setOrders([
+      setError("Hepsiburada API bağlantı hatası (örnek veri gösteriliyor)");
+      const dummy = [
         {
           id: "12345",
           customerName: "Deneme Müşteri",
           status: "Yeni",
-          totalPrice: 149.9,
-          createdDate: new Date().toISOString(),
           productName: "Deneme Ürünü",
+          salePrice: 250,
+          purchasePrice: 200,
+          createdDate: new Date().toISOString(),
         },
-      ]);
+      ];
+      setOrders(dummy);
+      setFilteredOrders(dummy);
     } finally {
       setLoading(false);
     }
-  }, []);
+  };
+
+  // 🔍 Sipariş arama
+  const handleSearch = (e) => {
+    const value = e.target.value.toLowerCase();
+    setSearchTerm(value);
+    const filtered = orders.filter(
+      (o) =>
+        o.id?.toString().toLowerCase().includes(value) ||
+        o.customerName?.toLowerCase().includes(value) ||
+        o.productName?.toLowerCase().includes(value)
+    );
+    setFilteredOrders(filtered);
+  };
+
+  // 📊 Excel’e aktar
+  const exportToExcel = (data) => {
+    if (!data || data.length === 0) {
+      alert("Aktarılacak veri bulunamadı.");
+      return;
+    }
+
+    const exportData = data.map((o) => ({
+      "Sipariş No": o.id,
+      "Müşteri": o.customerName,
+      "Ürün Adı": o.productName,
+      "Durum": o.status,
+      "Satış Fiyatı": o.salePrice,
+      "Alış Fiyatı": o.purchasePrice,
+      "Kâr/Zarar": o.salePrice - o.purchasePrice,
+      "Tarih": new Date(o.createdDate).toLocaleString("tr-TR"),
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Siparişler");
+
+    XLSX.writeFile(wb, "Hepsiburada_Siparisler.xlsx");
+  };
 
   useEffect(() => {
     fetchOrders();
-  }, [fetchOrders]); // ✅ Artık dependency eklendi
-
-  useEffect(() => {
-    let f = orders;
-
-    if (search) {
-      f = f.filter(
-        (o) =>
-          (o.customerName || "")
-            .toLowerCase()
-            .includes(search.toLowerCase()) ||
-          (o.id || "").includes(search) ||
-          (o.productName || "").toLowerCase().includes(search.toLowerCase())
-      );
-    }
-
-    if (startDate) {
-      f = f.filter((o) => new Date(o.createdDate) >= new Date(startDate));
-    }
-    if (endDate) {
-      f = f.filter((o) => new Date(o.createdDate) <= new Date(endDate));
-    }
-
-    setFilteredOrders(f);
-  }, [orders, search, startDate, endDate]);
-
-  const exportToExcel = () => {
-    const data = filteredOrders.map((o) => ({
-      Platform: "Hepsiburada",
-      "Sipariş No": o.id || o.orderNumber || "—",
-      Müşteri: o.customerName || "—",
-      Durum: o.status || "—",
-      "Ürün Adı": o.productName || "—",
-      Tutar: o.totalPrice || "—",
-      Tarih: o.createdDate
-        ? new Date(o.createdDate).toLocaleString("tr-TR")
-        : "—",
-    }));
-
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Siparişler");
-    XLSX.writeFile(wb, `siparisler_${new Date().toISOString().split("T")[0]}.xlsx`);
-  };
+  }, []);
 
   if (loading) return <p>⏳ Yükleniyor...</p>;
 
   return (
     <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
-      <h1 style={{ marginBottom: "1rem" }}>📦 Siparişler</h1>
+      <h1 style={{ marginBottom: "1rem" }}>📦 Hepsiburada Siparişleri</h1>
 
-      <div style={{ display: "flex", gap: "8px", marginBottom: "1rem" }}>
+      <div style={{ marginBottom: "1rem", display: "flex", gap: "8px", flexWrap: "wrap" }}>
         <button onClick={fetchOrders}>🔄 Yenile</button>
-        <button onClick={exportToExcel}>📤 Excel&apos;e Aktar</button>
+        <input
+          type="text"
+          placeholder="🔍 Sipariş ara..."
+          value={searchTerm}
+          onChange={handleSearch}
+          style={{ padding: "0.4rem", flex: "1", minWidth: "200px" }}
+        />
+        <button
+          onClick={() => exportToExcel(filteredOrders)}
+          style={{ background: "#16a34a", color: "white", padding: "0.4rem 0.8rem", borderRadius: "4px" }}
+        >
+          📊 Excel'e Aktar
+        </button>
         {error && <span style={{ color: "red" }}>⚠ {error}</span>}
       </div>
 
-      <div style={{ display: "flex", gap: "8px", marginBottom: "1rem" }}>
-        <input
-          type="text"
-          placeholder="Ara (isim / sipariş no / ürün)"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <input
-          type="date"
-          value={startDate}
-          onChange={(e) => setStartDate(e.target.value)}
-        />
-        <input
-          type="date"
-          value={endDate}
-          onChange={(e) => setEndDate(e.target.value)}
-        />
-      </div>
-
       <ul>
-        {filteredOrders.map((o, idx) => (
-          <li key={o.id + "-" + idx} style={{ marginBottom: 8 }}>
-            <Link href={`/orders/${o.id}`}>
-              {o.customerName} - {o.status} - 🛍️ {o.productName}
-            </Link>
-          </li>
-        ))}
+        {filteredOrders.map((order, idx) => {
+          const oid = order.id || "bilinmiyor";
+          const href = oid !== "bilinmiyor" ? `/orders/${oid}` : undefined;
+
+          const karZarar = order.salePrice - order.purchasePrice;
+          const formattedDate = new Date(order.createdDate).toLocaleString("tr-TR");
+
+          return (
+            <li key={oid + "-" + idx} style={{ marginBottom: 12, borderBottom: "1px solid #eee", paddingBottom: 8 }}>
+              {href ? (
+                <Link href={href}>
+                  <strong>{order.customerName}</strong> - {order.productName} - {order.status} <br />
+                  💰 Satış: {order.salePrice} ₺ | 🛒 Alış: {order.purchasePrice} ₺ | 📈 Kâr/Zarar:{" "}
+                  <span style={{ color: karZarar >= 0 ? "green" : "red" }}>{karZarar} ₺</span> <br />
+                  🕓 {formattedDate}
+                </Link>
+              ) : (
+                <span>
+                  <strong>{order.customerName}</strong> - {order.productName} - {order.status}
+                </span>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
