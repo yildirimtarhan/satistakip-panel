@@ -1,6 +1,6 @@
-// pages/trendyol/orders/index.js
 /* eslint-disable react/no-unescaped-entities */
-import { useEffect, useState, useMemo } from "react";
+// pages/trendyol/orders/index.js
+import { useEffect, useState } from "react";
 import * as XLSX from "xlsx";
 
 export default function TrendyolOrdersPage() {
@@ -12,6 +12,35 @@ export default function TrendyolOrdersPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [statusFilter, setStatusFilter] = useState("Tümü");
+
+  // 🟡 Dummy veri (API olmadığı durumlar için)
+  const dummyOrders = [
+    {
+      id: "T-001",
+      customerName: "Deneme Müşteri",
+      productName: "Test Ürünü",
+      status: "Yeni",
+      totalPrice: 199.9,
+      createdDate: "2025-10-01",
+    },
+    {
+      id: "T-002",
+      customerName: "Ahmet Yılmaz",
+      productName: "Bluetooth Kulaklık",
+      status: "Kargoya Verildi",
+      totalPrice: 349.9,
+      createdDate: "2025-10-05",
+    },
+    {
+      id: "T-003",
+      customerName: "Ayşe Demir",
+      productName: "iade Edilen Ürün",
+      status: "İptal / İade",
+      totalPrice: 89.9,
+      createdDate: "2025-09-28",
+    },
+  ];
 
   // 🔄 Siparişleri API'den çek
   const fetchOrders = async () => {
@@ -28,48 +57,14 @@ export default function TrendyolOrdersPage() {
 
       if (items.length === 0) {
         setError("⚠ Trendyol API bağlantı hatası (örnek veri gösteriliyor)");
-        setOrders([
-          {
-            id: "T-001",
-            customerName: "Deneme Müşteri",
-            productName: "Test Ürünü",
-            status: "Yeni",
-            totalPrice: 199.9,
-            createdDate: "2025-10-01",
-          },
-          {
-            id: "T-002",
-            customerName: "Ahmet Yılmaz",
-            productName: "Bluetooth Kulaklık",
-            status: "Kargoya Verildi",
-            totalPrice: 349.9,
-            createdDate: "2025-10-05",
-          },
-        ]);
+        setOrders(dummyOrders);
       } else {
         setOrders(items);
       }
     } catch (err) {
       console.error("Siparişler alınamadı:", err);
       setError("⚠ Trendyol API bağlantı hatası (örnek veri gösteriliyor)");
-      setOrders([
-        {
-          id: "T-001",
-          customerName: "Deneme Müşteri",
-          productName: "Test Ürünü",
-          status: "Yeni",
-          totalPrice: 199.9,
-          createdDate: "2025-10-01",
-        },
-        {
-          id: "T-002",
-          customerName: "Ahmet Yılmaz",
-          productName: "Bluetooth Kulaklık",
-          status: "Kargoya Verildi",
-          totalPrice: 349.9,
-          createdDate: "2025-10-05",
-        },
-      ]);
+      setOrders(dummyOrders);
     } finally {
       setLoading(false);
     }
@@ -101,8 +96,12 @@ export default function TrendyolOrdersPage() {
       filtered = filtered.filter((o) => new Date(o.createdDate) <= new Date(endDate));
     }
 
+    if (statusFilter !== "Tümü") {
+      filtered = filtered.filter((o) => o.status === statusFilter);
+    }
+
     setFilteredOrders(filtered);
-  }, [orders, searchQuery, startDate, endDate]);
+  }, [orders, searchQuery, startDate, endDate, statusFilter]);
 
   // 📤 Excel'e Aktar
   const exportToExcel = () => {
@@ -128,6 +127,14 @@ export default function TrendyolOrdersPage() {
         />
         <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
         <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <option value="Tümü">Tümü</option>
+          <option value="Yeni">Yeni</option>
+          <option value="Kargoya Verildi">Kargoya Verildi</option>
+          <option value="İptal / İade">İptal / İade</option>
+        </select>
+
         <button onClick={exportToExcel}>📊 Excel'e Aktar</button>
       </div>
 
