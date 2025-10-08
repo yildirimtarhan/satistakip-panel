@@ -2,84 +2,64 @@
 
 export default async function handler(req, res) {
   try {
-    // 🔸 1. ENV değişkenlerini al
-    const username = process.env.HEPSIBURADA_USERNAME;
-    const password = process.env.HEPSIBURADA_PASSWORD;
-    const userAgent = process.env.HEPSIBURADA_USER_AGENT;
-    const ordersEndpoint = process.env.HEPSIBURADA_ORDERS_ENDPOINT;
-    const authEndpoint = process.env.HEPSIBURADA_CATALOG_ENDPOINT?.replace(/\/$/, "") + "/api/authenticate";
-
-    // Kontrol
-    if (!username || !password || !userAgent || !ordersEndpoint || !authEndpoint) {
-      return res.status(500).json({ message: "Hepsiburada ENV bilgileri eksik" });
-    }
-
-    // 🔸 2. Authenticate isteği
-    console.log("🟡 Hepsiburada authenticate başlıyor:", authEndpoint);
-
-    const authResponse = await fetch(authEndpoint, {
+    // 1️⃣ Önce token al
+    const authResponse = await fetch("https://mpop.hepsiburada.com/api/authenticate", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": userAgent,
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        username,
-        password,
-        authenticationType: "INTEGRATOR",
+        username: process.env.HEPSIBURADA_USERNAME,
+        password: process.env.HEPSIBURADA_PASSWORD,
+        authenticationType: "INTEGRATOR"
       }),
     });
 
     if (!authResponse.ok) {
-      const errorText = await authResponse.text();
-      console.error("❌ Authenticate hatası:", authResponse.status, errorText);
+      const errText = await authResponse.text();
+      console.error("❌ Kimlik doğrulama başarısız:", authResponse.status, errText);
       return res.status(authResponse.status).json({
         message: "Hepsiburada kimlik doğrulama başarısız",
         status: authResponse.status,
-        error: errorText,
+        error: errText
       });
     }
 
     const authData = await authResponse.json();
-    const token = authData?.id_token || authData?.access_token || authData?.token;
+    const token = authData.accessToken;
 
     if (!token) {
-      console.error("❌ Token alınamadı:", authData);
-      return res.status(401).json({ message: "Token alınamadı", response: authData });
+      return res.status(400).json({ message: "Token alınamadı", authData });
     }
 
-    console.log("✅ Token başarıyla alındı");
-
-    // 🔸 3. Siparişleri çekme isteği
-    const ordersUrl = `${ordersEndpoint}/orders`;
-    console.log("📡 Orders URL:", ordersUrl);
-
+    // 2️⃣ Token ile siparişleri al
+    const ordersUrl = `${process.env.HEPSIBURADA_ORDERS_ENDPOINT}/orders`;
     const ordersResponse = await fetch(ordersUrl, {
       method: "GET",
       headers: {
-        Authorization: `Bearer ${token}`,
-        "User-Agent": userAgent,
+        "Authorization": `Bearer ${token}`,
+        "User-Agent": process.env.HEPSIBURADA_USER_AGENT,
         "Content-Type": "application/json",
-        Accept: "application/json",
-      },
+        "Accept": "application/json"
+      }
     });
 
     if (!ordersResponse.ok) {
-      const errorText = await ordersResponse.text();
-      console.error("❌ Orders isteği hatası:", ordersResponse.status, errorText);
+      const errText = await ordersResponse.text();
+      console.error("❌ Sipariş alma hatası:", ordersResponse.status, errText);
       return res.status(ordersResponse.status).json({
-        message: "Hepsiburada sipariş isteği başarısız",
+        message: "Hepsiburada sipariş alma hatası",
         status: ordersResponse.status,
-        error: errorText,
+        error: errText
       });
     }
 
-    const ordersData = await ordersResponse.json();
-    console.log("✅ Sipariş verisi alındı");
+    const data = await ordersResponse.json();
+    return res.status(200).json(data);
 
-    return res.status(200).json(ordersData);
   } catch (error) {
-    console.error("❌ Genel Hata:", error);
-    return res.status(500).json({ message: "Sunucu hatası", error: error.message });
+    console.error("❌ Genel hata:", error);
+    return res.status(500).json({
+      message: "Sunucu hatası",
+      error: error.message
+    });
   }
 }
