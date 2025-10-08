@@ -1,54 +1,85 @@
 // pages/api/hepsiburada-api/orders.js
 
 export default async function handler(req, res) {
-  // Hepsiburada canlı endpoint
-  const url = `${process.env.HEPSIBURADA_ORDERS_ENDPOINT}/orders`;
-
-  // Render ortamına eklediğimiz env değişkenleri
-  const username = process.env.HEPSIBURADA_USERNAME;
-  const password = process.env.HEPSIBURADA_PASSWORD;
-  const userAgent = process.env.HEPSIBURADA_USER_AGENT;
-
-  // Basic Auth header oluştur
-  const authHeader = "Basic " + Buffer.from(`${username}:${password}`).toString("base64");
-
   try {
-    console.log("🔹 Hepsiburada API URL:", url);
-    console.log("🔹 Authorization Header:", authHeader);
-    console.log("🔹 User-Agent:", userAgent);
+    // 🔸 1. ENV değişkenlerini al
+    const username = process.env.HEPSIBURADA_USERNAME;
+    const password = process.env.HEPSIBURADA_PASSWORD;
+    const userAgent = process.env.HEPSIBURADA_USER_AGENT;
+    const ordersEndpoint = process.env.HEPSIBURADA_ORDERS_ENDPOINT;
+    const authEndpoint = process.env.HEPSIBURADA_CATALOG_ENDPOINT?.replace(/\/$/, "") + "/api/authenticate";
 
-    // Hepsiburada API isteği
-    const response = await fetch(url, {
-      method: "GET",
+    // Kontrol
+    if (!username || !password || !userAgent || !ordersEndpoint || !authEndpoint) {
+      return res.status(500).json({ message: "Hepsiburada ENV bilgileri eksik" });
+    }
+
+    // 🔸 2. Authenticate isteği
+    console.log("🟡 Hepsiburada authenticate başlıyor:", authEndpoint);
+
+    const authResponse = await fetch(authEndpoint, {
+      method: "POST",
       headers: {
-        "Authorization": authHeader,
-        "User-Agent": userAgent,
         "Content-Type": "application/json",
-        "Accept": "application/json",
+        "User-Agent": userAgent,
       },
+      body: JSON.stringify({
+        username,
+        password,
+        authenticationType: "INTEGRATOR",
+      }),
     });
 
-    // Başarısız durumları logla
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("❌ Hepsiburada API Hatası:", response.status, errorText);
-      return res.status(response.status).json({
-        message: "Hepsiburada API hatası",
-        status: response.status,
+    if (!authResponse.ok) {
+      const errorText = await authResponse.text();
+      console.error("❌ Authenticate hatası:", authResponse.status, errorText);
+      return res.status(authResponse.status).json({
+        message: "Hepsiburada kimlik doğrulama başarısız",
+        status: authResponse.status,
         error: errorText,
       });
     }
 
-    // Başarılı yanıtı dön
-    const data = await response.json();
-    console.log("✅ Hepsiburada API yanıtı:", data);
-    return res.status(200).json(data);
+    const authData = await authResponse.json();
+    const token = authData?.id_token || authData?.access_token || authData?.token;
 
-  } catch (error) {
-    console.error("❌ Sunucu Hatası:", error);
-    return res.status(500).json({
-      message: "Sunucu hatası",
-      error: error.message,
+    if (!token) {
+      console.error("❌ Token alınamadı:", authData);
+      return res.status(401).json({ message: "Token alınamadı", response: authData });
+    }
+
+    console.log("✅ Token başarıyla alındı");
+
+    // 🔸 3. Siparişleri çekme isteği
+    const ordersUrl = `${ordersEndpoint}/orders`;
+    console.log("📡 Orders URL:", ordersUrl);
+
+    const ordersResponse = await fetch(ordersUrl, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "User-Agent": userAgent,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
     });
+
+    if (!ordersResponse.ok) {
+      const errorText = await ordersResponse.text();
+      console.error("❌ Orders isteği hatası:", ordersResponse.status, errorText);
+      return res.status(ordersResponse.status).json({
+        message: "Hepsiburada sipariş isteği başarısız",
+        status: ordersResponse.status,
+        error: errorText,
+      });
+    }
+
+    const ordersData = await ordersResponse.json();
+    console.log("✅ Sipariş verisi alındı");
+
+    return res.status(200).json(ordersData);
+  } catch (error) {
+    console.error("❌ Genel Hata:", error);
+    return res.status(500).json({ message: "Sunucu hatası", error: error.message });
   }
 }
