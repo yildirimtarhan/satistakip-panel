@@ -1,14 +1,29 @@
 // pages/orders/index.js
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import { useEffect, useState, useCallback } from "react";
+import * as XLSX from "xlsx";
+import { LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState([]);
+  const [filteredOrders, setFilteredOrders] = useState([]);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("Tümü");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
 
-  const fetchOrders = useCallback(async () => {
+  // 📊 Kar-Zarar toplamı için
+  const totalProfit = useMemo(() => {
+    return filteredOrders.reduce((acc, order) => {
+      const sale = parseFloat(order.salePrice || 0);
+      const cost = parseFloat(order.purchasePrice || 0);
+      return acc + (sale - cost);
+    }, 0);
+  }, [filteredOrders]);
+
+  const fetchOrders = async () => {
     setLoading(true);
     setError("");
     try {
@@ -16,7 +31,6 @@ export default function OrdersPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        console.warn("Hepsiburada API hatası:", data);
         throw new Error(data.message || "Hepsiburada API bağlantı hatası");
       }
 
@@ -28,107 +42,163 @@ export default function OrdersPage() {
         data?.orders ||
         [];
 
-      if (!Array.isArray(items)) items = [];
-
-      if (items.length === 0) {
+      if (!Array.isArray(items) || items.length === 0) {
         setError("Hepsiburada API bağlantı hatası (örnek veri gösteriliyor)");
-        setOrders([
+        items = [
           {
             id: "12345",
             customerName: "Deneme Müşteri",
             status: "Yeni",
             productName: "Test Ürünü",
-            date: "2025-10-08",
+            salePrice: 500,
+            purchasePrice: 300,
+            createdDate: new Date().toISOString(),
           },
-        ]);
-      } else {
-        setOrders(items);
+        ];
       }
+
+      setOrders(items);
+      setFilteredOrders(items);
     } catch (err) {
       console.error("Sipariş listesi alınamadı:", err);
       setError("Hepsiburada API bağlantı hatası (örnek veri gösteriliyor)");
-      setOrders([
+      const dummy = [
         {
           id: "12345",
           customerName: "Deneme Müşteri",
           status: "Yeni",
           productName: "Test Ürünü",
-          date: "2025-10-08",
+          salePrice: 500,
+          purchasePrice: 300,
+          createdDate: new Date().toISOString(),
         },
-      ]);
+      ];
+      setOrders(dummy);
+      setFilteredOrders(dummy);
     } finally {
       setLoading(false);
     }
-  }, []);
+  };
 
   useEffect(() => {
     fetchOrders();
-  }, [fetchOrders]);
+  }, []);
 
-  const handleSearch = (e) => {
-    setSearch(e.target.value);
+  // 🔍 Filtreleme işlemleri
+  const handleFilter = () => {
+    let filtered = [...orders];
+
+    if (search) {
+      const s = search.toLowerCase();
+      filtered = filtered.filter(
+        (o) =>
+          o.customerName?.toLowerCase().includes(s) ||
+          o.productName?.toLowerCase().includes(s) ||
+          o.id?.toLowerCase().includes(s)
+      );
+    }
+
+    if (statusFilter !== "Tümü") {
+      filtered = filtered.filter((o) => (o.status || "").toLowerCase() === statusFilter.toLowerCase());
+    }
+
+    if (startDate) {
+      filtered = filtered.filter(
+        (o) => new Date(o.createdDate) >= new Date(startDate)
+      );
+    }
+
+    if (endDate) {
+      filtered = filtered.filter(
+        (o) => new Date(o.createdDate) <= new Date(endDate)
+      );
+    }
+
+    setFilteredOrders(filtered);
   };
 
-  const filteredOrders = orders.filter((o) => {
-    const id = o.id?.toString().toLowerCase() || "";
-    const name = o.customerName?.toLowerCase() || "";
-    const product = o.productName?.toLowerCase() || "";
-    const searchTerm = search.toLowerCase();
-    return id.includes(searchTerm) || name.includes(searchTerm) || product.includes(searchTerm);
-  });
+  useEffect(() => {
+    handleFilter();
+  }, [search, statusFilter, startDate, endDate, orders]);
 
-  const displayId = (o) =>
-    o.id || o.orderNumber || o.merchantOrderId || o.orderId || o.orderNo || "bilinmiyor";
+  // 📥 Excel'e Aktar
+  const exportToExcel = () => {
+    const ws = XLSX.utils.json_to_sheet(filteredOrders);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Siparişler");
+    XLSX.writeFile(wb, "hepsiburada_siparisler.xlsx");
+  };
 
-  const displayName = (o) =>
-    o.customerName ||
-    `${o.customerFirstName || ""} ${o.customerLastName || ""}`.trim() ||
-    "Müşteri";
+  // 📈 Grafik verisi
+  const chartData = useMemo(() => {
+    const monthly = {};
+    filteredOrders.forEach((order) => {
+      const d = new Date(order.createdDate);
+      const key = `${d.getFullYear()}-${d.getMonth() + 1}`;
+      const profit = (parseFloat(order.salePrice || 0) - parseFloat(order.purchasePrice || 0)) || 0;
+      monthly[key] = (monthly[key] || 0) + profit;
+    });
 
-  const displayStatus = (o) =>
-    o.status || o.orderStatus || o.statusName || "—";
+    return Object.entries(monthly).map(([month, profit]) => ({
+      month,
+      profit,
+    }));
+  }, [filteredOrders]);
 
   if (loading) return <p>⏳ Yükleniyor...</p>;
 
   return (
-    <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
-      <h1 style={{ marginBottom: "1rem" }}>📦 Hepsiburada Siparişleri</h1>
+    <div style={{ padding: "1rem", fontFamily: "sans-serif" }}>
+      <h1>📦 Hepsiburada Siparişleri</h1>
 
-      <div style={{ marginBottom: "1rem", display: "flex", gap: "8px" }}>
+      <div style={{ marginBottom: "1rem", display: "flex", gap: "8px", flexWrap: "wrap" }}>
         <button onClick={fetchOrders}>🔄 Yenile</button>
         <input
           type="text"
           placeholder="🔍 Sipariş ara..."
           value={search}
-          onChange={handleSearch}
+          onChange={(e) => setSearch(e.target.value)}
         />
-        {error && <span style={{ color: "red" }}>⚠ {error}</span>}
+        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <option>Tümü</option>
+          <option>Yeni</option>
+          <option>Kargoya Verildi</option>
+          <option>İptal</option>
+          <option>İade</option>
+        </select>
+        <button onClick={exportToExcel}>📊 Excel'e Aktar</button>
       </div>
 
-      <ul>
-        {filteredOrders.map((order, idx) => {
-          const oid = displayId(order);
-          const name = displayName(order);
-          const st = displayStatus(order);
-          const product = order.productName || "Ürün adı yok";
-          const date = order.date || "Tarih yok";
-          const href = oid !== "bilinmiyor" ? `/orders/${oid}` : undefined;
+      {error && <p style={{ color: "red" }}>⚠ {error}</p>}
 
-          return (
-            <li key={oid + "-" + idx} style={{ marginBottom: 8 }}>
-              {href ? (
-                <Link href={href}>
-                  {name} - {st} - 🛍 {product} - 📅 {date}
-                </Link>
-              ) : (
-                <span>
-                  {name} - {st} - 🛍 {product} - 📅 {date}
-                </span>
-              )}
-            </li>
-          );
-        })}
+      <p><b>💰 Toplam Kar:</b> {totalProfit.toFixed(2)} ₺</p>
+
+      <ul>
+        {filteredOrders.map((order, idx) => (
+          <li key={order.id + "-" + idx}>
+            <Link href={`/orders/${order.id}`}>
+              {order.customerName} — {order.productName} — {order.status} —{" "}
+              {new Date(order.createdDate).toLocaleDateString()}
+            </Link>
+          </li>
+        ))}
       </ul>
+
+      {/* 📈 Satış Grafik Alanı */}
+      <div style={{ marginTop: "2rem" }}>
+        <h3>📈 Aylık Kar Grafiği</h3>
+        <ResponsiveContainer width="100%" height={300}>
+          <LineChart data={chartData}>
+            <Line type="monotone" dataKey="profit" stroke="#82ca9d" />
+            <CartesianGrid stroke="#ccc" />
+            <XAxis dataKey="month" />
+            <YAxis />
+            <Tooltip />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }

@@ -1,14 +1,30 @@
 // pages/trendyol/orders/index.js
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import { useEffect, useState, useCallback } from "react";
+import * as XLSX from "xlsx";
+import { LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 export default function TrendyolOrdersPage() {
   const [orders, setOrders] = useState([]);
+  const [filteredOrders, setFilteredOrders] = useState([]);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("Tümü");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
 
-  const fetchOrders = useCallback(async () => {
+  // 💰 Kar-Zarar hesaplama
+  const totalProfit = useMemo(() => {
+    return filteredOrders.reduce((acc, order) => {
+      const sale = parseFloat(order.salePrice || 0);
+      const cost = parseFloat(order.purchasePrice || 0);
+      return acc + (sale - cost);
+    }, 0);
+  }, [filteredOrders]);
+
+  // 📡 API'den siparişleri çek
+  const fetchOrders = async () => {
     setLoading(true);
     setError("");
     try {
@@ -16,87 +32,189 @@ export default function TrendyolOrdersPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        console.warn("Trendyol API hatası:", data);
         throw new Error(data.message || "Trendyol API bağlantı hatası");
       }
 
       let items = data?.content?.orders || data?.orders || data?.data || [];
 
-      if (!Array.isArray(items)) items = [];
-
-      if (items.length === 0) {
+      if (!Array.isArray(items) || items.length === 0) {
         setError("Trendyol API bağlantı hatası (örnek veri gösteriliyor)");
-        setOrders([
+        items = [
           {
             id: "TREN12345",
             customerName: "Deneme Müşteri",
             status: "Yeni",
             productName: "Test Ürünü",
-            date: "2025-10-08",
+            salePrice: 400,
+            purchasePrice: 250,
+            createdDate: new Date().toISOString(),
           },
-        ]);
-      } else {
-        setOrders(items);
+          {
+            id: "TREN54321",
+            customerName: "Ahmet Yılmaz",
+            status: "Kargoya Verildi",
+            productName: "Bluetooth Kulaklık",
+            salePrice: 600,
+            purchasePrice: 400,
+            createdDate: new Date().toISOString(),
+          },
+        ];
       }
+
+      setOrders(items);
+      setFilteredOrders(items);
     } catch (err) {
-      console.error("Trendyol siparişleri alınamadı:", err);
+      console.error("Sipariş listesi alınamadı:", err);
       setError("Trendyol API bağlantı hatası (örnek veri gösteriliyor)");
-      setOrders([
+      const dummy = [
         {
           id: "TREN12345",
           customerName: "Deneme Müşteri",
           status: "Yeni",
           productName: "Test Ürünü",
-          date: "2025-10-08",
+          salePrice: 400,
+          purchasePrice: 250,
+          createdDate: new Date().toISOString(),
         },
-      ]);
+        {
+          id: "TREN54321",
+          customerName: "Ahmet Yılmaz",
+          status: "Kargoya Verildi",
+          productName: "Bluetooth Kulaklık",
+          salePrice: 600,
+          purchasePrice: 400,
+          createdDate: new Date().toISOString(),
+        },
+      ];
+      setOrders(dummy);
+      setFilteredOrders(dummy);
     } finally {
       setLoading(false);
     }
-  }, []);
+  };
 
   useEffect(() => {
     fetchOrders();
-  }, [fetchOrders]);
+  }, []);
 
-  const handleSearch = (e) => {
-    setSearch(e.target.value);
+  // 🔍 Filtreleme işlemleri
+  const handleFilter = () => {
+    let filtered = [...orders];
+
+    if (search) {
+      const s = search.toLowerCase();
+      filtered = filtered.filter(
+        (o) =>
+          o.customerName?.toLowerCase().includes(s) ||
+          o.productName?.toLowerCase().includes(s) ||
+          o.id?.toLowerCase().includes(s)
+      );
+    }
+
+    if (statusFilter !== "Tümü") {
+      filtered = filtered.filter(
+        (o) => (o.status || "").toLowerCase() === statusFilter.toLowerCase()
+      );
+    }
+
+    if (startDate) {
+      filtered = filtered.filter(
+        (o) => new Date(o.createdDate) >= new Date(startDate)
+      );
+    }
+
+    if (endDate) {
+      filtered = filtered.filter(
+        (o) => new Date(o.createdDate) <= new Date(endDate)
+      );
+    }
+
+    setFilteredOrders(filtered);
   };
 
-  const filteredOrders = orders.filter((o) => {
-    const id = o.id?.toString().toLowerCase() || "";
-    const name = o.customerName?.toLowerCase() || "";
-    const product = o.productName?.toLowerCase() || "";
-    const searchTerm = search.toLowerCase();
-    return id.includes(searchTerm) || name.includes(searchTerm) || product.includes(searchTerm);
-  });
+  useEffect(() => {
+    handleFilter();
+  }, [search, statusFilter, startDate, endDate, orders]);
+
+  // 📥 Excel'e Aktar
+  const exportToExcel = () => {
+    const ws = XLSX.utils.json_to_sheet(filteredOrders);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Trendyol Siparişleri");
+    XLSX.writeFile(wb, "trendyol_siparisler.xlsx");
+  };
+
+  // 📈 Grafik verisi
+  const chartData = useMemo(() => {
+    const monthly = {};
+    filteredOrders.forEach((order) => {
+      const d = new Date(order.createdDate);
+      const key = `${d.getFullYear()}-${d.getMonth() + 1}`;
+      const profit =
+        (parseFloat(order.salePrice || 0) - parseFloat(order.purchasePrice || 0)) || 0;
+      monthly[key] = (monthly[key] || 0) + profit;
+    });
+
+    return Object.entries(monthly).map(([month, profit]) => ({
+      month,
+      profit,
+    }));
+  }, [filteredOrders]);
 
   if (loading) return <p>⏳ Yükleniyor...</p>;
 
   return (
-    <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
-      <h1 style={{ marginBottom: "1rem" }}>🛍 Trendyol Siparişleri</h1>
+    <div style={{ padding: "1rem", fontFamily: "sans-serif" }}>
+      <h1>🛍️ Trendyol Siparişleri</h1>
 
-      <div style={{ marginBottom: "1rem", display: "flex", gap: "8px" }}>
+      <div style={{ marginBottom: "1rem", display: "flex", gap: "8px", flexWrap: "wrap" }}>
         <button onClick={fetchOrders}>🔄 Yenile</button>
         <input
           type="text"
           placeholder="🔍 Sipariş ara..."
           value={search}
-          onChange={handleSearch}
+          onChange={(e) => setSearch(e.target.value)}
         />
-        {error && <span style={{ color: "red" }}>⚠ {error}</span>}
+        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <option>Tümü</option>
+          <option>Yeni</option>
+          <option>Kargoya Verildi</option>
+          <option>İptal</option>
+          <option>İade</option>
+        </select>
+        <button onClick={exportToExcel}>📊 Excel'e Aktar</button>
       </div>
+
+      {error && <p style={{ color: "red" }}>⚠ {error}</p>}
+
+      <p><b>💰 Toplam Kar:</b> {totalProfit.toFixed(2)} ₺</p>
 
       <ul>
         {filteredOrders.map((order, idx) => (
-          <li key={order.id + "-" + idx} style={{ marginBottom: 8 }}>
+          <li key={order.id + "-" + idx}>
             <Link href={`/trendyol/orders/${order.id}`}>
-              {order.customerName} - {order.status} - 🛍 {order.productName} - 📅 {order.date}
+              {order.customerName} — {order.productName} — {order.status} —{" "}
+              {new Date(order.createdDate).toLocaleDateString()}
             </Link>
           </li>
         ))}
       </ul>
+
+      {/* 📈 Satış Grafik Alanı */}
+      <div style={{ marginTop: "2rem" }}>
+        <h3>📈 Aylık Kar Grafiği</h3>
+        <ResponsiveContainer width="100%" height={300}>
+          <LineChart data={chartData}>
+            <Line type="monotone" dataKey="profit" stroke="#8884d8" />
+            <CartesianGrid stroke="#ccc" />
+            <XAxis dataKey="month" />
+            <YAxis />
+            <Tooltip />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
