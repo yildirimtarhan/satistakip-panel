@@ -1,41 +1,41 @@
-// pages/trendyol/orders/index.js
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import * as XLSX from "xlsx";
-import { LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  ResponsiveContainer,
+  Legend,
+} from "recharts";
 
 export default function TrendyolOrdersPage() {
   const [orders, setOrders] = useState([]);
   const [filteredOrders, setFilteredOrders] = useState([]);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("Tümü");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [dateRange, setDateRange] = useState({ start: "", end: "" });
 
-  // 💰 Kar-Zarar hesaplama
-  const totalProfit = useMemo(() => {
-    return filteredOrders.reduce((acc, order) => {
-      const sale = parseFloat(order.salePrice || 0);
-      const cost = parseFloat(order.purchasePrice || 0);
-      return acc + (sale - cost);
-    }, 0);
-  }, [filteredOrders]);
-
-  // 📡 API'den siparişleri çek
-  const fetchOrders = async () => {
+  // 🧠 Siparişleri Trendyol API'den çek
+  const fetchOrders = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
       const res = await fetch("/api/trendyol/orders");
       const data = await res.json();
 
-      if (!res.ok) {
-        throw new Error(data.message || "Trendyol API bağlantı hatası");
-      }
+      if (!res.ok) throw new Error(data.message || "Trendyol API bağlantı hatası");
 
-      let items = data?.content?.orders || data?.orders || data?.data || [];
+      let items =
+        data?.content?.orders ||
+        data?.content ||
+        data?.orders ||
+        data?.data ||
+        [];
 
       if (!Array.isArray(items) || items.length === 0) {
         setError("Trendyol API bağlantı hatası (örnek veri gösteriliyor)");
@@ -43,20 +43,20 @@ export default function TrendyolOrdersPage() {
           {
             id: "TREN12345",
             customerName: "Deneme Müşteri",
-            status: "Yeni",
             productName: "Test Ürünü",
-            salePrice: 400,
-            purchasePrice: 250,
+            status: "Yeni",
             createdDate: new Date().toISOString(),
+            purchasePrice: 100,
+            salePrice: 180,
           },
           {
             id: "TREN54321",
             customerName: "Ahmet Yılmaz",
-            status: "Kargoya Verildi",
             productName: "Bluetooth Kulaklık",
-            salePrice: 600,
-            purchasePrice: 400,
+            status: "Kargoya Verildi",
             createdDate: new Date().toISOString(),
+            purchasePrice: 200,
+            salePrice: 300,
           },
         ];
       }
@@ -64,157 +64,183 @@ export default function TrendyolOrdersPage() {
       setOrders(items);
       setFilteredOrders(items);
     } catch (err) {
-      console.error("Sipariş listesi alınamadı:", err);
+      console.error("Trendyol sipariş listesi alınamadı:", err);
       setError("Trendyol API bağlantı hatası (örnek veri gösteriliyor)");
-      const dummy = [
-        {
-          id: "TREN12345",
-          customerName: "Deneme Müşteri",
-          status: "Yeni",
-          productName: "Test Ürünü",
-          salePrice: 400,
-          purchasePrice: 250,
-          createdDate: new Date().toISOString(),
-        },
-        {
-          id: "TREN54321",
-          customerName: "Ahmet Yılmaz",
-          status: "Kargoya Verildi",
-          productName: "Bluetooth Kulaklık",
-          salePrice: 600,
-          purchasePrice: 400,
-          createdDate: new Date().toISOString(),
-        },
-      ];
-      setOrders(dummy);
-      setFilteredOrders(dummy);
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchOrders();
   }, []);
 
-  // 🔍 Filtreleme işlemleri
-  const handleFilter = () => {
+  useEffect(() => {
+    handleFilter();
+    fetchOrders();
+  }, [fetchOrders]); // ✅ dependency eklendi
+
+  // 🔍 Arama filtreleme
+  const handleSearch = (e) => {
+    const term = e.target.value.toLowerCase();
+    setSearchTerm(term);
+    handleFilter(term, dateRange);
+  };
+
+  // 📅 Tarih filtreleme
+  const handleDateFilter = (field, value) => {
+    const newRange = { ...dateRange, [field]: value };
+    setDateRange(newRange);
+    handleFilter(searchTerm, newRange);
+  };
+
+  // 🔄 Filtreleme fonksiyonu
+  const handleFilter = (term = searchTerm, range = dateRange) => {
     let filtered = [...orders];
 
-    if (search) {
-      const s = search.toLowerCase();
+    if (term) {
       filtered = filtered.filter(
         (o) =>
-          o.customerName?.toLowerCase().includes(s) ||
-          o.productName?.toLowerCase().includes(s) ||
-          o.id?.toLowerCase().includes(s)
+          o.customerName?.toLowerCase().includes(term) ||
+          o.productName?.toLowerCase().includes(term) ||
+          o.id?.toLowerCase().includes(term)
       );
     }
 
-    if (statusFilter !== "Tümü") {
+    if (range.start) {
       filtered = filtered.filter(
-        (o) => (o.status || "").toLowerCase() === statusFilter.toLowerCase()
+        (o) => new Date(o.createdDate) >= new Date(range.start)
       );
     }
 
-    if (startDate) {
+    if (range.end) {
       filtered = filtered.filter(
-        (o) => new Date(o.createdDate) >= new Date(startDate)
-      );
-    }
-
-    if (endDate) {
-      filtered = filtered.filter(
-        (o) => new Date(o.createdDate) <= new Date(endDate)
+        (o) => new Date(o.createdDate) <= new Date(range.end)
       );
     }
 
     setFilteredOrders(filtered);
   };
 
-  useEffect(() => {
-    handleFilter();
-  }, [search, statusFilter, startDate, endDate, orders]);
-
-  // 📥 Excel'e Aktar
+  // 📊 Excel dışa aktarma
   const exportToExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(filteredOrders);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Trendyol Siparişleri");
-    XLSX.writeFile(wb, "trendyol_siparisler.xlsx");
+    const worksheet = XLSX.utils.json_to_sheet(filteredOrders);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Trendyol Siparişler");
+    XLSX.writeFile(workbook, "trendyol_siparisler.xlsx");
   };
 
-  // 📈 Grafik verisi
-  const chartData = useMemo(() => {
-    const monthly = {};
+  // 🟡 Durum gösterimi
+  const displayStatus = (status) => {
+    if (!status) return "—";
+    const s = status.toLowerCase();
+    if (s.includes("yeni")) return "🟡 Yeni";
+    if (s.includes("kargo")) return "🔵 Kargoda";
+    if (s.includes("iptal")) return "🔴 İptal";
+    if (s.includes("iade")) return "🟠 İade";
+    return status;
+  };
+
+  // 💰 Kar hesaplama
+  const calculateProfit = (o) => {
+    if (o.salePrice && o.purchasePrice) {
+      return (o.salePrice - o.purchasePrice).toFixed(2);
+    }
+    return 0;
+  };
+
+  // 📈 Grafik için veri
+  const getChartData = () => {
+    const grouped = {};
+
     filteredOrders.forEach((order) => {
-      const d = new Date(order.createdDate);
-      const key = `${d.getFullYear()}-${d.getMonth() + 1}`;
-      const profit =
-        (parseFloat(order.salePrice || 0) - parseFloat(order.purchasePrice || 0)) || 0;
-      monthly[key] = (monthly[key] || 0) + profit;
+      const date = new Date(order.createdDate);
+      const key = `${date.getFullYear()}-${(date.getMonth() + 1)
+        .toString()
+        .padStart(2, "0")}`;
+      const profit = parseFloat(calculateProfit(order));
+      if (!grouped[key]) grouped[key] = { date: key, ciro: 0, kar: 0 };
+      grouped[key].ciro += order.salePrice || 0;
+      grouped[key].kar += profit;
     });
 
-    return Object.entries(monthly).map(([month, profit]) => ({
-      month,
-      profit,
-    }));
-  }, [filteredOrders]);
+    return Object.values(grouped);
+  };
+
+  const chartData = getChartData();
 
   if (loading) return <p>⏳ Yükleniyor...</p>;
 
   return (
-    <div style={{ padding: "1rem", fontFamily: "sans-serif" }}>
-      <h1>🛍️ Trendyol Siparişleri</h1>
+    <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
+      <h1>🛍 Trendyol Siparişleri</h1>
 
-      <div style={{ marginBottom: "1rem", display: "flex", gap: "8px", flexWrap: "wrap" }}>
-        <button onClick={fetchOrders}>🔄 Yenile</button>
+      <div style={{ display: "flex", gap: "10px", marginBottom: "1rem", flexWrap: "wrap" }}>
         <input
           type="text"
-          placeholder="🔍 Sipariş ara..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          placeholder="🔍 Sipariş / Müşteri / Ürün ara..."
+          value={searchTerm}
+          onChange={handleSearch}
         />
-        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-          <option>Tümü</option>
-          <option>Yeni</option>
-          <option>Kargoya Verildi</option>
-          <option>İptal</option>
-          <option>İade</option>
-        </select>
-        <button onClick={exportToExcel}>📊 Excel'e Aktar</button>
+        <input
+          type="date"
+          value={dateRange.start}
+          onChange={(e) => handleDateFilter("start", e.target.value)}
+        />
+        <input
+          type="date"
+          value={dateRange.end}
+          onChange={(e) => handleDateFilter("end", e.target.value)}
+        />
+        <button onClick={fetchOrders}>🔄 Yenile</button>
+        <button onClick={exportToExcel}>📊 Excel</button>
+        {error && <span style={{ color: "red" }}>⚠ {error}</span>}
       </div>
 
-      {error && <p style={{ color: "red" }}>⚠ {error}</p>}
+      <table
+        border="1"
+        cellPadding="8"
+        style={{ width: "100%", borderCollapse: "collapse", marginBottom: "2rem" }}
+      >
+        <thead>
+          <tr>
+            <th>Sipariş No</th>
+            <th>Müşteri</th>
+            <th>Ürün</th>
+            <th>Durum</th>
+            <th>Tarih</th>
+            <th>Alış ₺</th>
+            <th>Satış ₺</th>
+            <th>Kar / Zarar ₺</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filteredOrders.map((o, i) => (
+            <tr key={i}>
+              <td>
+                <Link href={`/trendyol/orders/${o.id}`}>{o.id}</Link>
+              </td>
+              <td>{o.customerName}</td>
+              <td>{o.productName || "—"}</td>
+              <td>{displayStatus(o.status)}</td>
+              <td>{new Date(o.createdDate).toLocaleString("tr-TR")}</td>
+              <td>{o.purchasePrice ?? "—"}</td>
+              <td>{o.salePrice ?? "—"}</td>
+              <td>{calculateProfit(o)} ₺</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
 
-      <p><b>💰 Toplam Kar:</b> {totalProfit.toFixed(2)} ₺</p>
-
-      <ul>
-        {filteredOrders.map((order, idx) => (
-          <li key={order.id + "-" + idx}>
-            <Link href={`/trendyol/orders/${order.id}`}>
-              {order.customerName} — {order.productName} — {order.status} —{" "}
-              {new Date(order.createdDate).toLocaleDateString()}
-            </Link>
-          </li>
-        ))}
-      </ul>
-
-      {/* 📈 Satış Grafik Alanı */}
-      <div style={{ marginTop: "2rem" }}>
-        <h3>📈 Aylık Kar Grafiği</h3>
-        <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={chartData}>
-            <Line type="monotone" dataKey="profit" stroke="#8884d8" />
-            <CartesianGrid stroke="#ccc" />
-            <XAxis dataKey="month" />
-            <YAxis />
-            <Tooltip />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
+      {/* 📈 Aylık Ciro & Kar Grafiği */}
+      <h2>📈 Aylık Ciro & Kar Grafiği</h2>
+      <ResponsiveContainer width="100%" height={300}>
+        <LineChart data={chartData}>
+          <CartesianGrid stroke="#ccc" />
+          <XAxis dataKey="date" />
+          <YAxis />
+          <Tooltip />
+          <Legend />
+          <Line type="monotone" dataKey="ciro" stroke="#8884d8" name="Ciro ₺" />
+          <Line type="monotone" dataKey="kar" stroke="#82ca9d" name="Kar ₺" />
+        </LineChart>
+      </ResponsiveContainer>
     </div>
   );
 }
