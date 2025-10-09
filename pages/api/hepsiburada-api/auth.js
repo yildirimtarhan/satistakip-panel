@@ -1,55 +1,40 @@
-// /pages/api/hepsiburada-api/auth.js
-
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ message: "Yalnızca POST isteğine izin verilir" });
-  }
-
-  const { username, password, authenticationType } = req.body;
-
-  if (!username || !password || !authenticationType) {
-    return res.status(400).json({ message: "Eksik bilgi gönderildi" });
+  if (req.method !== 'POST') {
+    return res.status(405).json({ message: 'Yalnızca POST isteklerine izin verilir' });
   }
 
   try {
-    // 🔗 Hepsiburada Auth endpoint (canlı)
-    const authUrl = "https://mpop.hepsiburada.com/api/authenticate";
-
-    const hbResponse = await fetch(authUrl, {
-      method: "POST",
+    const response = await fetch('https://mpop.hepsiburada.com/api/authenticate', {
+      method: 'POST',
       headers: {
-        "Content-Type": "application/json",
-        "User-Agent": "Tigdes", // zorunlu user-agent
+        'Content-Type': 'application/json',
+        'User-Agent': 'Tigdes',
       },
       body: JSON.stringify({
-        username,
-        password,
-        authenticationType,
+        username: process.env.HEPSIBURADA_USERNAME,
+        password: process.env.HEPSIBURADA_PASSWORD,
+        authenticationType: 'INTEGRATOR',
       }),
     });
 
-    // 🧩 Yanıtı önce ham metin olarak al
-    const rawText = await hbResponse.text();
+    const text = await response.text();
 
-    // 🔍 JSON'a çevirmeyi dene
-    let data;
     try {
-      data = JSON.parse(rawText);
-    } catch (e) {
-      console.error("Hepsiburada JSON parse hatası:", rawText);
-      return res.status(400).json({
-        message: "Hepsiburada yanıtı JSON formatında değil",
-        raw: rawText,
+      const json = JSON.parse(text);
+      return res.status(response.status).json(json);
+    } catch (parseErr) {
+      // JSON değilse ham metni geri döndürüyoruz
+      return res.status(response.status).json({
+        message: 'Hepsiburada yanıtı JSON formatında değil',
+        raw: text,
       });
     }
 
-    // ✅ Başarılıysa döndür
-    return res.status(hbResponse.status).json(data);
-  } catch (error) {
-    console.error("Auth Hatası:", error);
+  } catch (err) {
+    console.error('Auth isteği sırasında hata:', err);
     return res.status(500).json({
-      message: "Sunucu hatası",
-      error: error.message,
+      message: 'Sunucu hatası',
+      error: err.message,
     });
   }
 }
