@@ -1,50 +1,49 @@
+// pages/api/hepsiburada-api/auth.js
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ message: "Yalnızca POST isteğine izin verilir" });
   }
 
-  const url = "https://mpop.hepsiburada.com/api/authenticate";
-  const { username, password } = {
-    username: process.env.HEPSIBURADA_USERNAME,
-    password: process.env.HEPSIBURADA_PASSWORD,
-  };
-
-  const payload = {
-    username: username,
-    password: password,
-    authenticationType: "INTEGRATOR",
-  };
-
   try {
-    console.log("🔸 Auth isteği gönderiliyor:", payload);
+    const { username, password, authenticationType } = req.body;
 
-    const response = await fetch(url, {
+    if (!username || !password || !authenticationType) {
+      return res.status(400).json({ message: "Eksik bilgi gönderildi" });
+    }
+
+    const authUrl = "https://oms-external.hepsiburada.com/api/authenticate"; // Hepsiburada canlı endpoint
+
+    const response = await fetch(authUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "User-Agent": process.env.HEPSIBURADA_USER_AGENT || "Tigdes",
+        "User-Agent": "tigdes_dev", // Hepsiburada'nın istediği user-agent
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        username,
+        password,
+        authenticationType,
+      }),
     });
 
-    const text = await response.text();
-    console.log("🔸 Hepsiburada ham yanıt:", text);
+    const rawText = await response.text();
+    console.log("Hepsiburada RAW yanıt:", rawText); // Log alıyoruz
 
     try {
-      const data = JSON.parse(text);
-      return res.status(response.status).json(data);
-    } catch (e) {
-      console.error("⚠️ Yanıt JSON formatında değil:", text);
+      const json = JSON.parse(rawText);
+      return res.status(response.status).json(json);
+    } catch (jsonErr) {
       return res.status(response.status).json({
         message: "Hepsiburada yanıtı JSON formatında değil",
-        raw: text,
+        raw: rawText,
       });
     }
-  } catch (error) {
-    console.error("❌ Sunucu hatası:", error);
+  } catch (err) {
+    console.error("Sunucu hatası:", err);
     return res.status(500).json({
       message: "Sunucu hatası",
-      error: error.message,
+      error: err.message,
     });
   }
 }
