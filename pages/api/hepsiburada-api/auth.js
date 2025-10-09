@@ -1,6 +1,6 @@
 export const config = {
   api: {
-    bodyParser: true, // JSON verisini düzgün alabilmek için önemli!
+    bodyParser: true,
   },
 };
 
@@ -12,48 +12,34 @@ export default async function handler(req, res) {
   try {
     const { username, password, authenticationType } = req.body;
 
-    // JSON body düzgün gelmezse burası hatayı gösterecek
-    if (!username || !password || !authenticationType) {
-      console.log("❌ Gelen veri eksik veya boş:", req.body);
-      return res.status(400).json({
-        message: "Eksik veya geçersiz alanlar",
-        received: req.body,
-      });
-    }
+    console.log("📩 Gelen auth isteği:", req.body);
 
-    // 🔸 Hepsiburada canlı auth endpoint
-    const hepsiburadaUrl = "https://mpop.hepsiburada.com/api/authenticate";
-
-    console.log("🟡 Hepsiburada'ya gönderilen veri:", { username, password, authenticationType });
-
-    const response = await fetch(hepsiburadaUrl, {
+    const response = await fetch("https://mpop.hepsiburada.com/api/authenticate", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ username, password, authenticationType }),
+      body: JSON.stringify({
+        username,
+        password,
+        authenticationType,
+      }),
     });
 
-    const text = await response.text(); // önce text alıyoruz
-    console.log("🟢 Hepsiburada raw response:", text);
+    const text = await response.text();
+    console.log("🌐 Hepsiburada ham yanıt:", text);
 
-    let data;
     try {
-      data = JSON.parse(text);
-    } catch (jsonErr) {
-      console.error("❌ JSON parse hatası:", jsonErr);
-      return res.status(500).json({
+      const data = JSON.parse(text);
+      return res.status(response.status).json(data);
+    } catch {
+      return res.status(response.status).json({
         message: "Hepsiburada yanıtı JSON formatında değil",
         raw: text,
       });
     }
-
-    return res.status(response.status).json(data);
   } catch (error) {
-    console.error("🔴 Sunucu hatası:", error);
-    return res.status(500).json({
-      message: "Sunucu hatası",
-      error: error.message,
-    });
+    console.error("❌ Sunucu hatası:", error);
+    return res.status(500).json({ message: "Sunucu hatası", error: error.message });
   }
 }
