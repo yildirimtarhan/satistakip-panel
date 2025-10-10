@@ -1,40 +1,31 @@
+// /pages/api/hepsiburada-api/auth.js
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ message: 'Yalnızca POST isteklerine izin verilir' });
+    return res.status(405).json({ message: 'Method Not Allowed' });
   }
 
   try {
-    const response = await fetch('https://mpop.hepsiburada.com/api/authenticate', {
+    const { username, password } = req.body;
+
+    const response = await fetch('https://oms-external.hepsiburada.com/api/authenticate', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'User-Agent': 'Tigdes',
+        'User-Agent': 'satistakip.online' // Hepsiburada burada User-Agent istiyor
       },
       body: JSON.stringify({
-        username: process.env.HEPSIBURADA_USERNAME,
-        password: process.env.HEPSIBURADA_PASSWORD,
-        authenticationType: 'INTEGRATOR',
-      }),
+        username,
+        password,
+        authenticationType: 'INTEGRATOR' // 🔸 Eksik olan kısım buydu
+      })
     });
 
-    const text = await response.text();
+    const data = await response.json();
+    return res.status(response.status).json(data);
 
-    try {
-      const json = JSON.parse(text);
-      return res.status(response.status).json(json);
-    } catch (parseErr) {
-      // JSON değilse ham metni geri döndürüyoruz
-      return res.status(response.status).json({
-        message: 'Hepsiburada yanıtı JSON formatında değil',
-        raw: text,
-      });
-    }
-
-  } catch (err) {
-    console.error('Auth isteği sırasında hata:', err);
-    return res.status(500).json({
-      message: 'Sunucu hatası',
-      error: err.message,
-    });
+  } catch (error) {
+    console.error('Hepsiburada API hatası:', error);
+    return res.status(500).json({ message: 'Sunucu hatası', error: error.message });
   }
 }
