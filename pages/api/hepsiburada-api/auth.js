@@ -13,28 +13,23 @@ export default async function handler(req, res) {
       }
     }
 
-    const { username, password, authenticationType = 'INTEGRATOR' } = bodyData || {};
+    const { username, password } = bodyData || {};
 
     if (!username || !password) {
       return res.status(400).json({ message: 'Kullanıcı adı ve şifre zorunludur' });
     }
 
-    const payload = {
-      username,
-      password,
-      authenticationType
-    };
+    const basicAuth = Buffer.from(`${username}:${password}`).toString('base64');
 
-    console.log('📤 Gönderilen veri:', payload);
+    console.log('📤 Gönderilen Basic Auth:', basicAuth);
 
-    const response = await fetch('https://mpop.hepsiburada.com/api/authenticate', {
-      method: 'POST',
+    const response = await fetch('https://oms-external.hepsiburada.com/api/authenticate', {
+      method: 'GET', // Hepsiburada Basic Auth endpoint genellikle GET ile çalışır
       headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'User-Agent': 'Tigdes'
-      },
-      body: JSON.stringify(payload)
+        'Authorization': `Basic ${basicAuth}`,
+        'User-Agent': 'Tigdes',
+        'Accept': 'application/json'
+      }
     });
 
     const rawText = await response.text();
