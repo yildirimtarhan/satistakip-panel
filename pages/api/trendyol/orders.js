@@ -1,3 +1,10 @@
+console.log("🔍 TRENDYOL ENV KONTROL", {
+  supplierId: process.env.TRENDYOL_SUPPLIER_ID,
+  apiKey: process.env.TRENDYOL_API_KEY,
+  apiSecret: process.env.TRENDYOL_API_SECRET,
+  baseUrl: process.env.TRENDYOL_API_BASE,
+});
+
 export default async function handler(req, res) {
   try {
     const supplierId = process.env.TRENDYOL_SUPPLIER_ID;
