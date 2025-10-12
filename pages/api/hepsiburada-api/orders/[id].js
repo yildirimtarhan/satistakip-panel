@@ -1,5 +1,3 @@
-// pages/api/hepsiburada-api/[id].js
-
 export default async function handler(req, res) {
   const { id } = req.query;
 
@@ -7,21 +5,13 @@ export default async function handler(req, res) {
     return res.status(405).json({ message: "Sadece GET istekleri desteklenmektedir." });
   }
 
-  const endpoint = process.env.HEPSIBURADA_ORDERS_ENDPOINT;
+  const baseUrl = process.env.HEPSIBURADA_BASE_URL;
   const merchantId = process.env.HEPSIBURADA_MERCHANT_ID;
   const secretKey = process.env.HEPSIBURADA_SECRET_KEY;
   const userAgent = process.env.HEPSIBURADA_USER_AGENT;
 
-  if (!endpoint || !merchantId || !secretKey || !userAgent) {
-    return res.status(500).json({ message: "Hepsiburada API bilgileri eksik" });
-  }
-
   try {
-    // 🔥 Hepsiburada Tekil Sipariş Detay Endpoint
-    const url = `${endpoint}/order/merchant-orders/${id}`;
-
-    const response = await fetch(url, {
-      method: "GET",
+    const response = await fetch(`${baseUrl}/order/merchant-orders/${id}`, {
       headers: {
         Authorization: "Basic " + Buffer.from(`${merchantId}:${secretKey}`).toString("base64"),
         "User-Agent": userAgent,
@@ -31,19 +21,13 @@ export default async function handler(req, res) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("Hepsiburada Tekil Sipariş API Hatası:", response.status, errorText);
-      return res.status(response.status).json({
-        message: "Hepsiburada tekil sipariş API hatası",
-        status: response.status,
-        error: errorText || "Boş yanıt",
-      });
+      return res.status(response.status).json({ message: "Hepsiburada API hatası", error: errorText });
     }
 
     const data = await response.json();
-    return res.status(200).json(data);
-
+    res.status(200).json(data);
   } catch (error) {
-    console.error("Sunucu Hatası [id].js:", error);
-    return res.status(500).json({ message: "Sunucu hatası", error: error.message });
+    console.error("Tekil sipariş getirme hatası:", error);
+    res.status(500).json({ message: "Sunucu hatası", error: error.message });
   }
 }
