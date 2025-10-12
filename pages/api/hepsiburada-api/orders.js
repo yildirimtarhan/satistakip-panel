@@ -1,68 +1,64 @@
-// ✅ Hepsiburada Canlı Ortam Sipariş API — Dinamik Parametreli, Güçlendirilmiş
+// pages/api/hepsiburada-api/orders.js
 
 export default async function handler(req, res) {
-  if (req.method !== "GET") {
-    return res.status(405).json({ message: "Method Not Allowed" });
-  }
-
-  const {
-    startDate = "2025-10-01T00:00:00",
-    endDate = "2025-10-10T23:59:59",
-    page = 0,
-    size = 10
-  } = req.query;
-
-  const endpoint = process.env.HEPSIBURADA_ORDERS_ENDPOINT;
-  const username = process.env.HEPSIBURADA_USERNAME;
-  const password = process.env.HEPSIBURADA_PASSWORD;
-  const userAgent = process.env.HEPSIBURADA_USER_AGENT || "Tigdes";
-
-  if (!endpoint || !username || !password) {
-    return res.status(500).json({ message: "Ortam değişkenleri eksik" });
-  }
-
-  const authHeader =
-    "Basic " + Buffer.from(`${username}:${password}`).toString("base64");
-
-  const url = `${endpoint}/orders?startDate=${startDate}&endDate=${endDate}&page=${page}&size=${size}`;
-
   try {
-    console.log("🔸 İstek URL:", url);
-    console.log("🔸 Authorization Header:", authHeader);
+    const merchantId = process.env.HEPSIBURADA_MERCHANT_ID;
+    const secretKey = process.env.HEPSIBURADA_SECRET_KEY;
+    const userAgent = process.env.HEPSIBURADA_USER_AGENT;
+    const baseUrl = process.env.HEPSIBURADA_BASE_URL;
+
+    if (!merchantId || !secretKey || !userAgent || !baseUrl) {
+      return res.status(500).json({ message: "Hepsiburada API environment değişkenleri eksik." });
+    }
+
+    // 🔍 Tarih aralığı (test için sabit)
+    const beginDate = "2024-10-11 00:00";
+    const endDate = "2024-10-12 00:00";
+    const offset = 0;
+    const limit = 100;
+
+    // ✅ Doğru endpoint yapısı
+    const url = `${baseUrl}/orders/merchantid/${merchantId}?offset=${offset}&limit=${limit}&beginDate=${encodeURIComponent(beginDate)}&endDate=${encodeURIComponent(endDate)}`;
+
+    // ✅ Basic Auth token
+    const authToken = Buffer.from(`${merchantId}:${secretKey}`).toString('base64');
+
+    // 📝 Debug Loglar
+    console.log('📡 Hepsiburada API URL:', url);
+    console.log('📡 Headers:', {
+      'User-Agent': userAgent,
+      'Authorization': `Basic ${authToken}`,
+    });
 
     const response = await fetch(url, {
       method: "GET",
       headers: {
-        Authorization: authHeader,
         "User-Agent": userAgent,
-        Accept: "application/json"
-      }
+        "Authorization": `Basic ${authToken}`,
+        "Accept": "application/json",
+      },
     });
 
-    const text = await response.text();
-    console.log("🔸 Ham API Yanıtı:", text);
-
+    // ❌ Hepsiburada API başarısız dönerse detaylı hata göster
     if (!response.ok) {
+      const text = await response.text();
+      console.error("❌ Hepsiburada API Hatası:", response.status, text);
       return res.status(response.status).json({
-        message: "Hepsiburada API isteği başarısız",
+        message: "Hepsiburada API hatası",
         status: response.status,
-        raw: text
+        error: text,
       });
     }
 
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      return res.status(502).json({
-        message: "Hepsiburada yanıtı JSON formatında değil",
-        raw: text
-      });
-    }
+    // ✅ Başarılı durum
+    const data = await response.json();
+    return res.status(200).json({ success: true, content: data });
 
-    return res.status(200).json(data);
   } catch (error) {
-    console.error("❌ Sunucu Hatası:", error);
-    return res.status(500).json({ message: "Sunucu hatası", error: error.message });
+    console.error("🔥 Hepsiburada API Bağlantı Hatası:", error);
+    return res.status(500).json({
+      message: "Hepsiburada API bağlantı hatası",
+      error: error.message,
+    });
   }
 }

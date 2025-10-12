@@ -12,26 +12,42 @@ export default function OrdersPage() {
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [dateRange, setDateRange] = useState({ start: "", end: "" });
+  const [statusFilter, setStatusFilter] = useState("");
+  const [page, setPage] = useState(1);              // 🆕 Sayfa numarası
+  const [limit] = useState(50);                     // 🆕 Sayfa başına kayıt
+  const [totalCount, setTotalCount] = useState(0);  // 🆕 Toplam kayıt sayısı
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
     setError("");
+
     try {
-      const res = await fetch("/api/hepsiburada-api/orders?status=New");
+      const queryParams = new URLSearchParams();
+      if (dateRange.start && dateRange.end) {
+        queryParams.append("beginDate", dateRange.start);
+        queryParams.append("endDate", dateRange.end);
+      }
+      if (statusFilter) {
+        queryParams.append("status", statusFilter);
+      }
+      queryParams.append("page", page);
+      queryParams.append("limit", limit);
+
+      const res = await fetch(`/api/hepsiburada-api/orders?${queryParams.toString()}`);
       const data = await res.json();
 
       if (!res.ok) throw new Error(data.message || "Hepsiburada API bağlantı hatası");
 
       let items =
+        data?.content?.items ||
         data?.content?.orders ||
         data?.content ||
         data?.orders ||
         data?.data ||
         [];
 
-      // ✅ Eğer API boş dönerse dummy veri göster
       if (!Array.isArray(items) || items.length === 0) {
-        setError("Hepsiburada API bağlantı hatası (örnek veri gösteriliyor)");
+        setError("Hepsiburada API boş döndü (örnek veri gösteriliyor)");
         items = [
           {
             id: "HB12345",
@@ -54,6 +70,7 @@ export default function OrdersPage() {
         ];
       }
 
+      setTotalCount(data?.content?.totalCount || 0);
       setOrders(items);
       setFilteredOrders(items);
     } catch (err) {
@@ -62,7 +79,7 @@ export default function OrdersPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [dateRange, statusFilter, page, limit]);
 
   useEffect(() => {
     fetchOrders();
@@ -82,7 +99,6 @@ export default function OrdersPage() {
 
   const filterOrders = (term, range) => {
     let filtered = [...orders];
-
     if (term) {
       filtered = filtered.filter(
         (o) =>
@@ -91,19 +107,16 @@ export default function OrdersPage() {
           o.id?.toLowerCase().includes(term)
       );
     }
-
     if (range.start) {
       filtered = filtered.filter(
         (o) => new Date(o.createdDate) >= new Date(range.start)
       );
     }
-
     if (range.end) {
       filtered = filtered.filter(
         (o) => new Date(o.createdDate) <= new Date(range.end)
       );
     }
-
     setFilteredOrders(filtered);
   };
 
@@ -131,10 +144,8 @@ export default function OrdersPage() {
     return 0;
   };
 
-  // 📊 Grafik için ciro & kar verileri
   const getChartData = () => {
     const grouped = {};
-
     filteredOrders.forEach((order) => {
       const date = new Date(order.createdDate);
       const key = `${date.getFullYear()}-${(date.getMonth() + 1)
@@ -145,11 +156,11 @@ export default function OrdersPage() {
       grouped[key].ciro += order.salePrice || 0;
       grouped[key].kar += profit;
     });
-
     return Object.values(grouped);
   };
 
   const chartData = getChartData();
+  const totalPages = Math.ceil(totalCount / limit);
 
   if (loading) return <p>⏳ Yükleniyor...</p>;
 
@@ -174,11 +185,19 @@ export default function OrdersPage() {
           value={dateRange.end}
           onChange={(e) => handleDateFilter("end", e.target.value)}
         />
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <option value="">Tüm Durumlar</option>
+          <option value="New">Yeni</option>
+          <option value="Shipped">Kargoya Verildi</option>
+          <option value="Cancelled">İptal</option>
+          <option value="Returned">İade</option>
+        </select>
         <button onClick={fetchOrders}>🔄 Yenile</button>
         <button onClick={exportToExcel}>📊 Excel</button>
         {error && <span style={{ color: "red" }}>⚠ {error}</span>}
       </div>
 
+      {/* 📊 Tablon */}
       <table border="1" cellPadding="8" style={{ width: "100%", borderCollapse: "collapse", marginBottom: "2rem" }}>
         <thead>
           <tr>
@@ -210,7 +229,14 @@ export default function OrdersPage() {
         </tbody>
       </table>
 
-      {/* 📈 Aylık Ciro & Kar Grafiği */}
+      {/* ⏩ Sayfalama Kontrolleri */}
+      <div style={{ display: "flex", justifyContent: "center", gap: "1rem" }}>
+        <button disabled={page === 1} onClick={() => setPage(page - 1)}>⬅ Önceki</button>
+        <span>Sayfa {page} / {totalPages || 1}</span>
+        <button disabled={page === totalPages} onClick={() => setPage(page + 1)}>Sonraki ➡</button>
+      </div>
+
+      {/* 📈 Grafik */}
       <h2>📈 Aylık Ciro & Kar Grafiği</h2>
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={chartData}>

@@ -1,42 +1,55 @@
-console.log("🔍 TRENDYOL ENV KONTROL", {
-  supplierId: process.env.TRENDYOL_SUPPLIER_ID,
-  apiKey: process.env.TRENDYOL_API_KEY,
-  apiSecret: process.env.TRENDYOL_API_SECRET,
-  baseUrl: process.env.TRENDYOL_API_BASE,
-});
+// pages/api/hepsiburada-api/orders/index.js
 
 export default async function handler(req, res) {
   try {
-    const supplierId = process.env.TRENDYOL_SUPPLIER_ID;
-    const apiKey = process.env.TRENDYOL_API_KEY;
-    const apiSecret = process.env.TRENDYOL_API_SECRET;
-    const baseUrl = process.env.TRENDYOL_API_BASE;
+    const merchantId = process.env.HEPSIBURADA_MERCHANT_ID;
+    const secretKey = process.env.HEPSIBURADA_SECRET_KEY;
+    const userAgent = process.env.HEPSIBURADA_USER_AGENT;
+    const baseUrl = process.env.HEPSIBURADA_BASE_URL;
 
-    if (!supplierId || !apiKey || !apiSecret || !baseUrl) {
-      return res.status(500).json({ message: "Trendyol API environment değişkenleri eksik." });
+    if (!merchantId || !secretKey || !userAgent || !baseUrl) {
+      return res.status(500).json({ message: "Hepsiburada API environment değişkenleri eksik." });
     }
 
-    const token = Buffer.from(`${apiKey}:${apiSecret}`).toString("base64");
-    const url = `${baseUrl}/stagesapigw/suppliers/${supplierId}/orders?startDate=1597759208000`;
+    // Test tarih aralığı (isteğe göre dinamik yapılabilir)
+    const beginDate = "2024-10-11 00:00";
+    const endDate = "2024-10-12 00:00";
+    const offset = 0;
+    const limit = 100;
+
+    // ✅ Doğru endpoint yapısı
+    const url = `${baseUrl}/orders/merchantid/${merchantId}?offset=${offset}&limit=${limit}&beginDate=${encodeURIComponent(beginDate)}&endDate=${encodeURIComponent(endDate)}`;
+
+    const authToken = Buffer.from(`${merchantId}:${secretKey}`).toString('base64');
 
     const response = await fetch(url, {
       method: "GET",
       headers: {
-        "Authorization": `Basic ${token}`,
-        "Content-Type": "application/json",
+        "User-Agent": userAgent,
+        "Authorization": `Basic ${authToken}`,
+        "Accept": "application/json",
       },
     });
 
-    const text = await response.text();
-    try {
-      const data = JSON.parse(text);
-      return res.status(response.status).json(data);
-    } catch (parseError) {
-      console.error("Trendyol JSON parse hatası:", text);
-      return res.status(500).json({ message: "Trendyol JSON parse hatası", rawResponse: text });
+    // Hepsiburada bazen boş response veya hata dönerse kontrol edelim
+    if (!response.ok) {
+      const text = await response.text();
+      console.error("Hepsiburada API Hatası:", response.status, text);
+      return res.status(response.status).json({
+        message: "Hepsiburada API hatası",
+        status: response.status,
+        error: text,
+      });
     }
+
+    const data = await response.json();
+    return res.status(200).json({ success: true, content: data });
+
   } catch (error) {
-    console.error("Trendyol API hata:", error);
-    return res.status(500).json({ message: "Sunucu hatası", error: error.message });
+    console.error("Hepsiburada API Bağlantı Hatası:", error);
+    return res.status(500).json({
+      message: "Hepsiburada API bağlantı hatası",
+      error: error.message,
+    });
   }
 }
