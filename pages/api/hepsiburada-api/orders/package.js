@@ -7,7 +7,6 @@ export default async function handler(req, res) {
 
   const { orderNumber, cargoCompany, shippingAddress, lines } = req.body;
 
-  // 🧱 Environment değişkenlerini çekiyoruz
   const baseUrl = process.env.HEPSIBURADA_BASE_URL;
   const merchantId = process.env.HEPSIBURADA_MERCHANT_ID;
   const secretKey = process.env.HEPSIBURADA_SECRET_KEY;
@@ -18,12 +17,12 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 📌 Paket oluşturma endpoint'i
-    const url = `${baseUrl}/packages/create`;
+    // ✅ Doğru endpoint
+    const url = `${baseUrl}/packages/merchantid/${merchantId}/create`;
 
     const payload = {
       orderNumber,
-      cargoCompany: cargoCompany || "Yurtiçi Kargo", // Default taşıyıcı
+      cargoCompany: cargoCompany || "Yurtiçi Kargo",
       shippingAddress: shippingAddress || {
         city: "İstanbul",
         district: "Kadıköy",
@@ -41,8 +40,7 @@ export default async function handler(req, res) {
     const response = await fetch(url, {
       method: "POST",
       headers: {
-        Authorization:
-          "Basic " + Buffer.from(`${merchantId}:${secretKey}`).toString("base64"),
+        Authorization: "Basic " + Buffer.from(`${merchantId}:${secretKey}`).toString("base64"),
         "User-Agent": userAgent,
         "Content-Type": "application/json",
       },
