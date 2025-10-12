@@ -3,7 +3,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ message: "Sadece POST istekleri desteklenmektedir." });
   }
 
-  const { orderNumber, cargoCompany } = req.body;
+  const { orderNumber, cargoCompany, shippingAddress, lines } = req.body;
 
   const baseUrl = process.env.HEPSIBURADA_BASE_URL;
   const merchantId = process.env.HEPSIBURADA_MERCHANT_ID;
@@ -11,29 +11,40 @@ export default async function handler(req, res) {
   const userAgent = process.env.HEPSIBURADA_USER_AGENT;
 
   try {
-    const response = await fetch(`${baseUrl}/packages/create`, {
+    const url = `${baseUrl}/packages/create`;
+
+    const payload = {
+      orderNumber,
+      cargoCompany: cargoCompany || "Yurtiçi Kargo",
+      shippingAddress: shippingAddress || {
+        city: "İstanbul",
+        district: "Kadıköy",
+        address: "TEST ADRES",
+      },
+      lines: lines || [],
+    };
+
+    const response = await fetch(url, {
       method: "POST",
       headers: {
-        Authorization: "Basic " + Buffer.from(`${merchantId}:${secretKey}`).toString("base64"),
         "User-Agent": userAgent,
+        "Authorization": "Basic " + Buffer.from(`${merchantId}:${secretKey}`).toString("base64"),
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        orderNumber,
-        cargoCompany: cargoCompany || "Yurtiçi Kargo",
-      }),
+      body: JSON.stringify(payload),
     });
 
     const text = await response.text();
-    const data = (() => { try { return JSON.parse(text) } catch { return text } })();
+    let data;
+    try { data = JSON.parse(text); } catch { data = text; }
 
     if (!response.ok) {
-      return res.status(response.status).json({ message: "Hepsiburada paket oluşturma başarısız", error: data });
+      return res.status(response.status).json({ message: "Paket oluşturma hatası", error: data });
     }
 
-    res.status(200).json({ success: true, data });
+    return res.status(200).json(data);
   } catch (error) {
-    console.error("Paket oluşturma hatası:", error);
-    res.status(500).json({ message: "Sunucu hatası", error: error.message });
+    console.error("Paket API hatası:", error);
+    return res.status(500).json({ message: "Sunucu hatası", error: error.message });
   }
 }

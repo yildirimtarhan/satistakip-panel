@@ -11,23 +11,26 @@ export default async function handler(req, res) {
   const userAgent = process.env.HEPSIBURADA_USER_AGENT;
 
   try {
-    const response = await fetch(`${baseUrl}/order/merchant-orders/${id}`, {
+    const url = `${baseUrl}/order/merchant-orders/${id}`;
+
+    const response = await fetch(url, {
       headers: {
-        Authorization: "Basic " + Buffer.from(`${merchantId}:${secretKey}`).toString("base64"),
         "User-Agent": userAgent,
-        "Content-Type": "application/json",
+        "Authorization": "Basic " + Buffer.from(`${merchantId}:${secretKey}`).toString("base64"),
       },
     });
 
+    const text = await response.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = text; }
+
     if (!response.ok) {
-      const errorText = await response.text();
-      return res.status(response.status).json({ message: "Hepsiburada API hatası", error: errorText });
+      return res.status(response.status).json({ message: "Tekil sipariş getirilemedi", error: data });
     }
 
-    const data = await response.json();
-    res.status(200).json(data);
+    return res.status(200).json(data);
   } catch (error) {
-    console.error("Tekil sipariş getirme hatası:", error);
-    res.status(500).json({ message: "Sunucu hatası", error: error.message });
+    console.error("Tekil sipariş API hatası:", error);
+    return res.status(500).json({ message: "Sunucu hatası", error: error.message });
   }
 }
