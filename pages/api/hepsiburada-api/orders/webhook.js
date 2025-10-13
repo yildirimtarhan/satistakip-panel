@@ -1,6 +1,6 @@
-// ✅ Hepsiburada Webhook Endpoint
-// Bu dosya Hepsiburada tarafından gönderilen sipariş/paket eventlerini yakalar.
-// Mevcut sistemi bozmadan event loglama + genişletilebilir yapı eklenmiştir.
+// pages/api/hepsiburada-api/orders/webhook.js
+import fs from "fs";
+import path from "path";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -8,44 +8,24 @@ export default async function handler(req, res) {
   }
 
   try {
-    const event = req.body;
+    const body = req.body;
+    console.log("📩 [HB Webhook] Yeni event alındı:", JSON.stringify(body, null, 2));
 
-    if (!event || !event.eventType) {
-      return res.status(400).json({ message: "Geçersiz webhook payload" });
+    // Log dosyasına da yazalım
+    const logDir = path.join(process.cwd(), "logs");
+    const logFile = path.join(logDir, "webhook.log");
+
+    // Klasör yoksa oluştur
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir);
     }
 
-    console.log("📩 [HB Webhook] Yeni event alındı:", JSON.stringify(event, null, 2));
+    const logEntry = `[${new Date().toISOString()}] ${JSON.stringify(body)}\n`;
+    fs.appendFileSync(logFile, logEntry, "utf8");
 
-    // 📌 Hepsiburada'nın gönderdiği event tiplerini burada yakalıyoruz
-    switch (event.eventType) {
-      case "OrderCreated":
-        console.log(`🆕 Sipariş oluşturuldu: ${event.orderNumber || "(numara yok)"}`);
-        // 👉 Burada DB'ye kaydetme, bildirim gönderme vb. yapılabilir.
-        break;
-
-      case "PackageCreated":
-        console.log(`📦 Paket oluşturuldu: ${event.packageNumber || "(paket yok)"}`);
-        break;
-
-      case "PackageUnpacked":
-        console.log(`📭 Paket unpack edildi: ${event.packageNumber || "(paket yok)"}`);
-        break;
-
-      case "AddressChanged":
-        console.log(`📍 Adres değiştirildi: ${event.orderNumber || "(numara yok)"}`);
-        break;
-
-      default:
-        console.log(`⚠️ Tanımsız event tipi: ${event.eventType}`);
-    }
-
-    // Hepsiburada webhookları 200 OK bekler, aksi halde tekrar yollar
     return res.status(200).json({ success: true });
   } catch (error) {
-    console.error("❌ Webhook işlenirken hata:", error);
-    return res.status(500).json({
-      message: "Sunucu hatası",
-      error: error.message,
-    });
+    console.error("❌ Webhook İşleme Hatası:", error);
+    return res.status(500).json({ message: "Webhook işleme hatası", error: error.message });
   }
 }

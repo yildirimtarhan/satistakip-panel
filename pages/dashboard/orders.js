@@ -1,90 +1,57 @@
 import { useEffect, useState } from "react";
-import { useRouter } from "next/router";
-import { jwtDecode } from "jwt-decode"; // ✅ Doğru import
 
-export default function DashboardOrdersPage() {
+export default function OrdersPage() {
   const [orders, setOrders] = useState([]);
-  const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const router = useRouter();
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const fetchOrders = async () => {
-      const token = localStorage.getItem("token");
-
-      // Token yoksa login sayfasına yönlendir
-      if (!token) {
-        router.push("/auth/login");
-        return;
-      }
-
-      // Token geçerli mi kontrol et
       try {
-        jwtDecode(token);
-      } catch (err) {
-        console.error("Token geçersiz:", err);
-        localStorage.removeItem("token");
-        router.push("/auth/login");
-        return;
-      }
+        const beginDate = "2025-10-01 00:00";
+        const endDate = "2025-10-13 23:59";
+        const url = `/api/hepsiburada-api/orders?offset=0&limit=100&beginDate=${encodeURIComponent(beginDate)}&endDate=${encodeURIComponent(endDate)}`;
 
-      try {
-        const res = await fetch("/api/hepsiburada/orders", {
-          headers: {
-            "Authorization": `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        });
+        const res = await fetch(url);
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
 
         const data = await res.json();
+        console.log("📦 Gelen sipariş verisi:", data);
 
-        if (!res.ok) {
-          setError(data.error || data.message || "Siparişleri çekerken bir hata oluştu");
+        if (data.items || (data.content && data.content.items)) {
+          setOrders(data.items || data.content.items);
         } else {
-          setOrders(data.content || []);
+          setOrders([]);
         }
       } catch (err) {
-        console.error("Sipariş istek hatası:", err);
-        setError("Sunucuya ulaşılamıyor");
+        console.error("❌ Siparişleri çekerken hata:", err);
+        setError(err.message);
       } finally {
         setLoading(false);
       }
     };
 
     fetchOrders();
-  }, [router]);
+  }, []);
 
-  if (loading) {
-    return <div className="p-4">Yükleniyor...</div>;
-  }
-
-  if (error) {
-    return <div className="p-4 text-red-500 font-bold">⚠ {error}</div>;
-  }
+  if (loading) return <div>Yükleniyor...</div>;
+  if (error) return <div>Hata: {error}</div>;
+  if (orders.length === 0) return <div>📭 Şu anda sipariş bulunmamaktadır.</div>;
 
   return (
-    <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4">📦 Hepsiburada Siparişleri</h1>
-
-      {orders.length === 0 ? (
-        <p>Hiç yeni sipariş bulunamadı.</p>
-      ) : (
-        <ul className="divide-y divide-gray-200">
-          {orders.map((order) => (
-            <li
-              key={order.id}
-              className="p-3 hover:bg-gray-100 cursor-pointer"
-              onClick={() => router.push(`/orders/${order.id}`)}
-            >
-              <div className="font-semibold">
-                {order.customerName || order.buyerName || "Müşteri"}
-              </div>
-              <div className="text-sm text-gray-600">Sipariş No: {order.id}</div>
-              <div className="text-sm">{order.status}</div>
-            </li>
-          ))}
-        </ul>
-      )}
+    <div style={{ padding: "20px" }}>
+      <h1>Hepsiburada Siparişleri</h1>
+      <ul>
+        {orders.map((order, index) => (
+          <li key={index} style={{ marginBottom: "10px" }}>
+            <strong>Sipariş No:</strong> {order.orderNumber || order.id} <br />
+            <strong>Tarih:</strong> {order.orderDate || "-"} <br />
+            <strong>Durum:</strong> {order.status || "-"}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
