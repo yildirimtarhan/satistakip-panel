@@ -1,6 +1,5 @@
 // pages/api/hepsiburada-api/orders/webhook.js
-import fs from "fs";
-import path from "path";
+import clientPromise from "@/lib/mongodb";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -8,24 +7,28 @@ export default async function handler(req, res) {
   }
 
   try {
-    const body = req.body;
-    console.log("📩 [HB Webhook] Yeni event alındı:", JSON.stringify(body, null, 2));
+    const event = req.body;
+    console.log("📩 [HB Webhook] Yeni event alındı:", event);
 
-    // Log dosyasına da yazalım
-    const logDir = path.join(process.cwd(), "logs");
-    const logFile = path.join(logDir, "webhook.log");
+    // 📌 MongoDB bağlantısı
+    const client = await clientPromise;
+    const db = client.db("satistakip");
+    const collection = db.collection("webhookEvents");
 
-    // Klasör yoksa oluştur
-    if (!fs.existsSync(logDir)) {
-      fs.mkdirSync(logDir);
+    // 📌 Event'i veritabanına kaydet
+    await collection.insertOne({
+      ...event,
+      receivedAt: new Date(),
+    });
+
+    // 📌 Event tipine göre özel işlem (isteğe bağlı)
+    if (event.eventType === "OrderCreated") {
+      console.log(`🆕 Yeni sipariş oluşturuldu: ${event.orderNumber}`);
     }
-
-    const logEntry = `[${new Date().toISOString()}] ${JSON.stringify(body)}\n`;
-    fs.appendFileSync(logFile, logEntry, "utf8");
 
     return res.status(200).json({ success: true });
   } catch (error) {
-    console.error("❌ Webhook İşleme Hatası:", error);
-    return res.status(500).json({ message: "Webhook işleme hatası", error: error.message });
+    console.error("🔥 Webhook işleme hatası:", error);
+    return res.status(500).json({ success: false, error: error.message });
   }
 }

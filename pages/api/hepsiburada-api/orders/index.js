@@ -1,21 +1,25 @@
 // pages/api/hepsiburada-api/orders/index.js
 
 export default async function handler(req, res) {
-  const { beginDate, endDate, offset = 0, limit = 100 } = req.query;
+  if (req.method !== "GET") {
+    return res.status(405).json({ message: "Sadece GET istekleri desteklenmektedir." });
+  }
 
-  const baseUrl = process.env.HEPSIBURADA_BASE_URL;
+  const { beginDate, endDate } = req.query;
   const merchantId = process.env.HEPSIBURADA_MERCHANT_ID;
   const auth = process.env.HEPSIBURADA_AUTH;
   const userAgent = process.env.HEPSIBURADA_USER_AGENT;
+  const baseUrl = process.env.HEPSIBURADA_BASE_URL || "https://oms-external.hepsiburada.com";
 
-  if (!baseUrl || !merchantId || !auth || !userAgent) {
+  if (!merchantId || !auth || !userAgent) {
     return res.status(500).json({ message: "Hepsiburada API environment değişkenleri eksik." });
   }
 
   try {
-    // 📡 Hepsiburada Sipariş Listesi Endpoint
-    const url = `${baseUrl}/orders/merchantid/${merchantId}?offset=${offset}&limit=${limit}&beginDate=${beginDate}&endDate=${endDate}`;
-    console.log("📡 HB Order List URL:", url);
+    // ✅ Otomatik paketleme açık olduğu için 'packages' endpoint'ini kullanıyoruz
+    const url = `${baseUrl}/packages/merchantid/${merchantId}?offset=0&limit=100&startDate=${encodeURIComponent(beginDate)}&endDate=${encodeURIComponent(endDate)}`;
+
+    console.log("📡 HB Packages URL:", url);
 
     const response = await fetch(url, {
       method: "GET",
@@ -35,12 +39,8 @@ export default async function handler(req, res) {
     }
 
     if (!response.ok) {
-      console.error("❌ Hepsiburada Order List API Hatası:", response.status, data);
-      return res.status(response.status).json({
-        message: "Sipariş listesi çekilemedi",
-        status: response.status,
-        error: data,
-      });
+      console.error("❌ Hepsiburada Packages API Hatası:", response.status, data);
+      return res.status(response.status).json({ message: "Paket listesi çekilemedi", status: response.status, error: data });
     }
 
     return res.status(200).json(data);
