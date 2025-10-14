@@ -1,96 +1,54 @@
-// pages/dashboard/api-settings.js
-import { useState } from "react";
+// pages/dashboard/orders.js
+import { useEffect, useState } from "react";
 
-export default function ApiSettings() {
-  const [form, setForm] = useState({
-    hepsiburadaMerchantId: "",
-    hepsiburadaSecretKey: "",
-    hepsiburadaUserAgent: "",
-    trendyolSupplierId: "",
-    trendyolApiKey: "",
-    trendyolApiSecret: "",
-  });
+export default function OrdersPage() {
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const [message, setMessage] = useState("");
-
-  const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setMessage("");
-
-    try {
-      const res = await fetch("/api/settings/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message);
-
-      setMessage("API bilgileri başarıyla kaydedildi ✅");
-    } catch (err) {
-      setMessage("Hata: " + err.message);
+  useEffect(() => {
+    async function fetchOrders() {
+      try {
+        const res = await fetch("/api/hepsiburada-api/orders/list");
+        const data = await res.json();
+        setOrders(data.orders || []);
+      } catch (err) {
+        console.error("Siparişler alınamadı:", err);
+      } finally {
+        setLoading(false);
+      }
     }
-  };
+    fetchOrders();
+  }, []);
+
+  if (loading) return <p className="p-4">Yükleniyor...</p>;
 
   return (
-    <div style={{ padding: "2rem" }}>
-      <h1>API Ayarları</h1>
-      <form onSubmit={handleSubmit}>
-        <h3>Hepsiburada</h3>
-        <input
-          type="text"
-          name="hepsiburadaMerchantId"
-          placeholder="Merchant ID"
-          value={form.hepsiburadaMerchantId}
-          onChange={handleChange}
-        />
-        <input
-          type="text"
-          name="hepsiburadaSecretKey"
-          placeholder="Secret Key"
-          value={form.hepsiburadaSecretKey}
-          onChange={handleChange}
-        />
-        <input
-          type="text"
-          name="hepsiburadaUserAgent"
-          placeholder="User-Agent"
-          value={form.hepsiburadaUserAgent}
-          onChange={handleChange}
-        />
-
-        <h3>Trendyol</h3>
-        <input
-          type="text"
-          name="trendyolSupplierId"
-          placeholder="Supplier ID"
-          value={form.trendyolSupplierId}
-          onChange={handleChange}
-        />
-        <input
-          type="text"
-          name="trendyolApiKey"
-          placeholder="API Key"
-          value={form.trendyolApiKey}
-          onChange={handleChange}
-        />
-        <input
-          type="text"
-          name="trendyolApiSecret"
-          placeholder="API Secret"
-          value={form.trendyolApiSecret}
-          onChange={handleChange}
-        />
-
-        <button type="submit">Kaydet</button>
-      </form>
-
-      {message && <p>{message}</p>}
+    <div className="p-6">
+      <h1 className="text-2xl font-bold mb-4">📦 Hepsiburada Siparişleri</h1>
+      {orders.length === 0 ? (
+        <p>Henüz sipariş bulunmuyor.</p>
+      ) : (
+        <table className="min-w-full border-collapse border border-gray-300">
+          <thead>
+            <tr className="bg-gray-100">
+              <th className="border p-2">Sipariş No</th>
+              <th className="border p-2">Durum</th>
+              <th className="border p-2">Tarih</th>
+            </tr>
+          </thead>
+          <tbody>
+            {orders.map((order) => (
+              <tr key={order._id}>
+                <td className="border p-2">{order.orderNumber}</td>
+                <td className="border p-2">{order.data?.status || "—"}</td>
+                <td className="border p-2">
+                  {new Date(order.fetchedAt).toLocaleString("tr-TR")}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

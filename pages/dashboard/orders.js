@@ -1,3 +1,4 @@
+// pages/dashboard/orders.js
 import { useEffect, useState } from "react";
 
 export default function OrdersPage() {
@@ -8,9 +9,13 @@ export default function OrdersPage() {
   useEffect(() => {
     const fetchOrders = async () => {
       try {
-        const beginDate = "2025-10-01 00:00";
-        const endDate = "2025-10-13 23:59";
-        const url = `/api/hepsiburada-api/orders?offset=0&limit=100&beginDate=${encodeURIComponent(beginDate)}&endDate=${encodeURIComponent(endDate)}`;
+        // 📝 Tarihler ISO 8601 formatında olmalı
+        const beginDate = "2025-10-01T00:00:00+03:00";
+        const endDate = "2025-10-13T23:59:59+03:00";
+
+        const url = `/api/hepsiburada-api/orders?offset=0&limit=100&beginDate=${encodeURIComponent(
+          beginDate
+        )}&endDate=${encodeURIComponent(endDate)}`;
 
         const res = await fetch(url);
         if (!res.ok) {
@@ -36,16 +41,24 @@ export default function OrdersPage() {
     fetchOrders();
   }, []);
 
-  if (loading) return <div>Yükleniyor...</div>;
-  if (error) return <div>Hata: {error}</div>;
+  if (loading) return <div>⏳ Yükleniyor...</div>;
+  if (error) return <div>❌ Hata: {error}</div>;
   if (orders.length === 0) return <div>📭 Şu anda sipariş bulunmamaktadır.</div>;
 
   return (
     <div style={{ padding: "20px" }}>
-      <h1>Hepsiburada Siparişleri</h1>
+      <h1 style={{ fontSize: "24px", marginBottom: "16px" }}>📦 Hepsiburada Siparişleri</h1>
       <ul>
         {orders.map((order, index) => (
-          <li key={index} style={{ marginBottom: "10px" }}>
+          <li
+            key={index}
+            style={{
+              marginBottom: "10px",
+              border: "1px solid #ccc",
+              padding: "10px",
+              borderRadius: "8px",
+            }}
+          >
             <strong>Sipariş No:</strong> {order.orderNumber || order.id} <br />
             <strong>Tarih:</strong> {order.orderDate || "-"} <br />
             <strong>Durum:</strong> {order.status || "-"}
