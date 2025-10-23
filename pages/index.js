@@ -1,7 +1,53 @@
+import { useEffect, useState } from "react";
+import { useRouter } from "next/router";
 import Head from "next/head";
 import Link from "next/link";
+import jwtDecode from "jwt-decode";
 
 export default function Home() {
+  const router = useRouter();
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        setCheckingAuth(false);
+        return;
+      }
+
+      const decoded = jwtDecode(token);
+      const now = Date.now() / 1000;
+
+      if (decoded.exp && decoded.exp > now) {
+        router.push("/dashboard/cari");
+      } else {
+        localStorage.removeItem("token");
+        setCheckingAuth(false);
+      }
+    } catch (err) {
+      console.error("JWT doğrulama hatası:", err);
+      setCheckingAuth(false);
+    }
+  }, [router]);
+
+  if (checkingAuth) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "100vh",
+          fontSize: "1.5rem",
+          color: "#555",
+        }}
+      >
+        🔍 Oturum kontrol ediliyor...
+      </div>
+    );
+  }
+
   return (
     <>
       <Head>
@@ -11,11 +57,22 @@ export default function Home() {
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
-      <div style={{ fontFamily: "sans-serif", padding: "2rem", textAlign: "center" }}>
+      <div
+        style={{
+          fontFamily: "sans-serif",
+          padding: "2rem",
+          textAlign: "center",
+          minHeight: "100vh",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "center",
+        }}
+      >
         <h1 style={{ fontSize: "2rem", marginBottom: "1rem" }}>
-          Satış Takip Paneline Hoş Geldiniz
+          📊 Satış Takip Paneline Hoş Geldiniz
         </h1>
-        <p>
+
+        <p style={{ fontSize: "1.1rem", color: "#444" }}>
           Sisteme giriş yapmak için{" "}
           <Link href="/auth/login">
             <strong style={{ color: "#0070f3", cursor: "pointer" }}>
@@ -25,7 +82,7 @@ export default function Home() {
           sayfasını kullanın.
         </p>
 
-        <footer style={{ marginTop: "3rem" }}>
+        <footer style={{ marginTop: "3rem", color: "#666" }}>
           <p>© {new Date().getFullYear()} Satış Takip</p>
         </footer>
       </div>
