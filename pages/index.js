@@ -20,7 +20,7 @@ export default function Home() {
       const now = Date.now() / 1000;
 
       if (decoded.exp && decoded.exp > now) {
-        router.push("/dashboard/cari");
+        router.push("/dashboard");
       } else {
         localStorage.removeItem("token");
         setCheckingAuth(false);
@@ -81,6 +81,38 @@ export default function Home() {
           </Link>{" "}
           sayfasını kullanın.
         </p>
+
+        <div style={{ marginTop: "2rem" }}>
+          <button
+            onClick={() => router.push("/dashboard")}
+            style={{
+              margin: "0.5rem",
+              backgroundColor: "#0070f3",
+              color: "white",
+              border: "none",
+              padding: "10px 20px",
+              borderRadius: "8px",
+              cursor: "pointer",
+            }}
+          >
+            🏠 Panele Git
+          </button>
+
+          <button
+            onClick={() => router.push("/dashboard/cari")}
+            style={{
+              margin: "0.5rem",
+              backgroundColor: "#facc15",
+              color: "#222",
+              border: "1px solid #eab308",
+              padding: "10px 20px",
+              borderRadius: "8px",
+              cursor: "pointer",
+            }}
+          >
+            💰 Cari & Alış–Satış
+          </button>
+        </div>
 
         <footer style={{ marginTop: "3rem", color: "#666" }}>
           <p>© {new Date().getFullYear()} Satış Takip</p>
