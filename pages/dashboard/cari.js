@@ -1,7 +1,7 @@
 // 📁 /pages/dashboard/cari.js
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
-import jwtDecode from "jwt-decode";
+import { jwtDecode } from "jwt-decode";
 import DashboardNavbar from "@/components/DashboardNavbar";
 
 export default function CariPage() {
