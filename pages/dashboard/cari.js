@@ -1,7 +1,38 @@
 import { useState, useEffect } from "react";
 
+// 🔄 Token otomatik yenileme fonksiyonu
+async function refreshTokenIfNeeded() {
+  const token = localStorage.getItem("token");
+  if (!token) return null;
+
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    const exp = payload.exp * 1000; // UNIX timestamp → ms
+    const now = Date.now();
+
+    // Token'ın süresi bitmeye 1 günden az kaldıysa yenile
+    if (exp - now < 24 * 60 * 60 * 1000) {
+      const res = await fetch("/api/auth/refresh", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data?.token) {
+        localStorage.setItem("token", data.token);
+        console.log("🔄 Token otomatik yenilendi");
+      }
+    }
+  } catch (err) {
+    console.warn("Token yenileme başarısız:", err);
+  }
+}
+
 export default function CariPanel() {
   const [activeTab, setActiveTab] = useState("cari");
+
+  // 🟠 Sayfa açıldığında token yenileme kontrolü
+  useEffect(() => {
+    refreshTokenIfNeeded();
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -9,7 +40,6 @@ export default function CariPanel() {
         💼 Cari Yönetim Paneli
       </h1>
 
-      {/* Sekme Butonları */}
       <div className="flex justify-center mb-6">
         <button
           onClick={() => setActiveTab("cari")}
@@ -43,7 +73,6 @@ export default function CariPanel() {
         </button>
       </div>
 
-      {/* Sekme İçerikleri */}
       <div className="bg-white rounded-xl shadow p-6 max-w-5xl mx-auto">
         {activeTab === "cari" && <CariKarti />}
         {activeTab === "urunler" && <Urunler />}
@@ -64,7 +93,10 @@ function CariKarti() {
   const [list, setList] = useState([]);
 
   const fetchData = async () => {
-    const res = await fetch("/api/cari");
+    const token = localStorage.getItem("token");
+    const res = await fetch("/api/cari", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     const data = await res.json();
     setList(data);
   };
@@ -75,9 +107,13 @@ function CariKarti() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const token = localStorage.getItem("token");
     await fetch("/api/cari", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify(form),
     });
     setForm({ ad: "", tur: "Müşteri", telefon: "", email: "" });
@@ -156,7 +192,10 @@ function Urunler() {
   const [urunler, setUrunler] = useState([]);
 
   const fetchData = async () => {
-    const res = await fetch("/api/urunler");
+    const token = localStorage.getItem("token");
+    const res = await fetch("/api/urunler", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     const data = await res.json();
     setUrunler(data);
   };
@@ -167,9 +206,13 @@ function Urunler() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const token = localStorage.getItem("token");
     await fetch("/api/urunler", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify(urun),
     });
     setUrun({ ad: "", fiyat: "", stok: "" });
@@ -244,7 +287,10 @@ function CariHareketleri() {
   const [list, setList] = useState([]);
 
   const fetchData = async () => {
-    const res = await fetch("/api/hareketler");
+    const token = localStorage.getItem("token");
+    const res = await fetch("/api/hareketler", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     const data = await res.json();
     setList(data);
   };
@@ -255,9 +301,13 @@ function CariHareketleri() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const token = localStorage.getItem("token");
     await fetch("/api/hareketler", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify(hareket),
     });
     setHareket({ aciklama: "", tutar: "", tur: "Satış" });
