@@ -19,7 +19,7 @@ export default async function handler(req, res) {
     const db = client.db("satistakip");
     const users = db.collection("users");
 
-    // 🟢 ID yerine e-posta ile kullanıcıyı bul
+    // 🟢 Artık kullanıcıyı email ile doğruluyoruz
     const user = await users.findOne({ email: decoded.email });
 
     if (!user) {
