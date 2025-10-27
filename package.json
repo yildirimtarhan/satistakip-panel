@@ -9,10 +9,12 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "autoprefixer": "^10.4.20",
     "axios": "^1.10.0",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.2",
     "cookie": "^0.5.0",
+    "file-saver": "^2.0.5",
     "js-cookie": "^3.0.5",
     "jsonwebtoken": "^9.0.2",
     "jwt-decode": "^4.0.0",
@@ -21,13 +23,12 @@
     "next": "15.3.4",
     "nodemailer": "^7.0.7",
     "nookies": "^2.5.2",
+    "postcss": "^8.4.47",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "recharts": "^3.3.0",
-    "xlsx": "^0.18.5",
     "tailwindcss": "^3.4.13",
-    "postcss": "^8.4.47",
-    "autoprefixer": "^10.4.20"
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "eslint": "^9",
