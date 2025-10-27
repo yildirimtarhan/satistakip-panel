@@ -13,27 +13,31 @@ export default async function handler(req, res) {
     if (req.method === "POST") {
       const { accountId, productId, type, quantity, unitPrice, currency } = req.body;
 
-      if (!accountId || !productId || !type || !quantity || !unitPrice || !currency) {
+      // ⚙️ Ürün seçilmemiş olsa bile işlem kaydedilsin
+      if (!accountId || !type || !quantity || !unitPrice || !currency) {
         return res.status(400).json({ message: "⚠️ Eksik bilgi gönderildi." });
       }
 
-      // 🔹 ObjectId dönüşümü
+      // 🔹 ObjectId dönüşümleri
       const accountObjectId = new ObjectId(accountId);
-      const productObjectId = new ObjectId(productId);
-
-      // 🔹 Ürün bul
-      const product = await products.findOne({ _id: productObjectId });
-      if (!product) return res.status(404).json({ message: "Ürün bulunamadı." });
+      const productObjectId = productId ? new ObjectId(productId) : null;
 
       // 🔹 Cari hesap bul
       const account = await accounts.findOne({ _id: accountObjectId });
       if (!account) return res.status(404).json({ message: "Cari hesap bulunamadı." });
 
+      // 🔹 Ürün varsa kontrol et
+      let product = null;
+      if (productObjectId) {
+        product = await products.findOne({ _id: productObjectId });
+        if (!product) return res.status(404).json({ message: "Ürün bulunamadı." });
+      }
+
       const total = parseFloat(unitPrice) * parseInt(quantity);
 
       const newTransaction = {
         accountId: accountObjectId,
-        productId: productObjectId,
+        productId: productObjectId || null,
         type, // "purchase" veya "sale"
         quantity: parseInt(quantity),
         unitPrice: parseFloat(unitPrice),
@@ -45,17 +49,19 @@ export default async function handler(req, res) {
       // 💾 İşlemi kaydet
       await transactions.insertOne(newTransaction);
 
-      // 📦 Stok güncelle
-      if (type === "sale") {
-        await products.updateOne(
-          { _id: productObjectId },
-          { $inc: { stock: -parseInt(quantity) } }
-        );
-      } else if (type === "purchase") {
-        await products.updateOne(
-          { _id: productObjectId },
-          { $inc: { stock: parseInt(quantity) } }
-        );
+      // 📦 Stok güncelle (sadece ürün varsa)
+      if (productObjectId) {
+        if (type === "sale") {
+          await products.updateOne(
+            { _id: productObjectId },
+            { $inc: { stock: -parseInt(quantity) } }
+          );
+        } else if (type === "purchase") {
+          await products.updateOne(
+            { _id: productObjectId },
+            { $inc: { stock: parseInt(quantity) } }
+          );
+        }
       }
 
       // 💰 Cari bakiye güncelle (anlık fark ekle)
