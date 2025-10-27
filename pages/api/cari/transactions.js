@@ -13,9 +13,14 @@ export default async function handler(req, res) {
     if (req.method === "POST") {
       const { accountId, productId, type, quantity, unitPrice, currency } = req.body;
 
-      // ⚙️ Ürün seçilmemiş olsa bile işlem kaydedilsin
-      if (!accountId || !type || !quantity || !unitPrice || !currency) {
-        return res.status(400).json({ message: "⚠️ Eksik bilgi gönderildi." });
+      // 🧩 Varsayılan değerleri uygula
+      const safeCurrency = currency || "TRY";
+      const safeQuantity = parseInt(quantity) || 1;
+      const safeUnitPrice = parseFloat(unitPrice) || 0;
+
+      // ⚙️ Yalnızca temel zorunlu alanlar kontrol edilsin
+      if (!accountId || !type) {
+        return res.status(400).json({ message: "⚠️ Eksik bilgi gönderildi (accountId/type)." });
       }
 
       // 🔹 ObjectId dönüşümleri
@@ -33,16 +38,16 @@ export default async function handler(req, res) {
         if (!product) return res.status(404).json({ message: "Ürün bulunamadı." });
       }
 
-      const total = parseFloat(unitPrice) * parseInt(quantity);
+      const total = safeUnitPrice * safeQuantity;
 
       const newTransaction = {
         accountId: accountObjectId,
         productId: productObjectId || null,
         type, // "purchase" veya "sale"
-        quantity: parseInt(quantity),
-        unitPrice: parseFloat(unitPrice),
+        quantity: safeQuantity,
+        unitPrice: safeUnitPrice,
         total,
-        currency,
+        currency: safeCurrency,
         date: new Date(),
       };
 
@@ -54,12 +59,12 @@ export default async function handler(req, res) {
         if (type === "sale") {
           await products.updateOne(
             { _id: productObjectId },
-            { $inc: { stock: -parseInt(quantity) } }
+            { $inc: { stock: -safeQuantity } }
           );
         } else if (type === "purchase") {
           await products.updateOne(
             { _id: productObjectId },
-            { $inc: { stock: parseInt(quantity) } }
+            { $inc: { stock: safeQuantity } }
           );
         }
       }
