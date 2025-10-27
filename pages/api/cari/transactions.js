@@ -58,15 +58,48 @@ export default async function handler(req, res) {
         );
       }
 
-      // 💰 Cari bakiye güncelle
+      // 💰 Cari bakiye güncelle (anlık fark ekle)
       const balanceChange = type === "sale" ? total : -total;
       await accounts.updateOne(
         { _id: accountObjectId },
         { $inc: { balance: balanceChange } }
       );
 
+      // 🧮 [YENİ ÖZELLİK] - Tüm işlemler üzerinden cari bakiyeyi senkronize et
+      try {
+        const allTransactions = await transactions.find({ accountId: accountObjectId }).toArray();
+
+        let totalSales = 0;
+        let totalPurchases = 0;
+
+        for (const t of allTransactions) {
+          if (t.type === "sale") totalSales += t.total;
+          else if (t.type === "purchase") totalPurchases += t.total;
+        }
+
+        const newBalance = totalSales - totalPurchases;
+
+        await accounts.updateOne(
+          { _id: accountObjectId },
+          {
+            $set: {
+              balance: newBalance,
+              totalSales,
+              totalPurchases,
+              updatedAt: new Date(),
+            },
+          }
+        );
+
+        console.log(
+          `🔁 Cari bakiye güncellendi (${account.name}): Satış=${totalSales}, Alış=${totalPurchases}, Bakiye=${newBalance}`
+        );
+      } catch (calcErr) {
+        console.error("🧮 Bakiye senkronizasyon hatası:", calcErr);
+      }
+
       return res.status(201).json({
-        message: "✅ İşlem başarıyla eklendi",
+        message: "✅ İşlem başarıyla eklendi ve bakiye senkronize edildi",
         transaction: newTransaction,
       });
     }
