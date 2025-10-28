@@ -140,15 +140,17 @@ export default async function handler(req, res) {
 
       // Veriyi okunabilir hale getir
       const formatted = list.map((t) => ({
-        _id: t._id,
-        account: t.account[0]?.name || "Bilinmiyor",
-        product: t.product[0]?.name || "Bilinmiyor",
-        type: t.type,
-        quantity: t.quantity,
-        total: t.total,
-        currency: t.currency,
-        date: t.date,
-      }));
+  _id: t._id,
+  account: t.account[0]?.ad || "Bilinmiyor",
+  product: t.product[0]?.ad || "Bilinmiyor",
+  type: t.type,
+  quantity: t.quantity,
+  unitPrice: t.unitPrice || 0,
+  total: t.total,
+  currency: t.currency,
+  date: t.date,
+}));
+
 
       return res.status(200).json(formatted);
     }
