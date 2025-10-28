@@ -976,17 +976,21 @@ function Urunler() {
   );
 }
 
-/* 🔸 CARI HAREKETLERI */
+/* 🔸 CARI HAREKETLERI (GÜNCELLENMİŞ) */
 function CariHareketleri() {
   const [hareket, setHareket] = useState({
-    cariId: "",
-    aciklama: "",
-    tutar: "",
-    tur: "Satış",
+    accountId: "",
+    productId: "", // opsiyonel
+    type: "sale",  // sale | purchase
+    quantity: "",
+    unitPrice: "",
+    currency: "TRY",
   });
   const [list, setList] = useState([]);
   const [cariler, setCariler] = useState([]);
+  const [urunler, setUrunler] = useState([]);
 
+  // 🔹 Cariler ve Ürünleri getir
   const fetchCariler = async () => {
     try {
       const token = localStorage.getItem("token");
@@ -997,6 +1001,19 @@ function CariHareketleri() {
       setCariler(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error("Cari listesi hatası:", e);
+    }
+  };
+
+  const fetchUrunler = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch("/api/cari/products", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setUrunler(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error("Ürün listesi hatası:", e);
     }
   };
 
@@ -1015,38 +1032,63 @@ function CariHareketleri() {
 
   useEffect(() => {
     fetchCariler();
+    fetchUrunler();
     fetchData();
   }, []);
 
+  // 💾 Kaydet butonu
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
       const token = localStorage.getItem("token");
-      const payload = { ...hareket, tutar: Number(hareket.tutar) };
+      const payload = {
+        accountId: hareket.accountId,
+        productId: hareket.productId || null,
+        type: hareket.type,
+        quantity: Number(hareket.quantity),
+        unitPrice: Number(hareket.unitPrice),
+        currency: hareket.currency,
+      };
+
       const res = await fetch("/api/cari/transactions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}` },
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error("Hareket kaydetme hatası");
-      setHareket({ cariId: "", aciklama: "", tutar: "", tur: "Satış" });
-      await fetchData();
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.message || "Hareket kaydetme hatası");
+
+      alert("✅ İşlem başarıyla eklendi!");
+      setHareket({
+        accountId: "",
+        productId: "",
+        type: "sale",
+        quantity: "",
+        unitPrice: "",
+        currency: "TRY",
+      });
+      fetchData();
     } catch (e) {
       console.error("Hareket kaydetme hatası:", e);
-      alert("Hareket kaydı sırasında bir hata oluştu.");
+      alert("Hareket kaydı sırasında bir hata oluştu.\n" + e.message);
     }
   };
 
   return (
     <div>
       <h2 className="text-2xl font-bold text-gray-700 mb-4">📊 Cari Hareketler</h2>
+
+      {/* ➕ Yeni Hareket Formu */}
       <form onSubmit={handleSubmit} className="grid grid-cols-12 gap-3 mb-6">
+        {/* Cari Seçimi */}
         <select
           className="border p-2 rounded col-span-12 md:col-span-3"
-          value={hareket.cariId}
-          onChange={(e) => setHareket({ ...hareket, cariId: e.target.value })}
+          value={hareket.accountId}
+          onChange={(e) => setHareket({ ...hareket, accountId: e.target.value })}
           required
         >
           <option value="">Cari Seç *</option>
@@ -1057,31 +1099,59 @@ function CariHareketleri() {
           ))}
         </select>
 
-        <input
-          type="text"
-          placeholder="Açıklama"
-          value={hareket.aciklama}
-          onChange={(e) => setHareket({ ...hareket, aciklama: e.target.value })}
-          className="border p-2 rounded col-span-12 md:col-span-4"
-          required
-        />
-        <input
-          type="number"
-          placeholder="Tutar"
-          value={hareket.tutar}
-          onChange={(e) => setHareket({ ...hareket, tutar: e.target.value })}
-          className="border p-2 rounded col-span-6 md:col-span-2"
-          required
-        />
+        {/* Ürün Seçimi */}
+        <select
+          className="border p-2 rounded col-span-12 md:col-span-3"
+          value={hareket.productId}
+          onChange={(e) => setHareket({ ...hareket, productId: e.target.value })}
+        >
+          <option value="">Ürün (Opsiyonel)</option>
+          {urunler.map((u) => (
+            <option key={u._id} value={u._id}>
+              {u.ad}
+            </option>
+          ))}
+        </select>
+
+        {/* Tür */}
         <select
           className="border p-2 rounded col-span-6 md:col-span-2"
-          value={hareket.tur}
-          onChange={(e) => setHareket({ ...hareket, tur: e.target.value })}
+          value={hareket.type}
+          onChange={(e) => setHareket({ ...hareket, type: e.target.value })}
         >
-          <option>Satış</option>
-          <option>Alış</option>
-          <option>Tahsilat</option>
-          <option>Ödeme</option>
+          <option value="sale">Satış</option>
+          <option value="purchase">Alış</option>
+        </select>
+
+        {/* Miktar */}
+        <input
+          type="number"
+          placeholder="Miktar"
+          value={hareket.quantity}
+          onChange={(e) => setHareket({ ...hareket, quantity: e.target.value })}
+          className="border p-2 rounded col-span-6 md:col-span-2"
+          required
+        />
+
+        {/* Birim Fiyat */}
+        <input
+          type="number"
+          placeholder="Birim Fiyat"
+          value={hareket.unitPrice}
+          onChange={(e) => setHareket({ ...hareket, unitPrice: e.target.value })}
+          className="border p-2 rounded col-span-6 md:col-span-2"
+          required
+        />
+
+        {/* Para Birimi */}
+        <select
+          className="border p-2 rounded col-span-6 md:col-span-2"
+          value={hareket.currency}
+          onChange={(e) => setHareket({ ...hareket, currency: e.target.value })}
+        >
+          <option value="TRY">TRY</option>
+          <option value="USD">USD</option>
+          <option value="EUR">EUR</option>
         </select>
 
         <div className="col-span-12 flex justify-end">
@@ -1094,42 +1164,45 @@ function CariHareketleri() {
         </div>
       </form>
 
+      {/* 🔽 Hareket Listesi */}
       <div className="border rounded-xl overflow-hidden">
         <table className="w-full border-collapse text-sm">
           <thead className="bg-orange-100">
             <tr>
               <th className="border p-2 w-14">#</th>
               <th className="border p-2">Cari</th>
-              <th className="border p-2">Açıklama</th>
-              <th className="border p-2">Tutar</th>
+              <th className="border p-2">Ürün</th>
               <th className="border p-2">Tür</th>
+              <th className="border p-2">Miktar</th>
+              <th className="border p-2">Birim Fiyat</th>
+              <th className="border p-2">Tutar</th>
+              <th className="border p-2">PB</th>
             </tr>
           </thead>
           <tbody>
             {list.length === 0 && (
               <tr>
-                <td colSpan={5} className="border p-6 text-center text-gray-500">
+                <td colSpan={8} className="border p-6 text-center text-gray-500">
                   Kayıt bulunamadı.
                 </td>
               </tr>
             )}
-            {list.map((h, i) => {
-              const cari = cariler.find((c) => c._id === h.cariId);
-              return (
-                <tr key={h._id || i} className="hover:bg-orange-50/40">
-                  <td className="border p-2 text-center">{i + 1}</td>
-                  <td className="border p-2">{cari?.ad || "-"}</td>
-                  <td className="border p-2">{h.aciklama}</td>
-                  <td className="border p-2">
-                    {Number(h.tutar || 0).toLocaleString("tr-TR", {
-                      minimumFractionDigits: 2,
-                    })}{" "}
-                    {cari?.paraBirimi || "TRY"}
-                  </td>
-                  <td className="border p-2">{h.tur}</td>
-                </tr>
-              );
-            })}
+            {list.map((h, i) => (
+              <tr key={h._id || i} className="hover:bg-orange-50/40">
+                <td className="border p-2 text-center">{i + 1}</td>
+                <td className="border p-2">{h.account || "-"}</td>
+                <td className="border p-2">{h.product || "-"}</td>
+                <td className="border p-2 capitalize">{h.type}</td>
+                <td className="border p-2 text-right">{h.quantity}</td>
+                <td className="border p-2 text-right">
+                  {Number(h.unitPrice || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}
+                </td>
+                <td className="border p-2 text-right">
+                  {Number(h.total || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}
+                </td>
+                <td className="border p-2">{h.currency || "TRY"}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
