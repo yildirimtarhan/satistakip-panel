@@ -18,7 +18,7 @@ export default async function handler(req, res) {
       const safeQuantity = parseInt(quantity) || 1;
       const safeUnitPrice = parseFloat(unitPrice) || 0;
 
-      // ⚙️ Yalnızca temel zorunlu alanlar kontrol edilsin
+      // ⚙️ Zorunlu alan kontrolü
       if (!accountId || !type) {
         return res.status(400).json({ message: "⚠️ Eksik bilgi gönderildi (accountId/type)." });
       }
@@ -56,17 +56,10 @@ export default async function handler(req, res) {
 
       // 📦 Stok güncelle (sadece ürün varsa)
       if (productObjectId) {
-        if (type === "sale") {
-          await products.updateOne(
-            { _id: productObjectId },
-            { $inc: { stock: -safeQuantity } }
-          );
-        } else if (type === "purchase") {
-          await products.updateOne(
-            { _id: productObjectId },
-            { $inc: { stock: safeQuantity } }
-          );
-        }
+        await products.updateOne(
+          { _id: productObjectId },
+          { $inc: { stock: type === "sale" ? -safeQuantity : safeQuantity } }
+        );
       }
 
       // 💰 Cari bakiye güncelle (anlık fark ekle)
@@ -76,43 +69,42 @@ export default async function handler(req, res) {
         { $inc: { balance: balanceChange } }
       );
 
-      // 🧮 [YENİ ÖZELLİK] - Tüm işlemler üzerinden cari bakiyeyi senkronize et
-      try {
-        const allTransactions = await transactions.find({ accountId: accountObjectId }).toArray();
+      // 🧮 Tüm işlemler üzerinden cari bakiyeyi senkronize et
+      const allTransactions = await transactions.find({ accountId: accountObjectId }).toArray();
 
-        let totalSales = 0;
-        let totalPurchases = 0;
+      let totalSales = 0;
+      let totalPurchases = 0;
 
-        for (const t of allTransactions) {
-          if (t.type === "sale") totalSales += t.total;
-          else if (t.type === "purchase") totalPurchases += t.total;
-        }
-
-        const newBalance = totalSales - totalPurchases;
-
-        await accounts.updateOne(
-          { _id: accountObjectId },
-          {
-            $set: {
-              balance: newBalance,
-              totalSales,
-              totalPurchases,
-              updatedAt: new Date(),
-            },
-          }
-        );
-
-        console.log(
-  `🔁 Cari bakiye güncellendi (${account.ad || account.name || "Bilinmiyor"}): Satış=${totalSales}, Alış=${totalPurchases}, Bakiye=${newBalance}`
-);
-
-      } catch (calcErr) {
-        console.error("🧮 Bakiye senkronizasyon hatası:", calcErr);
+      for (const t of allTransactions) {
+        if (t.type === "sale") totalSales += t.total;
+        else if (t.type === "purchase") totalPurchases += t.total;
       }
+
+      const newBalance = totalSales - totalPurchases;
+
+      // 🔁 Cari kaydı güncelle ve yeni bilgileri al
+      await accounts.updateOne(
+        { _id: accountObjectId },
+        {
+          $set: {
+            balance: newBalance,
+            totalSales,
+            totalPurchases,
+            updatedAt: new Date(),
+          },
+        }
+      );
+
+      const updatedAccount = await accounts.findOne({ _id: accountObjectId });
+
+      console.log(
+        `🔁 Cari bakiye güncellendi (${account.ad || account.name || "Bilinmiyor"}): Satış=${totalSales}, Alış=${totalPurchases}, Bakiye=${newBalance}`
+      );
 
       return res.status(201).json({
         message: "✅ İşlem başarıyla eklendi ve bakiye senkronize edildi",
         transaction: newTransaction,
+        updatedAccount, // 🔹 Yeni eklendi: güncel cari bilgisi döndürülüyor
       });
     }
 
@@ -141,25 +133,22 @@ export default async function handler(req, res) {
 
       // Veriyi okunabilir hale getir
       const formatted = list.map((t) => ({
-  _id: t._id,
-  account: t.account[0]?.ad || "Bilinmiyor",
-  product: t.product[0]?.ad || "Bilinmiyor",
-  type: t.type,
-  quantity: t.quantity,
-  unitPrice: t.unitPrice || 0,
-  total: t.total,
-  currency: t.currency,
-  date: t.date,
-}));
-
-
+        _id: t._id,
+        account: t.account[0]?.ad || "Bilinmiyor",
+        product: t.product[0]?.ad || "Bilinmiyor",
+        type: t.type,
+        quantity: t.quantity,
+        unitPrice: t.unitPrice || 0,
+        total: t.total,
+        currency: t.currency,
+        date: t.date,
+      }));
 
       return res.status(200).json(formatted);
     }
 
-    return res
-      .status(405)
-      .json({ message: "❌ Yalnızca GET ve POST metodları desteklenir." });
+    // ❌ Desteklenmeyen metod
+    return res.status(405).json({ message: "❌ Yalnızca GET ve POST metodları desteklenir." });
   } catch (err) {
     console.error("🔥 Transaction API hatası:", err);
     return res.status(500).json({
