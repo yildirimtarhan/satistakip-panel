@@ -1084,20 +1084,18 @@ function CariHareketleri() {
 
       console.log("✅ API cevabı:", data);
       alert(data?.message || "✅ İşlem başarıyla kaydedildi!");
+await fetchData();
+if (typeof fetchCariler === "function") await fetchCariler();
+setHareket({
+  accountId: "",
+  productId: "",
+  type: "sale",
+  quantity: "",
+  unitPrice: "",
+  currency: "TRY",
+});
+window.location.reload();
 
-      // 🔄 Hareket ve cari listesini yenile
-      await fetchData();
-      if (typeof fetchCariler === "function") await fetchCariler();
-
-      // 🧹 Formu sıfırla
-      setHareket({
-        accountId: "",
-        productId: "",
-        type: "sale",
-        quantity: "",
-        unitPrice: "",
-        currency: "TRY",
-      });
     } catch (e) {
       console.error("🔥 Hareket kaydetme hatası:", e);
       alert("❌ Hata: " + e.message);
