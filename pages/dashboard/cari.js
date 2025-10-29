@@ -182,8 +182,8 @@ function CariKarti() {
     reader.readAsDataURL(file);
   };
 
-  // Listeyi çek
-  const fetchData = async () => {
+ // 🔄 Cari verilerini API'den çek
+const fetchData = async () => {
   try {
     setLoading(true);
     const token = localStorage.getItem("token");
@@ -192,17 +192,19 @@ function CariKarti() {
     });
     const data = await res.json();
 
-    // 🔹 Balance varsa otomatik ata
-    setList(Array.isArray(data) ? data : []);
-    const balancesMap = {};
-    (data || []).forEach((c) => {
-      balancesMap[c._id] = {
+    const cariler = Array.isArray(data) ? data : [];
+    setList(cariler);
+
+    // 🔹 Bakiye bilgilerini eşleştir
+    const balanceMap = {};
+    cariler.forEach((c) => {
+      balanceMap[c._id] = {
         bakiye: c.balance || 0,
         alacak: c.totalSales || 0,
         borc: c.totalPurchases || 0,
       };
     });
-    setBalances(balancesMap);
+    setBalances(balanceMap);
   } catch (e) {
     console.error("Cari getirme hatası:", e);
   } finally {
