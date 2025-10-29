@@ -103,8 +103,9 @@ export default async function handler(req, res) {
         );
 
         console.log(
-          `🔁 Cari bakiye güncellendi (${account.name}): Satış=${totalSales}, Alış=${totalPurchases}, Bakiye=${newBalance}`
-        );
+  `🔁 Cari bakiye güncellendi (${account.ad || account.name || "Bilinmiyor"}): Satış=${totalSales}, Alış=${totalPurchases}, Bakiye=${newBalance}`
+);
+
       } catch (calcErr) {
         console.error("🧮 Bakiye senkronizasyon hatası:", calcErr);
       }
