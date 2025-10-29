@@ -1050,19 +1050,25 @@ function CariHareketleri() {
     fetchData();
   }, []);
 
-  // 💾 Kaydet butonu
+    // 💾 Kaydet butonu (GÜNCELLENMİŞ)
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
       const token = localStorage.getItem("token");
+
       const payload = {
         accountId: hareket.accountId,
         productId: hareket.productId || null,
         type: hareket.type,
-        quantity: Number(hareket.quantity),
-        unitPrice: Number(hareket.unitPrice),
-        currency: hareket.currency,
+        quantity: Number(hareket.quantity) || 0,
+        unitPrice: Number(hareket.unitPrice) || 0,
+        currency: hareket.currency || "TRY",
       };
+
+      if (!payload.accountId || !payload.type) {
+        alert("⚠️ Lütfen cari ve işlem türünü seçin.");
+        return;
+      }
 
       const res = await fetch("/api/cari/transactions", {
         method: "POST",
@@ -1076,7 +1082,14 @@ function CariHareketleri() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.message || "Hareket kaydetme hatası");
 
-      alert("✅ İşlem başarıyla eklendi!");
+      console.log("✅ API cevabı:", data);
+      alert(data?.message || "✅ İşlem başarıyla kaydedildi!");
+
+      // 🔄 Hareket ve cari listesini yenile
+      await fetchData();
+      if (typeof fetchCariler === "function") await fetchCariler();
+
+      // 🧹 Formu sıfırla
       setHareket({
         accountId: "",
         productId: "",
@@ -1085,12 +1098,12 @@ function CariHareketleri() {
         unitPrice: "",
         currency: "TRY",
       });
-      fetchData();
     } catch (e) {
-      console.error("Hareket kaydetme hatası:", e);
-      alert("Hareket kaydı sırasında bir hata oluştu.\n" + e.message);
+      console.error("🔥 Hareket kaydetme hatası:", e);
+      alert("❌ Hata: " + e.message);
     }
   };
+
 
   return (
     <div>
