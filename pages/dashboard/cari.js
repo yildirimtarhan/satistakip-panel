@@ -184,20 +184,32 @@ function CariKarti() {
 
   // Listeyi çek
   const fetchData = async () => {
-    try {
-      setLoading(true);
-      const token = localStorage.getItem("token");
-      const res = await fetch("/api/cari", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      setList(Array.isArray(data) ? data : []);
-    } catch (e) {
-      console.error("Cari getirme hatası:", e);
-    } finally {
-      setLoading(false);
-    }
-  };
+  try {
+    setLoading(true);
+    const token = localStorage.getItem("token");
+    const res = await fetch("/api/cari", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+
+    // 🔹 Balance varsa otomatik ata
+    setList(Array.isArray(data) ? data : []);
+    const balancesMap = {};
+    (data || []).forEach((c) => {
+      balancesMap[c._id] = {
+        bakiye: c.balance || 0,
+        alacak: c.totalSales || 0,
+        borc: c.totalPurchases || 0,
+      };
+    });
+    setBalances(balancesMap);
+  } catch (e) {
+    console.error("Cari getirme hatası:", e);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   // Belirli cari için hareketleri çekip bakiye hesapla
   const fetchCariBakiye = async (cariId) => {
