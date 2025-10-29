@@ -9,7 +9,11 @@ export default async function handler(req, res) {
     const transactions = db.collection("transactions");
     const products = db.collection("products");
     const accounts = db.collection("accounts");
+    const stockLogs = db.collection("stock_logs"); // 📦 Yeni: stok hareketleri için log koleksiyonu
 
+    // ======================
+    // 📤 POST - Yeni işlem ekle
+    // ======================
     if (req.method === "POST") {
       const { accountId, productId, type, quantity, unitPrice, currency } = req.body;
 
@@ -54,12 +58,35 @@ export default async function handler(req, res) {
       // 💾 İşlemi kaydet
       await transactions.insertOne(newTransaction);
 
-      // 📦 Stok güncelle (sadece ürün varsa)
+      // 📦 Stok güncelle ve log oluştur (sadece ürün varsa)
       if (productObjectId) {
+        const stockChange = type === "sale" ? -safeQuantity : safeQuantity;
+
+        // 🔹 Ürün stok bilgisini güncelle
         await products.updateOne(
           { _id: productObjectId },
-          { $inc: { stock: type === "sale" ? -safeQuantity : safeQuantity } }
+          {
+            $inc: { stock: stockChange },
+            $set: {
+              updatedAt: new Date(),
+              lastTransactionType: type,
+              lastTransactionQty: safeQuantity,
+              lastTransactionDate: new Date(),
+            },
+          }
         );
+
+        // 🧾 Stok hareket logu oluştur
+        await stockLogs.insertOne({
+          productId: productObjectId,
+          accountId: accountObjectId,
+          type, // sale | purchase
+          quantity: safeQuantity,
+          unitPrice: safeUnitPrice,
+          total,
+          source: "manual", // ileride pazaryeri ismi gelecek (hepsiburada, trendyol vs.)
+          createdAt: new Date(),
+        });
       }
 
       // 💰 Cari bakiye güncelle (anlık fark ekle)
@@ -102,12 +129,15 @@ export default async function handler(req, res) {
       );
 
       return res.status(201).json({
-        message: "✅ İşlem başarıyla eklendi ve bakiye senkronize edildi",
+        message: "✅ İşlem başarıyla eklendi, stok ve bakiye senkronize edildi",
         transaction: newTransaction,
-        updatedAccount, // 🔹 Yeni eklendi: güncel cari bilgisi döndürülüyor
+        updatedAccount,
       });
     }
 
+    // ======================
+    // 📥 GET - İşlem listesi
+    // ======================
     if (req.method === "GET") {
       const list = await transactions
         .aggregate([
@@ -131,12 +161,11 @@ export default async function handler(req, res) {
         ])
         .toArray();
 
-      // Veriyi okunabilir hale getir
       const formatted = list.map((t) => ({
         _id: t._id,
         account: t.account[0]?.ad || "Bilinmiyor",
         product: t.product[0]?.ad || "Bilinmiyor",
-        type: t.type,
+        type: t.type === "sale" ? "Satış" : "Alış", // Türkçeleştirildi 🏷️
         quantity: t.quantity,
         unitPrice: t.unitPrice || 0,
         total: t.total,
