@@ -573,11 +573,10 @@ function CariKarti() {
   );
 }
 
-/* 🔸 ÜRÜNLER */
-/* 🔸 ÜRÜNLER (Barkod + SKU + Görsel eklendi) */
-/* 🔸 ÜRÜNLER — GELİŞMİŞ SÜRÜM */
+/* 🔸 ÜRÜNLER — TAMAMLANMIŞ KOMPONENT (CRUD + Foto + Varyant + UI) */
 function Urunler() {
-  const [urun, setUrun] = useState({
+  const [urun, setUrun] = React.useState({
+    _id: null,            // ✨ düzenleme modunu anlamak için
     ad: "",
     kategori: "",
     barkod: "",
@@ -589,22 +588,17 @@ function Urunler() {
     paraBirimi: "TRY",
     kdvOrani: 20,
     variation: [{ ad: "", stok: "", fiyat: "" }],
-    resimUrl: "",
+    resimUrl: "",         // UI’de kullanıyoruz
   });
-const uploadImage = async (file) => {
-  const res = await fetch("/api/urunler/upload", {
-    method: "POST",
-    body: file,
-  });
-  const data = await res.json();
-  return data.url;
-};
 
-  const [urunler, setUrunler] = useState([]);
-  const [preview, setPreview] = useState(null);
-  const fileInputRef = useRef(null);
+  const [urunler, setUrunler] = React.useState([]);
+  const [preview, setPreview] = React.useState(null);
+  const fileInputRef = React.useRef(null);
+  const [loading, setLoading] = React.useState(false);
 
-  // ✅ Ürün Listesi Çek
+  const tr = (n) => Number(n || 0).toLocaleString("tr-TR");
+
+  // ✅ Ürün Listesi
   const fetchData = async () => {
     try {
       const token = localStorage.getItem("token");
@@ -618,25 +612,101 @@ const uploadImage = async (file) => {
     }
   };
 
-  useEffect(() => {
+  React.useEffect(() => {
     fetchData();
   }, []);
 
-  // ✅ Form Submit
+  // 🔁 Form reset
+  const resetForm = () => {
+    setUrun({
+      _id: null,
+      ad: "",
+      kategori: "",
+      barkod: "",
+      sku: "",
+      birim: "Adet",
+      alisFiyati: "",
+      satisFiyati: "",
+      stok: "",
+      paraBirimi: "TRY",
+      kdvOrani: 20,
+      variation: [{ ad: "", stok: "", fiyat: "" }],
+      resimUrl: "",
+    });
+    setPreview(null);
+  };
+
+  // 🖼️ Fotoğraf yükle (Cloudinary API’n: /api/upload-image)
+  const handleImage = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      setLoading(true);
+
+      // Eğer sende /api/urunler/upload varsa onu kullanmak istersen burayı değiştir.
+      const upload = await fetch("/api/upload-image", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await upload.json();
+      if (!upload.ok || !data?.url) throw new Error(data?.message || "Görsel yüklenemedi");
+
+      setUrun((prev) => ({ ...prev, resimUrl: data.url }));
+      setPreview(data.url);
+    } catch (err) {
+      alert("❌ Görsel yüklenemedi: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ➕ Varyant işlemleri
+  const addVariation = () =>
+    setUrun((p) => ({ ...p, variation: [...p.variation, { ad: "", stok: "", fiyat: "" }] }));
+
+  const updateVariation = (i, field, value) => {
+    const copy = [...urun.variation];
+    copy[i][field] = value;
+    setUrun((p) => ({ ...p, variation: copy }));
+  };
+
+  const removeVariation = (i) => {
+    const copy = urun.variation.filter((_, idx) => idx !== i);
+    setUrun((p) => ({ ...p, variation: copy }));
+  };
+
+  // 💾 Kaydet / Güncelle (PUT/POST otomatik)
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      setLoading(true);
       const token = localStorage.getItem("token");
 
-      const payload = { 
-        ...urun,
-        alisFiyati: Number(urun.alisFiyati),
-        satisFiyati: Number(urun.satisFiyati),
-        stok: Number(urun.stok),
+      // Backend /api/urunler/index.js alan adlarıyla %100 uyum
+      const payload = {
+        ad: urun.ad,
+        kategori: urun.kategori,
+        barkod: urun.barkod,
+        sku: urun.sku,
+        birim: urun.birim,
+        imageUrl: urun.resimUrl,                 // 🔗 backend: imageUrl bekliyor
+        alisFiyati: Number(urun.alisFiyati) || 0,
+        satisFiyati: Number(urun.satisFiyati) || 0,
+        stok: Number(urun.stok) || 0,
+        paraBirimi: urun.paraBirimi,
+        kdvOrani: Number(urun.kdvOrani) || 0,
+        variation: urun.variation,               // Şimdilik saklıyoruz (backend genişletilebilir)
       };
 
-      const res = await fetch("/api/urunler", {
-        method: "POST",
+      const method = urun._id ? "PUT" : "POST";
+      const url = urun._id ? `/api/urunler?id=${urun._id}` : "/api/urunler";
+
+      const res = await fetch(url, {
+        method,
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
@@ -644,182 +714,217 @@ const uploadImage = async (file) => {
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) throw new Error("Ürün kaydetme hatası");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.message || "Kayıt sırasında hata");
 
-      alert("✅ Ürün Eklendi");
-      setUrun({
-        ad: "",
-        kategori: "",
-        barkod: "",
-        sku: "",
-        birim: "Adet",
-        alisFiyati: "",
-        satisFiyati: "",
-        stok: "",
-        paraBirimi: "TRY",
-        kdvOrani: 20,
-        variation: [{ ad: "", stok: "", fiyat: "" }],
-        resimUrl: "",
-      });
-      setPreview(null);
+      alert(urun._id ? "✏️ Ürün güncellendi" : "✅ Ürün eklendi");
+      resetForm();
       fetchData();
-    } catch (e) {
-      console.error(e);
-      alert("Hata: " + e.message);
+    } catch (err) {
+      alert("❌ " + err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
-  // ✅ Varyant Ekle
-  const addVariation = () => {
+  // 🗑️ Sil
+  const deleteProduct = async (id) => {
+    if (!confirm("Bu ürünü silmek istiyor musunuz?")) return;
+    try {
+      setLoading(true);
+      const token = localStorage.getItem("token");
+      const res = await fetch(`/api/urunler?id=${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.message || "Silinemedi");
+      alert("🗑️ Ürün silindi");
+      fetchData();
+      if (urun._id === id) resetForm();
+    } catch (err) {
+      alert("❌ " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ✏️ Düzenle (forma taşı)
+  const editProduct = (u) => {
     setUrun({
-      ...urun,
-      variation: [...urun.variation, { ad: "", stok: "", fiyat: "" }],
+      _id: u._id,
+      ad: u.ad || "",
+      kategori: u.kategori || "",
+      barkod: u.barkod || "",
+      sku: u.sku || "",
+      birim: u.birim || "Adet",
+      alisFiyati: u.alisFiyati ?? "",
+      satisFiyati: u.satisFiyati ?? "",
+      stok: u.stok ?? "",
+      paraBirimi: u.paraBirimi || "TRY",
+      kdvOrani: u.kdvOrani ?? 20,
+      variation: Array.isArray(u.variation) && u.variation.length ? u.variation : [{ ad: "", stok: "", fiyat: "" }],
+      resimUrl: u.imageUrl || u.resimUrl || "",
     });
-  };
-
-  const updateVariation = (i, field, value) => {
-    const newVar = [...urun.variation];
-    newVar[i][field] = value;
-    setUrun({ ...urun, variation: newVar });
-  };
-
-  const removeVariation = (i) => {
-    const newVar = urun.variation.filter((_, idx) => idx !== i);
-    setUrun({ ...urun, variation: newVar });
-  };
-
-  // ✅ Resim Seç / Preview
-  const handleImage = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const url = URL.createObjectURL(file);
-    setPreview(url);
-    setUrun({ ...urun, resimUrl: url });
+    setPreview(u.imageUrl || u.resimUrl || null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   return (
     <div className="space-y-6">
-      <form onSubmit={handleSubmit} className="grid grid-cols-12 gap-4 p-4 border rounded-xl">
-        
-        {/* Sol Form */}
+      {/* FORM */}
+      <form onSubmit={handleSubmit} className="grid grid-cols-12 gap-4 p-5 border rounded-xl bg-white shadow-sm">
+    
+        {/* Sol taraf */}
         <div className="col-span-12 md:col-span-8 space-y-4">
-
-          <input className="input" placeholder="Ürün Adı *"
-            value={urun.ad} onChange={(e) => setUrun({ ...urun, ad: e.target.value })} required />
-
-          <input className="input" placeholder="Kategori"
-            value={urun.kategori} onChange={(e) => setUrun({ ...urun, kategori: e.target.value })} />
-
-          <div className="grid grid-cols-3 gap-3">
-            <input className="input" placeholder="Barkod"
-              value={urun.barkod} onChange={(e) => setUrun({ ...urun, barkod: e.target.value })} />
-
-            <input className="input" placeholder="SKU / Stok Kodu"
-              value={urun.sku} onChange={(e) => setUrun({ ...urun, sku: e.target.value })} />
-
-            <select className="input" value={urun.birim}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <input className="input border p-2 rounded" placeholder="Ürün Adı *"
+              value={urun.ad} onChange={(e) => setUrun({ ...urun, ad: e.target.value })} required />
+            <input className="input border p-2 rounded" placeholder="Kategori"
+              value={urun.kategori} onChange={(e) => setUrun({ ...urun, kategori: e.target.value })} />
+            <select className="input border p-2 rounded" value={urun.birim}
               onChange={(e) => setUrun({ ...urun, birim: e.target.value })}>
               <option>Adet</option><option>Kutu</option><option>Paket</option><option>KG</option>
             </select>
           </div>
-          {/* Ürün Fotoğrafı */}
-{/* Ürün Fotoğrafı */}
-<div className="col-span-12">
-  <label className="block text-sm mb-1 font-medium">Ürün Fotoğrafı</label>
 
-  <input
-    type="file"
-    accept="image/*"
-    onChange={async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <input className="input border p-2 rounded" placeholder="Barkod"
+              value={urun.barkod} onChange={(e) => setUrun({ ...urun, barkod: e.target.value })} />
+            <input className="input border p-2 rounded" placeholder="SKU / Stok Kodu"
+              value={urun.sku} onChange={(e) => setUrun({ ...urun, sku: e.target.value })} />
+            <select className="input border p-2 rounded" value={urun.paraBirimi}
+              onChange={(e) => setUrun({ ...urun, paraBirimi: e.target.value })}>
+              <option>TRY</option><option>USD</option><option>EUR</option>
+            </select>
+          </div>
 
-      const formData = new FormData();
-      formData.append("file", file);
-
-      // ✅ API yolunu doğru kullan
-      const upload = await fetch("/api/urunler/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await upload.json();
-
-      if (upload.ok && data?.url) {
-        setUrun({ ...urun, resimUrl: data.url });
-        alert("✅ Resim yüklendi!");
-      } else {
-        alert("❌ Resim yüklenemedi!");
-      }
-    }}
-  />
-
-  {urun.resimUrl && (
-    <img
-      src={urun.resimUrl}
-      alt="Ürün Foto"
-      className="w-24 h-24 mt-2 rounded border object-cover"
-    />
-  )}
-</div>
-
-
-          <div className="grid grid-cols-3 gap-3">
-            <input className="input" placeholder="Alış Fiyatı" type="number"
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <input className="input border p-2 rounded" placeholder="Alış Fiyatı" type="number"
               value={urun.alisFiyati} onChange={(e) => setUrun({ ...urun, alisFiyati: e.target.value })} />
-
-            <input className="input" placeholder="Satış Fiyatı *" type="number"
+            <input className="input border p-2 rounded" placeholder="Satış Fiyatı *" type="number"
               value={urun.satisFiyati} onChange={(e) => setUrun({ ...urun, satisFiyati: e.target.value })} required />
-
-            <input className="input" placeholder="Stok *" type="number"
+            <input className="input border p-2 rounded" placeholder="Stok *" type="number"
               value={urun.stok} onChange={(e) => setUrun({ ...urun, stok: e.target.value })} required />
           </div>
 
-          {/* Varyant Alanları */}
+          {/* Varyantlar */}
           <div className="space-y-2">
-            <label className="font-bold">Varyantlar:</label>
+            <label className="font-semibold">Varyantlar</label>
             {urun.variation.map((v, i) => (
-              <div key={i} className="grid grid-cols-4 gap-2 mb-2">
-                <input className="input" placeholder="Varyant (Renk/Beden)"
+              <div key={i} className="grid grid-cols-12 gap-2">
+                <input className="input border p-2 rounded col-span-12 md:col-span-5" placeholder="Varyant (Renk/Beden)"
                   value={v.ad} onChange={(e) => updateVariation(i, "ad", e.target.value)} />
-                <input className="input" placeholder="Varyant Stok" type="number"
+                <input className="input border p-2 rounded col-span-6 md:col-span-3" placeholder="Varyant Stok" type="number"
                   value={v.stok} onChange={(e) => updateVariation(i, "stok", e.target.value)} />
-                <input className="input" placeholder="Varyant Fiyat" type="number"
+                <input className="input border p-2 rounded col-span-6 md:col-span-3" placeholder="Varyant Fiyat" type="number"
                   value={v.fiyat} onChange={(e) => updateVariation(i, "fiyat", e.target.value)} />
-                <button type="button" onClick={() => removeVariation(i)} className="btn-red">X</button>
+                <button type="button" onClick={() => removeVariation(i)}
+                        className="btn-red px-3 py-2 border rounded text-red-600 hover:bg-red-50 col-span-12 md:col-span-1">X</button>
               </div>
             ))}
-            <button type="button" onClick={addVariation} className="btn-gray">+ Varyant Ekle</button>
+            <button type="button" onClick={addVariation}
+                    className="btn-gray px-3 py-2 border rounded hover:bg-gray-50">+ Varyant Ekle</button>
           </div>
 
-          <button className="btn-primary w-full">Kaydet</button>
+          <div className="flex gap-3 pt-2">
+            {urun._id && (
+              <button type="button" onClick={resetForm}
+                      className="px-4 py-2 rounded bg-gray-500 text-white">İptal</button>
+            )}
+            <button disabled={loading}
+                    className="btn-primary px-5 py-2 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-60">
+              {loading ? "İşleniyor..." : (urun._id ? "Güncelle" : "Kaydet")}
+            </button>
+          </div>
         </div>
 
-        {/* Sağ — Resim */}
+        {/* Sağ taraf — Fotoğraf */}
         <div className="col-span-12 md:col-span-4 flex flex-col items-center">
-          <img src={preview || "/images/default-product.png"} className="w-40 h-40 border rounded object-cover mb-2" />
-          <button type="button" onClick={() => fileInputRef.current.click()} className="btn-gray w-full">📸 Fotoğraf Seç</button>
+          <img src={preview || urun.resimUrl || "/images/default-product.png"}
+               className="w-40 h-40 border rounded object-cover mb-2" alt="Ürün" />
+          <button type="button" onClick={() => fileInputRef.current?.click()}
+                  className="btn-gray w-full px-3 py-2 border rounded hover:bg-gray-50">
+            📸 Fotoğraf Seç
+          </button>
           <input type="file" hidden ref={fileInputRef} onChange={handleImage} accept="image/*" />
+          <div className="text-xs text-gray-500 mt-2">Önerilen: kare görsel • WebP/JPEG</div>
         </div>
 
       </form>
+     <div className="flex gap-3 mt-3">
 
-      {/* ✅ Ürün Listesi */}
-      <div className="border rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
+  <button
+    type="button"
+    className="px-4 py-2 bg-green-600 text-white rounded"
+    onClick={() => window.location.href = "/api/urunler/export"}
+  >
+    📤 Excel Dışa Aktar
+  </button>
+
+  <label className="px-4 py-2 bg-blue-600 text-white rounded cursor-pointer">
+    📥 Excel İçe Aktar
+    <input
+      type="file"
+      hidden
+      accept=".xlsx"
+      onChange={async (e) => {
+        const token = localStorage.getItem("token");
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const buffer = await file.arrayBuffer();
+        const res = await fetch("/api/urunler/import", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: buffer,
+        });
+
+        const result = await res.json();
+        alert(`✅ ${result.count} ürün aktarıldı`);
+        fetchData();
+      }}
+    />
+  </label>
+
+</div>
+       
+      {/* LİSTE */}
+      <div className="border rounded-xl overflow-hidden bg-white shadow-sm">
+        <table className="w-full text-sm border-collapse">
           <thead className="bg-orange-100">
-            <tr>
-              <th className="p-2">Ürün</th><th>Stok</th><th>Fiyat</th><th>SKU</th><th>İşlem</th>
+            <tr className="text-left">
+              <th className="p-2 border">#</th>
+              <th className="p-2 border">Ürün</th>
+              <th className="p-2 border">SKU</th>
+              <th className="p-2 border">Stok</th>
+              <th className="p-2 border">Satış</th>
+              <th className="p-2 border">Birim</th>
+              <th className="p-2 border text-center">İşlem</th>
             </tr>
           </thead>
           <tbody>
+            {urunler.length === 0 && (
+              <tr><td className="p-4 text-center text-gray-500" colSpan={7}>Kayıt yok</td></tr>
+            )}
             {urunler.map((u, i) => (
-              <tr key={i} className="border-b">
-                <td className="p-2">{u.ad}</td>
-                <td className="p-2">{u.stok}</td>
-                <td className="p-2">{u.satisFiyati} {u.paraBirimi}</td>
-                <td className="p-2">{u.sku}</td>
-                <td className="p-2">✏️</td>
+              <tr key={u._id || i} className="hover:bg-orange-50/40">
+                <td className="p-2 border">{i + 1}</td>
+                <td className="p-2 border flex items-center gap-2">
+                  {u.imageUrl && <img src={u.imageUrl} alt="" className="w-8 h-8 object-cover rounded border" />}
+                  <div>
+                    <div className="font-medium">{u.ad}</div>
+                    <div className="text-xs text-gray-500">Barkod: {u.barkod || "-"}</div>
+                  </div>
+                </td>
+                <td className="p-2 border">{u.sku || "-"}</td>
+                <td className="p-2 border">{tr(u.stok)}</td>
+                <td className="p-2 border">{tr(u.satisFiyati)} {u.paraBirimi}</td>
+                <td className="p-2 border">{u.birim || "Adet"}</td>
+                <td className="p-2 border text-center">
+                  <button className="text-blue-600 hover:text-blue-900" onClick={() => editProduct(u)}>✏️</button>
+                  <button className="text-red-600 hover:text-red-900 ml-3" onClick={() => deleteProduct(u._id)}>🗑️</button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -828,6 +933,7 @@ const uploadImage = async (file) => {
     </div>
   );
 }
+
 
 
 /* 🔸 CARI HAREKETLERI */
