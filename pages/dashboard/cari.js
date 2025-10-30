@@ -1,5 +1,6 @@
 // 📄 /pages/dashboard/cari.js
 import React, { useState, useEffect, useRef } from "react";
+import EditProductModal from "@/components/product/EditProductModal";
 
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
@@ -577,6 +578,7 @@ function CariKarti() {
 /* 🔸 ÜRÜNLER — TAMAMLANMIŞ KOMPONENT (CRUD + Foto + Varyant + UI) */
 function Urunler() {
   const [urun, setUrun] = React.useState({
+    
     _id: null,            // ✨ düzenleme modunu anlamak için
     ad: "",
     kategori: "",
