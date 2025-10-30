@@ -1,7 +1,13 @@
+// 📁 /pages/_app.js
 import "@/styles/globals.css";
 import { useEffect } from "react";
+import { useRouter } from "next/router";
+import DashboardLayout from "@/components/layout/DashboardLayout";
 
 export default function App({ Component, pageProps }) {
+  const router = useRouter();
+  const isDashboard = router.pathname.startsWith("/dashboard");
+
   // 🔁 Token yenileme fonksiyonu
   async function refreshTokenIfNeeded() {
     const token = localStorage.getItem("token");
@@ -37,5 +43,15 @@ export default function App({ Component, pageProps }) {
     return () => clearInterval(interval);
   }, []);
 
+  // ✅ Dashboard sayfaları için layout sarmalaması
+  if (isDashboard) {
+    return (
+      <DashboardLayout>
+        <Component {...pageProps} />
+      </DashboardLayout>
+    );
+  }
+
+  // ✅ Diğer sayfalar (login/register/public)
   return <Component {...pageProps} />;
 }
