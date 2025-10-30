@@ -575,15 +575,20 @@ function CariKarti() {
 
 /* 🔸 ÜRÜNLER */
 /* 🔸 ÜRÜNLER (Barkod + SKU + Görsel eklendi) */
+/* 🔸 ÜRÜNLER — GELİŞMİŞ SÜRÜM */
 function Urunler() {
   const [urun, setUrun] = useState({
     ad: "",
+    kategori: "",
     barkod: "",
     sku: "",
-    fiyat: "",
+    birim: "Adet",
+    alisFiyati: "",
+    satisFiyati: "",
     stok: "",
     paraBirimi: "TRY",
     kdvOrani: 20,
+    variation: [{ ad: "", stok: "", fiyat: "" }],
     resimUrl: "",
   });
 
@@ -591,36 +596,7 @@ function Urunler() {
   const [preview, setPreview] = useState(null);
   const fileInputRef = useRef(null);
 
-  // 📸 Görsel seçme
-  const onChooseFile = () => fileInputRef.current?.click();
-  const onFileChange = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      setPreview(reader.result);
-      setUrun((f) => ({ ...f, resimUrl: reader.result }));
-    };
-    reader.readAsDataURL(file);
-  };
-
-  // 📥 Ürün şablonu indir
-  const onDownloadProductTemplate = () => {
-    const sample = [
-      {
-        ad: "Laptop",
-        barkod: "8691234567890",
-        sku: "LP123-256",
-        fiyat: 25000,
-        stok: 15,
-        paraBirimi: "TRY",
-        kdvOrani: 20,
-      },
-    ];
-    downloadXlsxFromJson(sample, "Ürün Şablon", "urun_sablon.xlsx");
-  };
-
-  // 🔄 Ürünleri çek
+  // ✅ Ürün Listesi Çek
   const fetchData = async () => {
     try {
       const token = localStorage.getItem("token");
@@ -638,20 +614,17 @@ function Urunler() {
     fetchData();
   }, []);
 
-  // 💾 Kaydet
+  // ✅ Form Submit
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
       const token = localStorage.getItem("token");
-      const payload = {
-        ad: urun.ad,
-        barkod: urun.barkod || "",
-        sku: urun.sku || "",
-        fiyat: Number(urun.fiyat),
+
+      const payload = { 
+        ...urun,
+        alisFiyati: Number(urun.alisFiyati),
+        satisFiyati: Number(urun.satisFiyati),
         stok: Number(urun.stok),
-        paraBirimi: urun.paraBirimi,
-        kdvOrani: Number(urun.kdvOrani),
-        resimUrl: urun.resimUrl || "",
       };
 
       const res = await fetch("/api/urunler", {
@@ -663,190 +636,141 @@ function Urunler() {
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.message || "Ürün kaydetme hatası");
+      if (!res.ok) throw new Error("Ürün kaydetme hatası");
 
-      alert("✅ Ürün başarıyla kaydedildi!");
+      alert("✅ Ürün Eklendi");
       setUrun({
         ad: "",
+        kategori: "",
         barkod: "",
         sku: "",
-        fiyat: "",
+        birim: "Adet",
+        alisFiyati: "",
+        satisFiyati: "",
         stok: "",
         paraBirimi: "TRY",
         kdvOrani: 20,
+        variation: [{ ad: "", stok: "", fiyat: "" }],
         resimUrl: "",
       });
       setPreview(null);
-      await fetchData();
+      fetchData();
     } catch (e) {
-      console.error("Ürün kaydetme hatası:", e);
-      alert("Ürün kaydı sırasında bir hata oluştu.");
+      console.error(e);
+      alert("Hata: " + e.message);
     }
+  };
+
+  // ✅ Varyant Ekle
+  const addVariation = () => {
+    setUrun({
+      ...urun,
+      variation: [...urun.variation, { ad: "", stok: "", fiyat: "" }],
+    });
+  };
+
+  const updateVariation = (i, field, value) => {
+    const newVar = [...urun.variation];
+    newVar[i][field] = value;
+    setUrun({ ...urun, variation: newVar });
+  };
+
+  const removeVariation = (i) => {
+    const newVar = urun.variation.filter((_, idx) => idx !== i);
+    setUrun({ ...urun, variation: newVar });
+  };
+
+  // ✅ Resim Seç / Preview
+  const handleImage = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    setPreview(url);
+    setUrun({ ...urun, resimUrl: url });
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={onDownloadProductTemplate}
-          className="px-3 py-2 text-sm rounded border bg-white hover:bg-gray-50"
-        >
-          📥 Ürün Şablonu (XLSX)
-        </button>
-      </div>
+      <form onSubmit={handleSubmit} className="grid grid-cols-12 gap-4 p-4 border rounded-xl">
+        
+        {/* Sol Form */}
+        <div className="col-span-12 md:col-span-8 space-y-4">
 
-      <form onSubmit={handleSubmit} className="grid grid-cols-12 gap-4">
-        {/* Sol sütun */}
-        <div className="col-span-12 md:col-span-4 space-y-3">
-          <div className="border rounded-xl p-4">
-            <div className="flex flex-col items-center space-y-3">
-              <img
-                src={preview || "/images/default-product.png"}
-                alt="Ürün Görseli"
-                className="w-24 h-24 rounded-xl border object-cover"
-                onError={(e) => (e.currentTarget.src = "/images/default-product.png")}
-              />
-              <button
-                type="button"
-                onClick={onChooseFile}
-                className="px-3 py-1.5 text-sm rounded border bg-white hover:bg-gray-50"
-              >
-                📸 Görsel Yükle
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                hidden
-                onChange={onFileChange}
-              />
-            </div>
-          </div>
-        </div>
+          <input className="input" placeholder="Ürün Adı *"
+            value={urun.ad} onChange={(e) => setUrun({ ...urun, ad: e.target.value })} required />
 
-        {/* Orta sütun */}
-        <div className="col-span-12 md:col-span-4 space-y-3">
-          <input
-            type="text"
-            placeholder="Ürün Adı *"
-            value={urun.ad}
-            onChange={(e) => setUrun({ ...urun, ad: e.target.value })}
-            className="border p-2 rounded w-full"
-            required
-          />
-          <input
-            type="text"
-            placeholder="Barkod"
-            value={urun.barkod}
-            onChange={(e) => setUrun({ ...urun, barkod: e.target.value })}
-            className="border p-2 rounded w-full"
-          />
-          <input
-            type="text"
-            placeholder="SKU / Stok Kodu"
-            value={urun.sku}
-            onChange={(e) => setUrun({ ...urun, sku: e.target.value })}
-            className="border p-2 rounded w-full"
-          />
-          <div className="flex gap-2">
-            <input
-              type="number"
-              placeholder="Fiyat"
-              value={urun.fiyat}
-              onChange={(e) => setUrun({ ...urun, fiyat: e.target.value })}
-              className="border p-2 rounded flex-1"
-              required
-            />
-            <input
-              type="number"
-              placeholder="Stok"
-              value={urun.stok}
-              onChange={(e) => setUrun({ ...urun, stok: e.target.value })}
-              className="border p-2 rounded w-28"
-              required
-            />
-          </div>
-          <div className="flex gap-2">
-            <select
-              className="border p-2 rounded w-28"
-              value={urun.paraBirimi}
-              onChange={(e) => setUrun({ ...urun, paraBirimi: e.target.value })}
-            >
-              <option value="TRY">TRY</option>
-              <option value="USD">USD</option>
-              <option value="EUR">EUR</option>
-            </select>
-            <select
-              className="border p-2 rounded w-28"
-              value={urun.kdvOrani}
-              onChange={(e) => setUrun({ ...urun, kdvOrani: Number(e.target.value) })}
-            >
-              {KDV_RATES.map((k) => (
-                <option key={k.value} value={k.value}>
-                  {k.label}
-                </option>
-              ))}
+          <input className="input" placeholder="Kategori"
+            value={urun.kategori} onChange={(e) => setUrun({ ...urun, kategori: e.target.value })} />
+
+          <div className="grid grid-cols-3 gap-3">
+            <input className="input" placeholder="Barkod"
+              value={urun.barkod} onChange={(e) => setUrun({ ...urun, barkod: e.target.value })} />
+
+            <input className="input" placeholder="SKU / Stok Kodu"
+              value={urun.sku} onChange={(e) => setUrun({ ...urun, sku: e.target.value })} />
+
+            <select className="input" value={urun.birim}
+              onChange={(e) => setUrun({ ...urun, birim: e.target.value })}>
+              <option>Adet</option><option>Kutu</option><option>Paket</option><option>KG</option>
             </select>
           </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <input className="input" placeholder="Alış Fiyatı" type="number"
+              value={urun.alisFiyati} onChange={(e) => setUrun({ ...urun, alisFiyati: e.target.value })} />
+
+            <input className="input" placeholder="Satış Fiyatı *" type="number"
+              value={urun.satisFiyati} onChange={(e) => setUrun({ ...urun, satisFiyati: e.target.value })} required />
+
+            <input className="input" placeholder="Stok *" type="number"
+              value={urun.stok} onChange={(e) => setUrun({ ...urun, stok: e.target.value })} required />
+          </div>
+
+          {/* Varyant Alanları */}
+          <div className="space-y-2">
+            <label className="font-bold">Varyantlar:</label>
+            {urun.variation.map((v, i) => (
+              <div key={i} className="grid grid-cols-4 gap-2 mb-2">
+                <input className="input" placeholder="Varyant (Renk/Beden)"
+                  value={v.ad} onChange={(e) => updateVariation(i, "ad", e.target.value)} />
+                <input className="input" placeholder="Varyant Stok" type="number"
+                  value={v.stok} onChange={(e) => updateVariation(i, "stok", e.target.value)} />
+                <input className="input" placeholder="Varyant Fiyat" type="number"
+                  value={v.fiyat} onChange={(e) => updateVariation(i, "fiyat", e.target.value)} />
+                <button type="button" onClick={() => removeVariation(i)} className="btn-red">X</button>
+              </div>
+            ))}
+            <button type="button" onClick={addVariation} className="btn-gray">+ Varyant Ekle</button>
+          </div>
+
+          <button className="btn-primary w-full">Kaydet</button>
         </div>
 
-        {/* Sağ sütun: Kaydet butonu */}
-        <div className="col-span-12 md:col-span-4 flex items-end justify-end">
-          <button
-            type="submit"
-            className="px-5 py-2 rounded bg-orange-500 text-white hover:bg-orange-600"
-          >
-            💾 Ürünü Kaydet
-          </button>
+        {/* Sağ — Resim */}
+        <div className="col-span-12 md:col-span-4 flex flex-col items-center">
+          <img src={preview || "/images/default-product.png"} className="w-40 h-40 border rounded object-cover mb-2" />
+          <button type="button" onClick={() => fileInputRef.current.click()} className="btn-gray w-full">📸 Fotoğraf Seç</button>
+          <input type="file" hidden ref={fileInputRef} onChange={handleImage} accept="image/*" />
         </div>
+
       </form>
 
-      {/* Liste */}
+      {/* ✅ Ürün Listesi */}
       <div className="border rounded-xl overflow-hidden">
-        <table className="w-full border-collapse text-sm">
+        <table className="w-full text-sm">
           <thead className="bg-orange-100">
             <tr>
-              <th className="border p-2">#</th>
-              <th className="border p-2">Görsel</th>
-              <th className="border p-2">Ad</th>
-              <th className="border p-2">Barkod / SKU</th>
-              <th className="border p-2">Fiyat</th>
-              <th className="border p-2">Stok</th>
+              <th className="p-2">Ürün</th><th>Stok</th><th>Fiyat</th><th>SKU</th><th>İşlem</th>
             </tr>
           </thead>
           <tbody>
-            {urunler.length === 0 && (
-              <tr>
-                <td colSpan={6} className="border p-6 text-center text-gray-500">
-                  Kayıt bulunamadı.
-                </td>
-              </tr>
-            )}
             {urunler.map((u, i) => (
-              <tr key={u._id || i} className="hover:bg-orange-50/40">
-                <td className="border p-2 text-center">{i + 1}</td>
-                <td className="border p-2 text-center">
-                  <img
-                    src={u.resimUrl || "/images/default-product.png"}
-                    className="w-12 h-12 object-cover rounded"
-                    alt=""
-                    onError={(e) => (e.currentTarget.src = "/images/default-product.png")}
-                  />
-                </td>
-                <td className="border p-2">{u.ad}</td>
-                <td className="border p-2">
-                  <div>{u.barkod || "-"}</div>
-                  <div className="text-xs text-gray-500">{u.sku || "-"}</div>
-                </td>
-                <td className="border p-2 text-right">
-                  {Number(u.fiyat || 0).toLocaleString("tr-TR", {
-                    minimumFractionDigits: 2,
-                  })}{" "}
-                  {u.paraBirimi || "TRY"}
-                </td>
-                <td className="border p-2 text-center">{u.stok}</td>
+              <tr key={i} className="border-b">
+                <td className="p-2">{u.ad}</td>
+                <td className="p-2">{u.stok}</td>
+                <td className="p-2">{u.satisFiyati} {u.paraBirimi}</td>
+                <td className="p-2">{u.sku}</td>
+                <td className="p-2">✏️</td>
               </tr>
             ))}
           </tbody>
@@ -855,6 +779,7 @@ function Urunler() {
     </div>
   );
 }
+
 
 /* 🔸 CARI HAREKETLERI */
 function CariHareketleri() {
