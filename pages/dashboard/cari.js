@@ -591,6 +591,14 @@ function Urunler() {
     variation: [{ ad: "", stok: "", fiyat: "" }],
     resimUrl: "",
   });
+const uploadImage = async (file) => {
+  const res = await fetch("/api/urunler/upload", {
+    method: "POST",
+    body: file,
+  });
+  const data = await res.json();
+  return data.url;
+};
 
   const [urunler, setUrunler] = useState([]);
   const [preview, setPreview] = useState(null);
@@ -714,6 +722,47 @@ function Urunler() {
               <option>Adet</option><option>Kutu</option><option>Paket</option><option>KG</option>
             </select>
           </div>
+          {/* Ürün Fotoğrafı */}
+{/* Ürün Fotoğrafı */}
+<div className="col-span-12">
+  <label className="block text-sm mb-1 font-medium">Ürün Fotoğrafı</label>
+
+  <input
+    type="file"
+    accept="image/*"
+    onChange={async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      // ✅ API yolunu doğru kullan
+      const upload = await fetch("/api/urunler/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await upload.json();
+
+      if (upload.ok && data?.url) {
+        setUrun({ ...urun, resimUrl: data.url });
+        alert("✅ Resim yüklendi!");
+      } else {
+        alert("❌ Resim yüklenemedi!");
+      }
+    }}
+  />
+
+  {urun.resimUrl && (
+    <img
+      src={urun.resimUrl}
+      alt="Ürün Foto"
+      className="w-24 h-24 mt-2 rounded border object-cover"
+    />
+  )}
+</div>
+
 
           <div className="grid grid-cols-3 gap-3">
             <input className="input" placeholder="Alış Fiyatı" type="number"
