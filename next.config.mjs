@@ -3,13 +3,23 @@ const nextConfig = {
   reactStrictMode: true,
 
   eslint: {
-    // ✅ Build sırasında ESLint hataları nedeniyle deploy başarısız olmasın
     ignoreDuringBuilds: true,
   },
 
-  // (İsteğe bağlı: resim optimizasyonu için)
+  // ✅ Render Deployment için
+  output: "standalone",
+
+  // ✅ Render'ın port değişkenini kullanması için
+  env: {
+    PORT: process.env.PORT || 10000,
+  },
+
   images: {
-    domains: ["localhost", "www.satistakip.online"],
+    domains: [
+      "localhost",
+      "www.satistakip.online",
+      "res.cloudinary.com" // ✅ Cloudinary
+    ],
   },
 };
 
