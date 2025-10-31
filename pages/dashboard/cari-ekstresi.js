@@ -1,101 +1,259 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
-import { saveAs } from "file-saver";
 
 export default function CariEkstresi() {
   const [cariler, setCariler] = useState([]);
-  const [hareketler, setHareketler] = useState([]);
-  const [cariId, setCariId] = useState("");
-  const [cariInfo, setCariInfo] = useState(null);
+  const [seciliCariId, setSeciliCariId] = useState("");
+  const [seciliCari, setSeciliCari] = useState(null);
+  const [items, setItems] = useState([]);
+
+  const [dateFrom, setDateFrom] = useState(() =>
+    new Date(new Date().setMonth(new Date().getMonth() - 1))
+      .toISOString()
+      .slice(0, 10)
+  );
+  const [dateTo, setDateTo] = useState(() =>
+    new Date().toISOString().slice(0, 10)
+  );
+  const [typeFilter, setTypeFilter] = useState("");
+
+  const [logoDataUrl, setLogoDataUrl] = useState(null);
+  const logoInputRef = useRef(null);
+
+  const tl = (n) =>
+    Number(n || 0).toLocaleString("tr-TR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  const toDateOnly = (d) => new Date(d).toISOString().slice(0, 10);
+
+  const fetchCariler = async () => {
+    const token = localStorage.getItem("token");
+    const res = await fetch("/api/cari", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    setCariler(Array.isArray(data) ? data : []);
+  };
+
+  const fetchTransactions = async () => {
+    const token = localStorage.getItem("token");
+    const res = await fetch("/api/cari/transactions", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    setItems(Array.isArray(data) ? data : []);
+  };
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    fetch("/api/cari", { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
-      .then(setCariler);
+    fetchCariler();
+    fetchTransactions();
   }, []);
 
-  const loadEkstre = async () => {
-    if (!cariId) return alert("Cari seçin");
-    const token = localStorage.getItem("token");
+  useEffect(() => {
+    const c = cariler.find((x) => x._id === seciliCariId);
+    setSeciliCari(c || null);
+  }, [seciliCariId, cariler]);
 
-    const r = await fetch(`/api/cari/transactions?cariId=${cariId}`, {
-      headers: { Authorization: `Bearer ${token}` }
+  const filtered = useMemo(() => {
+    const start = new Date(dateFrom + "T00:00:00");
+    const end = new Date(dateTo + "T23:59:59");
+
+    return items
+      .filter((it) => {
+        const okCari = seciliCari ? it.account === seciliCari.ad : true;
+        const d = new Date(it.date || Date.now());
+        const okDate = d >= start && d <= end;
+        const okType = typeFilter
+          ? String(it.type || it.tur).toLowerCase() ===
+            typeFilter.toLowerCase()
+          : true;
+
+        return okCari && okDate && okType;
+      })
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+  }, [items, seciliCari, dateFrom, dateTo, typeFilter]);
+
+  const summary = useMemo(() => {
+    let borc = 0,
+      alacak = 0;
+
+    filtered.forEach((t) => {
+      const tur = (t.type || t.tur || "").toString();
+      const tutarTRY = Number(t.totalTRY ?? t.total ?? 0);
+      if (/purchase|Alış/i.test(tur)) borc += tutarTRY;
+      else if (/sale|Satış/i.test(tur)) alacak += tutarTRY;
     });
 
-    const data = await r.json();
-    setHareketler(data);
+    return { borc, alacak, bakiye: alacak - borc };
+  }, [filtered]);
 
-    const cari = cariler.find(c => c._id === cariId);
-    setCariInfo(cari);
+  // /// LOGO
+  useEffect(() => {
+    (async () => {
+      try {
+        const resp = await fetch("/logo.png");
+        if (resp.ok) {
+          const blob = await resp.blob();
+          const reader = new FileReader();
+          reader.onload = () => setLogoDataUrl(reader.result);
+          reader.readAsDataURL(blob);
+        }
+      } catch {}
+    })();
+  }, []);
+
+  const handleLogoPick = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => setLogoDataUrl(reader.result);
+    reader.readAsDataURL(f);
   };
 
-  const toExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(hareketler);
+  // ✅ Excel Export (Filtreli)
+  const exportExcel = () => {
+    const rows = filtered.map((t) => ({
+      Tarih: toDateOnly(t.date || Date.now()),
+      Cari: t.account,
+      Ürün: t.product,
+      Tür: t.type || t.tur,
+      Miktar: t.quantity ?? "-",
+      "Birim Fiyat": t.unitPrice ?? 0,
+      PB: t.currency ?? "TRY",
+      "Tutar (TL)": t.totalTRY ?? t.total ?? 0,
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Ekstre");
-    const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-    saveAs(new Blob([buf]), `cari-ekstresi-${cariInfo?.ad}.xlsx`);
+
+    XLSX.writeFile(
+      wb,
+      `cari-ekstre_${seciliCari?.ad || "tum"}_${dateFrom}_${dateTo}.xlsx`
+    );
   };
 
-  // Geçici PDF: Print dialog → PDF
-  const printPDF = () => window.print();
-
   return (
-    <div className="p-6">
-      <h2 className="text-2xl font-bold text-orange-600 mb-4">📄 Cari Ekstresi</h2>
+    <div className="p-6 space-y-4">
+      <h1 className="text-2xl font-bold text-orange-600 text-center">
+        📄 Cari Ekstresi
+      </h1>
 
-      <div className="flex gap-3 mb-4">
-        <select className="border p-2 rounded" value={cariId} onChange={e => setCariId(e.target.value)}>
-          <option value="">Cari Seç *</option>
-          {cariler.map(c => <option key={c._id} value={c._id}>{c.ad}</option>)}
+      {/* Filtre bar */}
+      <div className="bg-white rounded-xl shadow p-4 grid grid-cols-12 gap-3">
+        <select
+          className="border p-2 rounded col-span-12 md:col-span-4"
+          value={seciliCariId}
+          onChange={(e) => setSeciliCariId(e.target.value)}
+        >
+          <option value="">Cari Seç</option>
+          {cariler.map((c) => (
+            <option key={c._id} value={c._id}>
+              {c.ad}
+            </option>
+          ))}
         </select>
 
-        <button onClick={loadEkstre} className="px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700">
-          🔍 Göster
-        </button>
+        <input
+          type="date"
+          className="border p-2 rounded col-span-6 md:col-span-2"
+          value={dateFrom}
+          onChange={(e) => setDateFrom(e.target.value)}
+        />
+        <input
+          type="date"
+          className="border p-2 rounded col-span-6 md:col-span-2"
+          value={dateTo}
+          onChange={(e) => setDateTo(e.target.value)}
+        />
 
-        <button onClick={toExcel} className="px-4 py-2 bg-green-600 text-white rounded">
-          📥 Excel
-        </button>
+        <select
+          className="border p-2 rounded col-span-6 md:col-span-2"
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+        >
+          <option value="">Tür</option>
+          <option value="sale">Satış</option>
+          <option value="purchase">Alış</option>
+        </select>
 
-        <button onClick={printPDF} className="px-4 py-2 bg-blue-600 text-white rounded">
-          🖨️ PDF Yazdır
-        </button>
+        <div className="col-span-6 md:col-span-2 flex gap-2">
+          <button
+            className="flex-1 bg-orange-600 text-white rounded px-3"
+            onClick={exportExcel}
+          >
+            📥 Excel
+          </button>
+
+          <button
+            onClick={() => logoInputRef.current?.click()}
+            className="border rounded px-3"
+          >
+            🖼️ Logo
+          </button>
+          <input
+            ref={logoInputRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={handleLogoPick}
+          />
+        </div>
       </div>
 
-      {cariInfo && (
-        <div className="mb-4 p-3 bg-white rounded shadow text-sm">
-          <b>Cari:</b> {cariInfo.ad} <br/>
-          <b>Telefon:</b> {cariInfo.telefon} <br/>
-          <b>Mail:</b> {cariInfo.email}
-        </div>
-      )}
+      {/* Özet */}
+      <div className="grid grid-cols-12 gap-3">
+        <SummaryCard title="Toplam Satış (TL)" value={tl(summary.alacak)} />
+        <SummaryCard title="Toplam Alış (TL)" value={tl(summary.borc)} />
+        <SummaryCard title="Bakiye (TL)" value={tl(summary.bakiye)} />
+      </div>
 
-      <table className="w-full text-sm bg-white rounded shadow">
-        <thead className="bg-orange-100">
-          <tr>
-            <th className="p-2 border">Tarih</th>
-            <th className="p-2 border">Tür</th>
-            <th className="p-2 border">Ürün</th>
-            <th className="p-2 border">Miktar</th>
-            <th className="p-2 border">Birim Fiyat</th>
-            <th className="p-2 border">Tutar (TRY)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {hareketler.map((h, i) => (
-            <tr key={i}>
-              <td className="border p-2">{new Date(h.date).toLocaleDateString()}</td>
-              <td className="border p-2">{h.tur}</td>
-              <td className="border p-2">{h.product}</td>
-              <td className="border p-2">{h.quantity}</td>
-              <td className="border p-2">{h.unitPrice}</td>
-              <td className="border p-2">{h.totalTRY}</td>
+      {/* Tablo */}
+      <div className="bg-white rounded-xl shadow overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-orange-100">
+            <tr>
+              <th className="p-2 text-left">Tarih</th>
+              <th className="p-2 text-left">Ürün</th>
+              <th className="p-2 text-left">Tür</th>
+              <th className="p-2 text-right">Miktar</th>
+              <th className="p-2 text-right">Birim Fiyat</th>
+              <th className="p-2 text-center">PB</th>
+              <th className="p-2 text-right">Tutar (TL)</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {filtered.map((t, i) => (
+              <tr key={i} className="border-b hover:bg-slate-50">
+                <td className="p-2">{toDateOnly(t.date || Date.now())}</td>
+                <td className="p-2">{t.product || "-"}</td>
+                <td className="p-2">{t.type || t.tur}</td>
+                <td className="p-2 text-right">{t.quantity ?? "-"}</td>
+                <td className="p-2 text-right">{tl(t.unitPrice ?? 0)}</td>
+                <td className="p-2 text-center">{t.currency || "TRY"}</td>
+                <td className="p-2 text-right">{tl(t.totalTRY ?? t.total ?? 0)}</td>
+              </tr>
+            ))}
+            {filtered.length === 0 && (
+              <tr>
+                <td className="p-4 text-center text-gray-500" colSpan={7}>
+                  Kayıt yok
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function SummaryCard({ title, value }) {
+  return (
+    <div className="col-span-12 md:col-span-4 bg-white rounded-xl shadow p-4">
+      <div className="text-xs text-gray-500">{title}</div>
+      <div className="text-2xl font-semibold mt-1">{value}</div>
     </div>
   );
 }

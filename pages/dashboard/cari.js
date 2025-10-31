@@ -5,206 +5,182 @@ import { saveAs } from "file-saver";
 
 export default function Cariler() {
   const fileRef = useRef(null);
-  const excelRef = useRef(null);
 
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [cariler, setCariler] = useState([]);
-  const [filters, setFilters] = useState({ q:"", tur:"" });
+  const [activeTab, setActiveTab] = useState("form");
 
   const emptyForm = {
-    ad:"",
-    tur:"Müşteri",
-    telefon:"",
-    email:"",
-    vergiTipi:"TCKN",
-    vergiNo:"",
-    adres:"",
-    il:"",
-    ilce:"",
-    postaKodu:"",
-    paraBirimi:"TRY",
-    kdvOrani:20,
-    // ✅ Pazaryeri alanları
-    trendyolCustomerId:"",
-    hbCustomerId:"",
+    ad:"", tur:"Müşteri", telefon:"", email:"",
+    vergiTipi:"TCKN", vergiNo:"", adres:"", il:"", ilce:"",
+    postaKodu:"", paraBirimi:"TRY", kdvOrani:20,
+    trendyolCustomerId:"", hbCustomerId:""
   };
 
   const [form, setForm] = useState(emptyForm);
 
   const fetchCariler = async () => {
-    try {
-      const token = localStorage.getItem("token");
-      const res = await fetch("/api/cari", {
-        headers: { Authorization:`Bearer ${token}` }
-      });
-      setCariler(await res.json());
-    } catch (e) {
-      console.log("Cari getirilemedi", e);
-    }
+    const token = localStorage.getItem("token");
+    const res = await fetch("/api/cari", { headers: { Authorization:`Bearer ${token}` }});
+    setCariler(await res.json());
   };
 
   useEffect(()=>{ fetchCariler(); }, []);
 
-  const resetForm = () => {
-    setForm(emptyForm);
-    setEditingId(null);
-  };
+  const resetForm = () => { setForm(emptyForm); setEditingId(null); };
 
   const saveCari = async (e) => {
     e.preventDefault();
     setLoading(true);
-    try {
-      const token = localStorage.getItem("token");
-      const method = editingId ? "PUT" : "POST";
-      const url = editingId ? `/api/cari?cariId=${editingId}` : "/api/cari";
 
-      const res = await fetch(url, {
-        method,
-        headers:{
-          "Content-Type":"application/json",
-          Authorization:`Bearer ${token}`
-        },
-        body: JSON.stringify(form)
-      });
+    const token = localStorage.getItem("token");
+    const method = editingId ? "PUT" : "POST";
+    const url = editingId ? `/api/cari?cariId=${editingId}` : "/api/cari";
 
-      if (!res.ok) throw new Error("Kayıt hatası");
+    await fetch(url, {
+      method,
+      headers:{ "Content-Type":"application/json", Authorization:`Bearer ${token}` },
+      body: JSON.stringify(form)
+    });
 
-      await fetchCariler();
-      resetForm();
-      alert("✅ Kaydedildi");
-    } catch(err) {
-      alert("❌ Kayıt başarısız");
-    }
+    fetchCariler();
+    resetForm();
+    alert("✅ Kaydedildi");
     setLoading(false);
   };
 
-  const editCari = (c) => {
-    setEditingId(c._id);
-    setForm({
-      ad:c.ad,
-      tur:c.tur,
-      telefon:c.telefon,
-      email:c.email,
-      vergiTipi:c.vergiTipi,
-      vergiNo:c.vergiNo,
-      adres:c.adres,
-      il:c.il,
-      ilce:c.ilce,
-      postaKodu:c.postaKodu,
-      paraBirimi:c.paraBirimi,
-      kdvOrani:c.kdvOrani,
-      trendyolCustomerId:c.trendyolCustomerId || "",
-      hbCustomerId:c.hbCustomerId || "",
-    });
-    window.scrollTo({top:0,behavior:"smooth"});
+  // ✅ Excel Dışa Aktar
+  const exportExcel = () => {
+    const ws = XLSX.utils.json_to_sheet(cariler);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Cariler");
+    const excelBuffer = XLSX.write(wb, { bookType:"xlsx", type:"array" });
+    saveAs(new Blob([excelBuffer]), "cariler.xlsx");
   };
 
-  const deleteCari = async (id) => {
-    if (!confirm("Silinsin mi?")) return;
-    const token = localStorage.getItem("token");
-    await fetch(`/api/cari?cariId=${id}`, {
-      method:"DELETE",
-      headers:{ Authorization:`Bearer ${token}` }
-    });
-    fetchCariler();
+  // ✅ Excel İçeri Aktar
+  const importExcel = (e) => {
+    const file = e.target.files[0];
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      const data = XLSX.read(evt.target.result, { type:"binary" });
+      const json = XLSX.utils.sheet_to_json(data.Sheets[data.SheetNames[0]]);
+      for (let row of json) {
+        await fetch("/api/cari", {
+          method:"POST",
+          headers:{ "Content-Type":"application/json", Authorization:`Bearer ${localStorage.getItem("token")}` },
+          body: JSON.stringify({ ...emptyForm, ...row })
+        });
+      }
+      alert("✅ Excel'den cariler yüklendi");
+      fetchCariler();
+    };
+    reader.readAsBinaryString(file);
   };
-
-  const filtered = cariler.filter(c =>
-    c.ad.toLowerCase().includes(filters.q.toLowerCase()) &&
-    (filters.tur ? c.tur === filters.tur : true)
-  );
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold text-orange-600 mb-6 text-center">💼 Cari Yönetimi</h1>
+    <div className="p-6 space-y-4">
+      <h1 className="text-2xl font-bold text-orange-600 text-center">💼 Cari Yönetimi</h1>
 
-      {/* FORM */}
-      <form onSubmit={saveCari} className="bg-white p-6 rounded-xl shadow grid grid-cols-12 gap-4">
+      {/* ✅ Sekmeler */}
+      <div className="flex gap-2 mb-3">
+        {["form","liste","excel"].map(t=>(
+          <button key={t}
+            className={`px-4 py-2 rounded ${activeTab===t?"bg-orange-500 text-white":"bg-gray-200"}`}
+            onClick={()=>setActiveTab(t)}>
+            {t==="form" && "➕ Yeni / Düzenle"}
+            {t==="liste" && "📋 Cari Listesi"}
+            {t==="excel" && "📂 Excel İşlemleri"}
+          </button>
+        ))}
+      </div>
 
-        <input className="input col-span-6" placeholder="Ad *" value={form.ad}
-          onChange={(e)=>setForm({...form, ad:e.target.value})} required />
+      {/* ✅ FORM */}
+      {activeTab==="form" && (
+        <form onSubmit={saveCari} className="bg-white p-6 rounded-xl shadow grid grid-cols-12 gap-4">
 
-        <select className="input col-span-3" value={form.tur}
-          onChange={(e)=>setForm({...form, tur:e.target.value})}>
-          <option>Müşteri</option>
-          <option>Tedarikçi</option>
-        </select>
+          <input className="input col-span-6" placeholder="Ad *" value={form.ad}
+            onChange={(e)=>setForm({...form, ad:e.target.value})} required />
 
-        <input className="input col-span-3" placeholder="Telefon" value={form.telefon}
-          onChange={(e)=>setForm({...form, telefon:e.target.value})} />
+          <select className="input col-span-3" value={form.tur}
+            onChange={(e)=>setForm({...form, tur:e.target.value})}>
+            <option>Müşteri</option><option>Tedarikçi</option>
+          </select>
 
-        <input className="input col-span-6" placeholder="Email" value={form.email}
-          onChange={(e)=>setForm({...form, email:e.target.value})} />
+          <input className="input col-span-3" placeholder="Telefon" value={form.telefon}
+            onChange={(e)=>setForm({...form, telefon:e.target.value})} />
 
-        <select className="input col-span-3" value={form.vergiTipi}
-          onChange={(e)=>setForm({...form, vergiTipi:e.target.value})}>
-          <option>TCKN</option>
-          <option>VKN</option>
-        </select>
+          <input className="input col-span-6" placeholder="Email" value={form.email}
+            onChange={(e)=>setForm({...form, email:e.target.value})} />
 
-        <input className="input col-span-3" placeholder="Vergi No" value={form.vergiNo}
-          onChange={(e)=>setForm({...form, vergiNo:e.target.value})} />
+          <select className="input col-span-3" value={form.vergiTipi}
+            onChange={(e)=>setForm({...form, vergiTipi:e.target.value})}>
+            <option>TCKN</option><option>VKN</option>
+          </select>
 
-        <input className="input col-span-4" placeholder="İl" value={form.il}
-          onChange={(e)=>setForm({...form, il:e.target.value})} />
+          <input className="input col-span-3" placeholder="Vergi No" value={form.vergiNo}
+            onChange={(e)=>setForm({...form, vergiNo:e.target.value})} />
 
-        <input className="input col-span-4" placeholder="İlçe" value={form.ilce}
-          onChange={(e)=>setForm({...form, ilce:e.target.value})} />
+          <input className="input col-span-4" placeholder="İl" value={form.il}
+            onChange={(e)=>setForm({...form, il:e.target.value})}/>
 
-        <input className="input col-span-4" placeholder="Posta Kodu" value={form.postaKodu}
-          onChange={(e)=>setForm({...form, postaKodu:e.target.value})} />
+          <input className="input col-span-4" placeholder="İlçe" value={form.ilce}
+            onChange={(e)=>setForm({...form, ilce:e.target.value})}/>
 
-        <textarea className="input col-span-12" placeholder="Adres"
-          value={form.adres} onChange={(e)=>setForm({...form, adres:e.target.value})} />
+          <input className="input col-span-4" placeholder="Posta Kodu" value={form.postaKodu}
+            onChange={(e)=>setForm({...form, postaKodu:e.target.value})}/>
 
-        {/* ✅ Pazaryeri alanları */}
-        <input className="input col-span-6" placeholder="Trendyol Müşteri ID"
-          value={form.trendyolCustomerId}
-          onChange={(e)=>setForm({...form, trendyolCustomerId:e.target.value})} />
+          <textarea className="input col-span-12" placeholder="Adres"
+            value={form.adres} onChange={(e)=>setForm({...form, adres:e.target.value})} />
 
-        <input className="input col-span-6" placeholder="Hepsiburada Müşteri ID"
-          value={form.hbCustomerId}
-          onChange={(e)=>setForm({...form, hbCustomerId:e.target.value})} />
+          {/* ✅ Pazaryeri Field UX */}
+          <input className="input col-span-6" placeholder="🛒 Trendyol Müşteri ID"
+            value={form.trendyolCustomerId}
+            onChange={(e)=>setForm({...form, trendyolCustomerId:e.target.value})} />
 
-        <div className="col-span-12 flex justify-end gap-2">
-          {editingId && <button type="button" className="btn-gray" onClick={resetForm}>İptal</button>}
-          <button className="btn-primary">{editingId ? "Güncelle" : "Kaydet"}</button>
+          <input className="input col-span-6" placeholder="🏬 Hepsiburada Müşteri ID"
+            value={form.hbCustomerId}
+            onChange={(e)=>setForm({...form, hbCustomerId:e.target.value})} />
+
+          <div className="col-span-12 flex justify-end gap-2">
+            {editingId && <button type="button" className="btn-gray" onClick={resetForm}>İptal</button>}
+            <button className="btn-primary">{editingId ? "Güncelle" : "Kaydet"}</button>
+          </div>
+        </form>
+      )}
+
+      {/* ✅ LİSTE */}
+      {activeTab==="liste" && (
+        <table className="w-full bg-white rounded-xl shadow text-sm">
+          <thead className="bg-orange-100"><tr>
+            <th>#</th><th>Ad</th><th>Tür</th><th>Telefon</th><th>Vergi</th>
+            <th>Trendyol</th><th>HB</th><th>İşlem</th>
+          </tr></thead>
+          <tbody>
+            {cariler.map((c,i)=>(
+              <tr key={c._id} className="border-b hover:bg-slate-50">
+                <td>{i+1}</td><td>{c.ad}</td><td>{c.tur}</td><td>{c.telefon}</td>
+                <td>{c.vergiTipi}:{c.vergiNo}</td>
+                <td>{c.trendyolCustomerId || "-"}</td>
+                <td>{c.hbCustomerId || "-"}</td>
+                <td>
+                  <button className="text-blue-600" onClick={()=>{setForm(c); setEditingId(c._id); setActiveTab("form")}}>✏️</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {/* ✅ EXCEL */}
+      {activeTab==="excel" && (
+        <div className="bg-white p-6 rounded-xl shadow space-y-4 text-center">
+          <button onClick={exportExcel} className="btn-primary">📤 Excel Dışa Aktar</button>
+          <input type="file" ref={fileRef} className="hidden" onChange={importExcel}/>
+          <button onClick={()=>fileRef.current.click()} className="btn-gray">📥 Excel İçeri Al</button>
         </div>
-      </form>
-
-      {/* LİSTE */}
-      <table className="w-full mt-6 bg-white rounded-xl shadow text-sm">
-        <thead className="bg-orange-100">
-          <tr>
-            <th>#</th>
-            <th>Ad</th>
-            <th>Tür</th>
-            <th>Telefon</th>
-            <th>Vergi</th>
-            <th>TY ID</th>
-            <th>HB ID</th>
-            <th>İşlem</th>
-          </tr>
-        </thead>
-        <tbody>
-          {filtered.map((c,i)=>(
-            <tr key={c._id} className="border-b hover:bg-slate-50">
-              <td>{i+1}</td>
-              <td>{c.ad}</td>
-              <td>{c.tur}</td>
-              <td>{c.telefon}</td>
-              <td>{c.vergiTipi}:{c.vergiNo}</td>
-              <td>{c.trendyolCustomerId || "-"}</td>
-              <td>{c.hbCustomerId || "-"}</td>
-              <td>
-                <button className="text-blue-600" onClick={()=>editCari(c)}>✏️</button>
-                <button className="text-red-600 ml-2" onClick={()=>deleteCari(c._id)}>🗑️</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      )}
     </div>
   );
 }
