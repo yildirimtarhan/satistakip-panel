@@ -31,6 +31,8 @@ export default function Sidebar() {
         <MenuItem href="/dashboard" icon="🏠" label="Anasayfa" />
         <MenuItem href="/dashboard/cari" icon="👥" label="Cariler" />
         <MenuItem href="/dashboard/urunler" icon="📦" label="Ürünler" />
+        <MenuItem href="/dashboard/urun-satis" icon="🛒" label="Ürün Satış" />
+        <MenuItem href="/dashboard/urun-alis" icon="📥" label="Ürün Alış" />
         <MenuItem href="/dashboard/cari-hareketleri" icon="📊" label="Cari Hareketler" />
         <MenuItem href="/dashboard/cari-ekstresi" icon="📄" label="Cari Ekstresi" />
         <MenuItem href="/dashboard/stok-hareketleri" icon="📥" label="Stok Hareketleri" />
