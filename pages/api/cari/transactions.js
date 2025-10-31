@@ -9,80 +9,111 @@ export default async function handler(req, res) {
     const transactions = db.collection("transactions");
     const products = db.collection("products");
     const accounts = db.collection("accounts");
-    const stockLogs = db.collection("stock_logs"); // 📦 stok hareket logları
+    const stockLogs = db.collection("stock_logs");
 
-    // ======================
-    // 📤 POST - Yeni işlem ekle
-    // ======================
     if (req.method === "POST") {
-      const { accountId, productId, type, quantity, unitPrice, currency } = req.body;
+      const { 
+        accountId, productId, type, quantity, unitPrice, currency, fxRate, totalTRY, varyant 
+      } = req.body;
 
       const safeCurrency = currency || "TRY";
-      const safeQuantity = parseInt(quantity) || 1;
+      const safeQuantity = parseFloat(quantity) || 1;
       const safeUnitPrice = parseFloat(unitPrice) || 0;
+      const safeFxRate = safeCurrency === "TRY" ? 1 : Number(fxRate) || 0;
 
       if (!accountId || !type) {
-        return res.status(400).json({ message: "⚠️ Eksik bilgi gönderildi (accountId/type)." });
+        return res.status(400).json({ message: "⚠️ Eksik bilgi (accountId/type)" });
       }
 
       const accountObjectId = new ObjectId(accountId);
       const productObjectId = productId ? new ObjectId(productId) : null;
 
       const account = await accounts.findOne({ _id: accountObjectId });
-      if (!account) return res.status(404).json({ message: "Cari hesap bulunamadı." });
+      if (!account) return res.status(404).json({ message: "Cari bulunamadı" });
 
       let product = null;
       if (productObjectId) {
         product = await products.findOne({ _id: productObjectId });
-        if (!product) return res.status(404).json({ message: "Ürün bulunamadı." });
+        if (!product) return res.status(404).json({ message: "Ürün bulunamadı" });
       }
 
+      // ✅ TL Toplam Hesap
       const total = safeUnitPrice * safeQuantity;
+      const calculatedTRY = 
+        safeCurrency === "TRY"
+        ? total
+        : totalTRY
+        ? Number(totalTRY)
+        : Number((total * safeFxRate).toFixed(2));
 
+      // ✅ İşlem kaydı
       const newTransaction = {
         accountId: accountObjectId,
-        productId: productObjectId || null,
+        productId: productObjectId,
         type,
         quantity: safeQuantity,
         unitPrice: safeUnitPrice,
         total,
         currency: safeCurrency,
+        fxRate: safeFxRate,
+        totalTRY: calculatedTRY,
+        varyant: varyant || null,
         date: new Date(),
       };
 
       await transactions.insertOne(newTransaction);
 
-      // 📦 Stok + Log
+      // ✅ Ürün stok güncelle
       if (productObjectId) {
         const stockChange = type === "sale" ? -safeQuantity : safeQuantity;
 
-        await products.updateOne(
-          { _id: productObjectId },
-          {
-            $inc: { stock: stockChange },
-            $set: {
-              updatedAt: new Date(),
-              lastTransactionType: type,
-              lastTransactionQty: safeQuantity,
-              lastTransactionDate: new Date(),
-            },
-          }
-        );
+        // === ✅ VARYANT STOCK ===
+        if (varyant) {
+          const variantIndex = product.varyantlar.findIndex(v => v.ad === varyant);
 
+          if (variantIndex !== -1) {
+            product.varyantlar[variantIndex].stok += stockChange;
+
+            await products.updateOne(
+              { _id: productObjectId },
+              {
+                $set: {
+                  varyantlar: product.varyantlar,
+                  updatedAt: new Date(),
+                },
+                $inc: { stok: stockChange }, // toplam stok da değişsin
+              }
+            );
+          }
+        } 
+        else {
+          // ✅ varyant yoksa normal stok
+          await products.updateOne(
+            { _id: productObjectId },
+            {
+              $inc: { stok: stockChange },
+              $set: { updatedAt: new Date() },
+            }
+          );
+        }
+
+        // ✅ Stok log kaydı
         await stockLogs.insertOne({
           productId: productObjectId,
           accountId: accountObjectId,
           type,
+          varyant: varyant || null,
           quantity: safeQuantity,
           unitPrice: safeUnitPrice,
           total,
           currency: safeCurrency,
-          source: "manual",
+          fxRate: safeFxRate,
+          totalTRY: calculatedTRY,
           createdAt: new Date(),
         });
       }
 
-      // 🆕 **Alış işleminde ürünün alış fiyatını otomatik güncelle**
+      // ✅ Alış ise alış fiyatını güncelle
       if (type === "purchase" && productObjectId) {
         await products.updateOne(
           { _id: productObjectId },
@@ -96,79 +127,55 @@ export default async function handler(req, res) {
         );
       }
 
-      // 💰 Cari bakiye güncelle
-      const balanceChange = type === "sale" ? total : -total;
+      // ✅ Cari bakiye güncelle
+      const balanceChange = type === "sale" ? calculatedTRY : -calculatedTRY;
       await accounts.updateOne(
         { _id: accountObjectId },
         { $inc: { balance: balanceChange } }
       );
 
-      // 🧮 Tüm işlemleri oku ve bakiyeyi yeniden hesapla
+      // ✅ Cari toplamları yeniden hesapla
       const allTransactions = await transactions.find({ accountId: accountObjectId }).toArray();
 
-      let totalSales = 0;
-      let totalPurchases = 0;
-
+      let totalSalesTRY = 0, totalPurchasesTRY = 0;
       for (const t of allTransactions) {
-        if (t.type === "sale") totalSales += t.total;
-        else if (t.type === "purchase") totalPurchases += t.total;
+        const tTRY = Number(
+          t.totalTRY ?? (t.currency === "TRY" ? t.total : 0)
+        );
+        if (t.type === "sale") totalSalesTRY += tTRY;
+        else totalPurchasesTRY += tTRY;
       }
 
-      const newBalance = totalSales - totalPurchases;
+      const newBalance = Number((totalSalesTRY - totalPurchasesTRY).toFixed(2));
 
       await accounts.updateOne(
         { _id: accountObjectId },
         {
           $set: {
             balance: newBalance,
-            totalSales,
-            totalPurchases,
+            totalSales: totalSalesTRY,
+            totalPurchases: totalPurchasesTRY,
             updatedAt: new Date(),
           },
         }
       );
 
-      const updatedAccount = await accounts.findOne({ _id: accountObjectId });
-
-      console.log(
-        `🔁 Cari güncellendi (${account.ad}): Bakiye=${newBalance}, Satış=${totalSales}, Alış=${totalPurchases}`
-      );
-
       return res.status(201).json({
-        message: "✅ İşlem eklendi — stok & bakiye güncellendi — alış fiyatı senkronize edildi",
-        transaction: newTransaction,
-        updatedAccount,
+        message: "✅ İşlem kaydedildi • varyant stok güncellendi",
+        transaction: newTransaction
       });
     }
 
-    // ======================
-    // 📥 GET - İşlem listesi
-    // ======================
+    // 📥 GET
     if (req.method === "GET") {
-      const list = await transactions
-        .aggregate([
-          { $lookup: { from: "accounts", localField: "accountId", foreignField: "_id", as: "account" }},
-          { $lookup: { from: "products", localField: "productId", foreignField: "_id", as: "product" }},
-          { $sort: { date: -1 } },
-        ])
-        .toArray();
+      const list = await transactions.aggregate([
+        { $sort: { date: -1 } }
+      ]).toArray();
 
-      return res.status(200).json(
-        list.map((t) => ({
-          _id: t._id,
-          account: t.account[0]?.ad || "Bilinmiyor",
-          product: t.product[0]?.ad || "Bilinmiyor",
-          type: t.type === "sale" ? "Satış" : "Alış",
-          quantity: t.quantity,
-          unitPrice: t.unitPrice,
-          total: t.total,
-          currency: t.currency,
-          date: t.date,
-        }))
-      );
+      return res.status(200).json(list);
     }
 
-    return res.status(405).json({ message: "❌ Yalnızca GET & POST desteklenir." });
+    return res.status(405).json({ message: "Method not allowed" });
 
   } catch (err) {
     console.error("🔥 Transaction API hatası:", err);

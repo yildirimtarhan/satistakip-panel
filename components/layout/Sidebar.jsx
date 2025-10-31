@@ -30,12 +30,18 @@ export default function Sidebar() {
       <nav className="flex-1 space-y-1">
         <MenuItem href="/dashboard" icon="🏠" label="Anasayfa" />
         <MenuItem href="/dashboard/cari" icon="👥" label="Cariler" />
-        <MenuItem href="/dashboard/cari" icon="📦" label="Ürünler" />
-        <MenuItem href="/dashboard/cari" icon="📊" label="Cari Hareketler" />
-        <MenuItem href="/dashboard/tahsilat" icon="💳" label="Tahsilat / Ödeme" />
+        <MenuItem href="/dashboard/urunler" icon="📦" label="Ürünler" />
+        <MenuItem href="/dashboard/cari-hareketleri" icon="📊" label="Cari Hareketler" />
+        <MenuItem href="/dashboard/cari-ekstresi" icon="📄" label="Cari Ekstresi" />
+        <MenuItem href="/dashboard/stok-hareketleri" icon="📥" label="Stok Hareketleri" />
+
+        {/* ✅ Eklenen Menü */}
+        <MenuItem href="/dashboard/cari-tahsilat" icon="💰" label="Cari Tahsilat" />
+
         <MenuItem href="/dashboard/teklifler" icon="📄" label="Fiyat Teklifleri" />
         <MenuItem href="/dashboard/raporlar" icon="📈" label="Raporlar" />
         <MenuItem href="/dashboard/ayarlar" icon="⚙️" label="Ayarlar" />
+        <MenuItem href="/dashboard/stok-raporu" icon="📊" label="Stok Raporu" />
       </nav>
 
       {/* Footer */}

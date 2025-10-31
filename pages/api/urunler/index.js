@@ -6,11 +6,10 @@ import { ObjectId } from "mongodb";
 export default async function handler(req, res) {
   res.setHeader("Allow", "GET, POST, PUT, DELETE, OPTIONS");
 
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
+  if (req.method === "OPTIONS") return res.status(200).end();
 
   try {
+    // ✅ Auth
     const auth = req.headers.authorization;
     if (!auth) return res.status(401).json({ message: "Token eksik" });
 
@@ -21,32 +20,42 @@ export default async function handler(req, res) {
     const db = client.db("satistakip");
     const products = db.collection("products");
 
-    // ✅ GET
+    // ✅ GET - Ürün Listele
     if (req.method === "GET") {
-      const list = await products.find({ userId: decoded.userId }).sort({ createdAt: -1 }).toArray();
+      const list = await products
+        .find({ userId: decoded.userId })
+        .sort({ createdAt: -1 })
+        .toArray();
+
       return res.status(200).json(list);
     }
 
-    // ✅ POST
+    // ✅ POST - Ürün Ekle
     if (req.method === "POST") {
-      const body = req.body || {};
-      if (!body.ad || !body.satisFiyati) {
+      const b = req.body || {};
+
+      if (!b.ad || !b.satisFiyati)
         return res.status(400).json({ message: "Ürün adı ve satış fiyatı zorunlu" });
-      }
 
       const doc = {
-        ad: body.ad,
-        kategori: body.kategori || "",
-        barkod: body.barkod || "",
-        sku: body.sku || "",
-        birim: body.birim || "Adet",
-        imageUrl: body.imageUrl || "",
+        ad: b.ad.trim(),
+        barkod: b.barkod || "",
+        sku: b.sku || "",
+        marka: b.marka || "",
+        kategori: b.kategori || "",
+        aciklama: b.aciklama || "",
+        birim: b.birim || "Adet",
 
-        alisFiyati: Number(body.alisFiyati || 0),
-        satisFiyati: Number(body.satisFiyati || 0),
-        stok: Number(body.stok || 0),
-        paraBirimi: body.paraBirimi || "TRY",
-        kdvOrani: Number(body.kdvOrani ?? 20),
+        resimUrl: b.resimUrl || "",
+        varyantlar: b.varyantlar || [],
+
+        alisFiyati: Number(b.alisFiyati || 0),
+        satisFiyati: Number(b.satisFiyati),
+        stok: Number(b.stok || 0),
+        stokUyari: Number(b.stokUyari || 0),
+
+        paraBirimi: b.paraBirimi || "TRY",
+        kdvOrani: Number(b.kdvOrani ?? 20),
 
         userId: decoded.userId,
         createdAt: new Date(),
@@ -57,24 +66,56 @@ export default async function handler(req, res) {
       return res.status(201).json({ message: "✅ Ürün eklendi", _id: result.insertedId });
     }
 
-    // ✅ PUT
+    // ✅ PUT - Ürün Güncelle
     if (req.method === "PUT") {
       const { id } = req.query;
-      const updateData = { ...req.body, updatedAt: new Date() };
-      await products.updateOne({ _id: new ObjectId(id), userId: decoded.userId }, { $set: updateData });
-      return res.status(200).json({ message: "✅ Güncellendi" });
+      if (!id) return res.status(400).json({ message: "Ürün ID eksik" });
+
+      const b = req.body;
+
+      const update = {
+        ad: b.ad,
+        barkod: b.barkod || "",
+        sku: b.sku || "",
+        marka: b.marka || "",
+        kategori: b.kategori || "",
+        aciklama: b.aciklama || "",
+        birim: b.birim || "Adet",
+        resimUrl: b.resimUrl || "",
+        varyantlar: b.varyantlar || [],
+
+        alisFiyati: Number(b.alisFiyati || 0),
+        satisFiyati: Number(b.satisFiyati),
+        stok: Number(b.stok),
+        stokUyari: Number(b.stokUyari || 0),
+        paraBirimi: b.paraBirimi,
+        kdvOrani: Number(b.kdvOrani),
+
+        updatedAt: new Date(),
+      };
+
+      await products.updateOne(
+        { _id: new ObjectId(id), userId: decoded.userId },
+        { $set: update }
+      );
+
+      return res.status(200).json({ message: "✅ Ürün güncellendi" });
     }
 
-    // ✅ DELETE
+    // ✅ DELETE - Ürün Sil
     if (req.method === "DELETE") {
       const { id } = req.query;
+      if (!id) return res.status(400).json({ message: "ID eksik" });
+
       await products.deleteOne({ _id: new ObjectId(id), userId: decoded.userId });
-      return res.status(200).json({ message: "✅ Silindi" });
+
+      return res.status(200).json({ message: "🗑️ Ürün silindi" });
     }
 
     return res.status(405).json({ message: "Method not allowed" });
+
   } catch (err) {
-    console.error("🔥 Ürün API hatası:", err);
-    res.status(500).json({ message: "Sunucu hatası", error: err.message });
+    console.error("🔥 Ürün API Hatası:", err);
+    return res.status(500).json({ message: "Sunucu hatası", error: err.message });
   }
 }

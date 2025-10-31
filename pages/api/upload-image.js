@@ -1,11 +1,10 @@
+// ✅ /pages/api/upload-image.js
 import cloudinary from "cloudinary";
 import formidable from "formidable";
-import fs from "fs";
+import fs from "fs/promises";
 
 export const config = {
-  api: {
-    bodyParser: false,
-  },
+  api: { bodyParser: false },
 };
 
 cloudinary.v2.config({
@@ -19,15 +18,15 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Only POST allowed" });
   }
 
-  const form = new formidable.IncomingForm();
+  const form = formidable({
+    maxFileSize: 5 * 1024 * 1024,
+    keepExtensions: true,
+  });
 
   form.parse(req, async (err, fields, files) => {
-    if (err) {
-      console.log("Upload error:", err);
-      return res.status(500).json({ error: "File parse error" });
-    }
+    if (err) return res.status(500).json({ error: "Parse error" });
 
-    const file = files.file;
+    const file = files.file?.[0];
     if (!file) return res.status(400).json({ error: "No file uploaded" });
 
     try {
@@ -35,14 +34,11 @@ export default async function handler(req, res) {
         folder: "satistakip_products",
       });
 
-      fs.unlinkSync(file.filepath); // Temp dosyayı sil
+      await fs.unlink(file.filepath);
 
-      return res.status(200).json({
-        message: "✅ Upload successful",
-        url: upload.secure_url,
-      });
+      return res.status(200).json({ url: upload.secure_url });
     } catch (e) {
-      console.log(e);
+      console.log("UPLOAD ERROR:", e);
       return res.status(500).json({ error: "Cloudinary upload failed" });
     }
   });
