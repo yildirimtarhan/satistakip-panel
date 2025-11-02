@@ -3,6 +3,7 @@ import "@/styles/globals.css";
 import { useEffect } from "react";
 import { useRouter } from "next/router";
 import DashboardLayout from "@/components/layout/DashboardLayout";
+import RequireAuth from "@/components/RequireAuth";
 
 export default function App({ Component, pageProps }) {
   const router = useRouter();
@@ -10,7 +11,7 @@ export default function App({ Component, pageProps }) {
 
   // 🔁 Token yenileme fonksiyonu
   async function refreshTokenIfNeeded() {
-    const token = localStorage.getItem("token");
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     if (!token) return;
 
     try {
@@ -18,7 +19,6 @@ export default function App({ Component, pageProps }) {
       const exp = payload.exp * 1000;
       const now = Date.now();
 
-      // Token bitimine 1 günden az kaldıysa yenile
       if (exp - now < 24 * 60 * 60 * 1000) {
         const res = await fetch("/api/auth/refresh", {
           headers: { Authorization: `Bearer ${token}` },
@@ -27,7 +27,7 @@ export default function App({ Component, pageProps }) {
 
         if (data?.token) {
           localStorage.setItem("token", data.token);
-          console.log("🔄 Token global olarak yenilendi ✅");
+          console.log("🔄 Token yenilendi ✅");
         }
       }
     } catch (err) {
@@ -35,23 +35,23 @@ export default function App({ Component, pageProps }) {
     }
   }
 
-  // 🔸 Sayfa açıldığında ve her 12 saatte bir kontrol et
   useEffect(() => {
     refreshTokenIfNeeded();
-
-    const interval = setInterval(refreshTokenIfNeeded, 12 * 60 * 60 * 1000); // 12 saatte bir
+    const interval = setInterval(refreshTokenIfNeeded, 12 * 60 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 
-  // ✅ Dashboard sayfaları için layout sarmalaması
+  // ✅ Dashboard korumalı
   if (isDashboard) {
     return (
-      <DashboardLayout>
-        <Component {...pageProps} />
-      </DashboardLayout>
+      <RequireAuth>
+        <DashboardLayout>
+          <Component {...pageProps} />
+        </DashboardLayout>
+      </RequireAuth>
     );
   }
 
-  // ✅ Diğer sayfalar (login/register/public)
+  // ✅ Login / Register / Public sayfalar
   return <Component {...pageProps} />;
 }

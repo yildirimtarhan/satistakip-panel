@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useRouter } from "next/router";
-import Link from "next/link"; // ✅ Link import edildi
+import Link from "next/link";
+import Cookies from "js-cookie"; // ✅ Cookie import
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,9 +19,7 @@ export default function LoginPage() {
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
 
@@ -31,13 +30,19 @@ export default function LoginPage() {
         return;
       }
 
-      // ✅ Token'ı kaydet
-      localStorage.setItem("token", data.token);
+      // ✅ Güvenli token (cookie)
+      Cookies.set("token", data.token, {
+        expires: 7, // 7 gün
+        secure: true,
+        sameSite: "Strict",
+      });
 
-      // ✅ Yönlendirme (küçük gecikme)
-      setTimeout(() => {
-        router.push("/dashboard");
-      }, 200);
+      // 🧹 Eski localStorage sistemi temizlensin
+      localStorage.removeItem("token");
+
+      // ✅ Dashboard'a yönlendir
+      router.push("/dashboard");
+
     } catch (err) {
       console.error("Giriş hatası:", err);
       setError("Bir hata oluştu.");
@@ -47,6 +52,7 @@ export default function LoginPage() {
   return (
     <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
       <h1>Giriş Yap</h1>
+
       <form onSubmit={handleSubmit}>
         <div>
           <label>Email:</label>
@@ -59,6 +65,7 @@ export default function LoginPage() {
             autoComplete="email"
           />
         </div>
+
         <div style={{ marginTop: "1rem" }}>
           <label>Şifre:</label>
           <input
@@ -70,13 +77,14 @@ export default function LoginPage() {
             autoComplete="current-password"
           />
         </div>
+
         <button type="submit" style={{ marginTop: "1rem" }}>
           Giriş Yap
         </button>
+
         {error && <p style={{ color: "red" }}>{error}</p>}
       </form>
 
-      {/* ✅ Şifremi unuttum linki */}
       <p style={{ marginTop: "1rem" }}>
         <Link href="/auth/forgot-password" style={{ color: "blue", textDecoration: "underline" }}>
           Şifremi unuttum?

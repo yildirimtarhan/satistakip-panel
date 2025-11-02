@@ -29,6 +29,13 @@ export default function Sidebar() {
       {/* Menu */}
       <nav className="flex-1 space-y-1">
         <MenuItem href="/dashboard" icon="🏠" label="Anasayfa" />
+        <Link
+         href="/dashboard/ayarlar/firma"
+        className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-orange-50"
+        >
+          🏢 <span>Firma Ayarları</span>
+      </Link>
+
 
         {/* ✅ Cari - Ürün İşlemleri */}
         <MenuItem href="/dashboard/cari" icon="👥" label="Cariler" />

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import "jspdf-autotable";
 
 export default function CariEkstresi() {
   const [cariler, setCariler] = useState([]);
@@ -15,18 +17,26 @@ export default function CariEkstresi() {
   const [dateTo, setDateTo] = useState(() =>
     new Date().toISOString().slice(0, 10)
   );
-  const [typeFilter, setTypeFilter] = useState("");
 
+  const [typeFilter, setTypeFilter] = useState("");
   const [logoDataUrl, setLogoDataUrl] = useState(null);
   const logoInputRef = useRef(null);
+
+  // ✅ Login koruması
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) window.location.href = "/auth/login";
+  }, []);
 
   const tl = (n) =>
     Number(n || 0).toLocaleString("tr-TR", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
+
   const toDateOnly = (d) => new Date(d).toISOString().slice(0, 10);
 
+  // ✅ Cariler
   const fetchCariler = async () => {
     const token = localStorage.getItem("token");
     const res = await fetch("/api/cari", {
@@ -36,11 +46,13 @@ export default function CariEkstresi() {
     setCariler(Array.isArray(data) ? data : []);
   };
 
+  // ✅ Transactions
   const fetchTransactions = async () => {
     const token = localStorage.getItem("token");
-    const res = await fetch("/api/cari/transactions", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const res = await fetch(
+      `/api/cari/transactions?start=${dateFrom}&end=${dateTo}&cari=${seciliCariId}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
     const data = await res.json();
     setItems(Array.isArray(data) ? data : []);
   };
@@ -55,25 +67,25 @@ export default function CariEkstresi() {
     setSeciliCari(c || null);
   }, [seciliCariId, cariler]);
 
+  // ✅ Filtreleme düzeltildi
   const filtered = useMemo(() => {
     const start = new Date(dateFrom + "T00:00:00");
     const end = new Date(dateTo + "T23:59:59");
 
     return items
       .filter((it) => {
-        const okCari = seciliCari ? it.account === seciliCari.ad : true;
+        const okCari = seciliCari ? it.accountId === seciliCari._id : true;
         const d = new Date(it.date || Date.now());
         const okDate = d >= start && d <= end;
         const okType = typeFilter
-          ? String(it.type || it.tur).toLowerCase() ===
-            typeFilter.toLowerCase()
+          ? String(it.type || it.tur).toLowerCase() === typeFilter.toLowerCase()
           : true;
-
         return okCari && okDate && okType;
       })
       .sort((a, b) => new Date(a.date) - new Date(b.date));
   }, [items, seciliCari, dateFrom, dateTo, typeFilter]);
 
+  // ✅ Özet
   const summary = useMemo(() => {
     let borc = 0,
       alacak = 0;
@@ -81,28 +93,14 @@ export default function CariEkstresi() {
     filtered.forEach((t) => {
       const tur = (t.type || t.tur || "").toString();
       const tutarTRY = Number(t.totalTRY ?? t.total ?? 0);
-      if (/purchase|Alış/i.test(tur)) borc += tutarTRY;
-      else if (/sale|Satış/i.test(tur)) alacak += tutarTRY;
+      if (/purchase|alış/i.test(tur)) borc += tutarTRY;
+      else if (/sale|satış/i.test(tur)) alacak += tutarTRY;
     });
 
     return { borc, alacak, bakiye: alacak - borc };
   }, [filtered]);
 
-  // /// LOGO
-  useEffect(() => {
-    (async () => {
-      try {
-        const resp = await fetch("/logo.png");
-        if (resp.ok) {
-          const blob = await resp.blob();
-          const reader = new FileReader();
-          reader.onload = () => setLogoDataUrl(reader.result);
-          reader.readAsDataURL(blob);
-        }
-      } catch {}
-    })();
-  }, []);
-
+  // ✅ Logo seç
   const handleLogoPick = (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -111,11 +109,11 @@ export default function CariEkstresi() {
     reader.readAsDataURL(f);
   };
 
-  // ✅ Excel Export (Filtreli)
+  // ✅ Excel Export
   const exportExcel = () => {
     const rows = filtered.map((t) => ({
       Tarih: toDateOnly(t.date || Date.now()),
-      Cari: t.account,
+      Cari: seciliCari?.ad || "-",
       Ürün: t.product,
       Tür: t.type || t.tur,
       Miktar: t.quantity ?? "-",
@@ -134,13 +132,44 @@ export default function CariEkstresi() {
     );
   };
 
+  // ✅ PDF Export
+  const exportPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(14);
+    doc.text("Cari Ekstresi", 14, 15);
+
+    if (logoDataUrl) doc.addImage(logoDataUrl, "PNG", 150, 5, 50, 20);
+
+    doc.setFontSize(10);
+    doc.text(`Cari: ${seciliCari?.ad || "-"}`, 14, 30);
+    doc.text(`Tarih Aralığı: ${dateFrom} - ${dateTo}`, 14, 38);
+
+    const rows = filtered.map((t) => [
+      toDateOnly(t.date),
+      t.product,
+      t.type,
+      t.quantity ?? "-",
+      tl(t.unitPrice ?? 0),
+      t.currency || "TRY",
+      tl(t.totalTRY ?? t.total ?? 0),
+    ]);
+
+    doc.autoTable({
+      startY: 50,
+      head: [["Tarih", "Ürün", "Tür", "Miktar", "B.Fiyat", "PB", "Tutar"]],
+      body: rows,
+    });
+
+    doc.save(`cari-ekstre_${seciliCari?.ad || "tum"}.pdf`);
+  };
+
   return (
     <div className="p-6 space-y-4">
       <h1 className="text-2xl font-bold text-orange-600 text-center">
         📄 Cari Ekstresi
       </h1>
 
-      {/* Filtre bar */}
+      {/* Filtre Bar */}
       <div className="bg-white rounded-xl shadow p-4 grid grid-cols-12 gap-3">
         <select
           className="border p-2 rounded col-span-12 md:col-span-4"
@@ -149,57 +178,37 @@ export default function CariEkstresi() {
         >
           <option value="">Cari Seç</option>
           {cariler.map((c) => (
-            <option key={c._id} value={c._id}>
-              {c.ad}
-            </option>
+            <option key={c._id} value={c._id}>{c.ad}</option>
           ))}
         </select>
 
-        <input
-          type="date"
-          className="border p-2 rounded col-span-6 md:col-span-2"
-          value={dateFrom}
-          onChange={(e) => setDateFrom(e.target.value)}
-        />
-        <input
-          type="date"
-          className="border p-2 rounded col-span-6 md:col-span-2"
-          value={dateTo}
-          onChange={(e) => setDateTo(e.target.value)}
-        />
+        <input type="date" className="border p-2 rounded col-span-6 md:col-span-2"
+          value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
 
-        <select
-          className="border p-2 rounded col-span-6 md:col-span-2"
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
-        >
-          <option value="">Tür</option>
-          <option value="sale">Satış</option>
-          <option value="purchase">Alış</option>
-        </select>
+        <input type="date" className="border p-2 rounded col-span-6 md:col-span-2"
+          value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
 
-        <div className="col-span-6 md:col-span-2 flex gap-2">
-          <button
-            className="flex-1 bg-orange-600 text-white rounded px-3"
-            onClick={exportExcel}
-          >
-            📥 Excel
-          </button>
+        <button onClick={fetchTransactions}
+          className="bg-orange-600 text-white col-span-6 md:col-span-2 rounded px-3">
+          🔍 Getir
+        </button>
 
-          <button
-            onClick={() => logoInputRef.current?.click()}
-            className="border rounded px-3"
-          >
-            🖼️ Logo
-          </button>
-          <input
-            ref={logoInputRef}
-            type="file"
-            accept="image/*"
-            hidden
-            onChange={handleLogoPick}
-          />
-        </div>
+        <button onClick={exportPDF}
+          className="bg-gray-700 text-white col-span-6 md:col-span-2 rounded px-3">
+          📄 PDF
+        </button>
+
+        <button className="bg-green-600 text-white col-span-6 md:col-span-2 rounded px-3"
+          onClick={exportExcel}>
+          📥 Excel
+        </button>
+
+        <button onClick={() => logoInputRef.current?.click()}
+          className="border rounded px-3 col-span-6 md:col-span-2">
+          🖼️ Logo
+        </button>
+
+        <input ref={logoInputRef} type="file" accept="image/*" hidden onChange={handleLogoPick} />
       </div>
 
       {/* Özet */}
@@ -237,9 +246,7 @@ export default function CariEkstresi() {
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td className="p-4 text-center text-gray-500" colSpan={7}>
-                  Kayıt yok
-                </td>
+                <td className="p-4 text-center text-gray-500" colSpan={7}>Kayıt yok</td>
               </tr>
             )}
           </tbody>
