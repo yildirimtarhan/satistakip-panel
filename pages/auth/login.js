@@ -32,10 +32,12 @@ export default function LoginPage() {
 
       // ✅ Güvenli token (cookie)
       Cookies.set("token", data.token, {
-        expires: 7, // 7 gün
-        secure: true,
-        sameSite: "Strict",
-      });
+  expires: 7,
+  secure: true,
+  sameSite: "lax",
+  path: "/",
+});
+
 
       // 🧹 Eski localStorage sistemi temizlensin
       localStorage.removeItem("token");

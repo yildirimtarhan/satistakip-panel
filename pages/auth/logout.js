@@ -1,29 +1,17 @@
-"use client"; // ✅ En üstte olmalı
-
-// disable edge runtime for this page
-export const runtime = "nodejs";
-
+"use client";
 import { useEffect } from "react";
 import { useRouter } from "next/router";
+import Cookies from "js-cookie";
+
+export const runtime = "nodejs"; 
 
 export default function Logout() {
   const router = useRouter();
 
   useEffect(() => {
-    const logout = async () => {
-      try {
-        await fetch("/api/auth/logout", { method: "POST" });
-      } catch (e) {}
-
-      // Token temizle
-      localStorage.removeItem("token");
-      document.cookie = "token=; Max-Age=0; path=/;";
-
-      router.push("/auth/login");
-    };
-
-    logout();
+    Cookies.remove("token", { path: "/" });
+    router.push("/auth/login");
   }, [router]);
 
-  return <p style={{ padding: 20 }}>Çıkış yapılıyor...</p>;
+  return null;
 }
