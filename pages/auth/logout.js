@@ -1,26 +1,9 @@
-// /pages/logout.js
-import { useEffect } from "react";
-import Cookies from "js-cookie";
-import { useRouter } from "next/router";
+export default async function handler(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ message: "Only POST" });
 
-export default function Logout() {
-  const router = useRouter();
+  res.setHeader("Set-Cookie", [
+    `token=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict; Secure`,
+  ]);
 
-  useEffect(() => {
-    // ✅ Backend logout endpoint çağrısı (varsa)
-    fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
-
-    // ✅ Tarayıcıdan token sil
-    Cookies.remove("token");
-    localStorage.removeItem("token");
-
-    // ✅ Login sayfasına gönder
-    router.push("/auth/login");
-  }, [router]);
-
-  return (
-    <div style={{ padding: "2rem", textAlign: "center", fontFamily: "sans-serif" }}>
-      🚪 Çıkış yapılıyor...
-    </div>
-  );
+  return res.status(200).json({ message: "Logged out" });
 }
