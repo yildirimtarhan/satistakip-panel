@@ -1,9 +1,27 @@
-export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ message: "Only POST" });
+"use client";
+import { useEffect } from "react";
+import { useRouter } from "next/router";
 
-  res.setHeader("Set-Cookie", [
-    `token=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict; Secure`,
-  ]);
+export default function Logout() {
+  const router = useRouter();
 
-  return res.status(200).json({ message: "Logged out" });
+  useEffect(() => {
+    async function doLogout() {
+      try {
+        await fetch("/api/auth/logout", { method: "POST" });
+      } catch {}
+      // Token temizle
+      localStorage.removeItem("token");
+      document.cookie = "token=; Max-Age=0; path=/";
+
+      router.push("/auth/login");
+    }
+
+    doLogout();
+  }, [router]);
+
+  return <p style={{ padding: 20 }}>Çıkış yapılıyor...</p>;
 }
+
+// ✅ Bu sayfanın build'de render edilmesini engelle
+export const config = { runtime: "edge" };
