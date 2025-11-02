@@ -1,11 +1,10 @@
-// disable edge runtime for this page
-export const runtime = "nodejs";
-"use client";
-import { useEffect } from "react";
-import { useRouter } from "next/router";
+"use client"; // ✅ En üstte olmalı
 
 // disable edge runtime for this page
 export const runtime = "nodejs";
+
+import { useEffect } from "react";
+import { useRouter } from "next/router";
 
 export default function Logout() {
   const router = useRouter();
@@ -15,7 +14,7 @@ export default function Logout() {
       try {
         await fetch("/api/auth/logout", { method: "POST" });
       } catch (e) {}
-      
+
       // Token temizle
       localStorage.removeItem("token");
       document.cookie = "token=; Max-Age=0; path=/;";
