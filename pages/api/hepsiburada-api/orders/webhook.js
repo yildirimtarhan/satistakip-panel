@@ -2,10 +2,10 @@ import clientPromise from "@/lib/mongodb";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ message: "Sadece POST istekleri desteklenir" });
+    return res.status(405).json({ message: "Sadece POST desteklenir" });
   }
 
-  // ✅ Basic Auth kontrolü
+  // ✅ Webhook Basic Auth
   const authHeader = req.headers.authorization;
   const expectedAuth =
     "Basic " +
@@ -14,74 +14,97 @@ export default async function handler(req, res) {
     ).toString("base64");
 
   if (authHeader !== expectedAuth) {
-    console.warn("🚨 Geçersiz webhook erişim denemesi.");
+    console.warn("🚨 Geçersiz webhook erişimi");
     return res.status(401).json({ message: "Unauthorized" });
   }
 
   try {
     const event = req.body;
-    const eventType = event.TransactionType || event.eventType;
-    const orderNo = event.OrderNumber || event.orderId;
+    const eventType = event.TransactionType;
+    const orderNo = event.OrderNumber;
 
-    console.log(`📩 [HB Webhook] Yeni event: ${eventType} - ${orderNo}`);
+    console.log(`📩 [HB Webhook] Event: ${eventType} | Order: ${orderNo}`);
 
     const client = await clientPromise;
     const db = client.db("satistakip");
 
-    // ✅ Event log kaydı
+    // ✅ Log event
     await db.collection("webhookEvents").insertOne({
-      raw: event,
+      event,
       orderNo,
-      type: eventType,
+      eventType,
       receivedAt: new Date(),
     });
 
+    // ✅ OrderCreated → OMS'den sipariş çek
     if (eventType === "OrderCreated" && orderNo) {
       console.log(`🔄 Sipariş detayı çekiliyor: ${orderNo}`);
 
-      // ✅ UTF-8 Base64 ile auth
       const authString = Buffer.from(
         `${process.env.HB_MERCHANT_ID}:${process.env.HB_SECRET_KEY}`,
         "utf8"
       ).toString("base64");
 
-      // ✅ OMS SIT endpoint
-      const url = `https://oms-external-sit.hepsiburada.com/orders/merchantid/${process.env.HB_MERCHANT_ID}?orderNumber=${orderNo}`;
-      console.log("🌐 HB OMS URL:", url);
+      const omsUrl = `https://oms-external-sit.hepsiburada.com/orders/merchantid/${process.env.HB_MERCHANT_ID}?orderNumber=${orderNo}`;
+      console.log("🌐 OMS URL:", omsUrl);
 
-      const response = await fetch(url, {
+      const omsResponse = await fetch(omsUrl, {
         headers: {
           Authorization: `Basic ${authString}`,
           "User-Agent": process.env.HB_USER_AGENT || "tigdes_dev",
           Accept: "application/json",
-          ChannelType: "OMS",              // ✅ Zorunlu
-          AuthenticationType: "INTEGRATOR" // ✅ Zorunlu
+          ChannelType: "OMS",
+          AuthenticationType: "INTEGRATOR",
         },
       });
 
-      if (!response.ok) {
-        const err = await response.text();
-        console.error(`❌ HB API ERR (order ${orderNo}) status=${response.status}:`, err);
-        return res.status(500).json({ success: false, message: "HB order fetch failed" });
-      }
+      let orderDetail = null;
 
-      // ✅ JSON boş dönebilir
-      let orderDetail;
-      try {
-        const raw = await response.text();
-        orderDetail = raw ? JSON.parse(raw) : null;
-      } catch {
-        orderDetail = null;
+      // ✅ OMS başarısız → STUB'a geç
+      if (!omsResponse.ok) {
+        const err = await omsResponse.text();
+        console.warn(`⚠️ OMS başarısız (${omsResponse.status}), STUB deneniyor...`, err);
+
+        const stubUrl = `https://oms-stub-external-sit.hepsiburada.com/orders/merchantid/${process.env.HB_MERCHANT_ID}?orderNumber=${orderNo}`;
+        console.log("🌐 STUB URL:", stubUrl);
+
+        const stubResponse = await fetch(stubUrl, {
+          headers: {
+            Authorization: `Basic ${authString}`,
+            "User-Agent": process.env.HB_USER_AGENT || "tigdes_dev",
+            Accept: "application/json",
+          },
+        });
+
+        if (!stubResponse.ok) {
+          const stubErr = await stubResponse.text();
+          console.error(`❌ STUB da hata verdi: ${stubResponse.status}`, stubErr);
+          return res.status(500).json({ success: false, message: "OMS + STUB fetch failed" });
+        }
+
+        try {
+          const stubRaw = await stubResponse.text();
+          orderDetail = stubRaw ? JSON.parse(stubRaw) : null;
+          console.log("✅ STUB sipariş verisi alındı");
+        } catch {
+          orderDetail = null;
+        }
+      } else {
+        try {
+          const raw = await omsResponse.text();
+          orderDetail = raw ? JSON.parse(raw) : null;
+          console.log("✅ OMS sipariş verisi alındı");
+        } catch {
+          orderDetail = null;
+        }
       }
 
       if (!orderDetail) {
-        console.warn(`⚠️ HB boş cevap döndü (stub) - ${orderNo}`);
-        return res.status(200).json({ success: true, info: "HB returned empty" });
+        console.warn(`⚠️ OMS & STUB boş döndü: ${orderNo}`);
+        return res.status(200).json({ success: true, note: "HB empty response" });
       }
 
-      console.log(`📦 Sipariş Detayı Alındı: ${orderNo}`);
-
-      // ✅ DB'ye kaydet
+      // ✅ Siparişi DB'ye kaydet
       await db.collection("orders").updateOne(
         { orderNumber: orderNo },
         {
@@ -100,8 +123,8 @@ export default async function handler(req, res) {
     }
 
     return res.status(200).json({ success: true });
-  } catch (err) {
-    console.error("🔥 Webhook işleme hatası:", err);
-    return res.status(500).json({ success: false, error: err.message });
+  } catch (error) {
+    console.error("🔥 Webhook işleme hatası:", error);
+    return res.status(500).json({ success: false, error: error.message });
   }
 }
