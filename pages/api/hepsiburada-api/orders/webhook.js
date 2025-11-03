@@ -36,51 +36,50 @@ export default async function handler(req, res) {
       receivedAt: new Date(),
     });
 
-    // ✅ Sadece yeni sipariş event'i işlenecek
     if (eventType === "OrderCreated" && orderNo) {
       console.log(`🔄 Sipariş detayı çekiliyor: ${orderNo}`);
 
+      // ✅ UTF-8 ile Base64 HB SIT zorunlu
       const authString = Buffer.from(
-        `${process.env.HB_MERCHANT_ID}:${process.env.HB_SECRET_KEY}`
+        `${process.env.HB_MERCHANT_ID}:${process.env.HB_SECRET_KEY}`,
+        "utf8"
       ).toString("base64");
 
-      // ✅ Doğru OMS endpoint (HB test guide)
+      // ✅ OMS SIT endpoint
       const url = `https://oms-external-sit.hepsiburada.com/orders/merchantid/${process.env.HB_MERCHANT_ID}?orderNumber=${orderNo}`;
-
       console.log("🌐 HB OMS URL:", url);
 
       const response = await fetch(url, {
         headers: {
           Authorization: `Basic ${authString}`,
-          "User-Agent": process.env.HB_USER_AGENT,
+          "User-Agent": process.env.HB_USER_AGENT || "tigdes_dev",
           Accept: "application/json",
         },
       });
 
-      // ✅ Response debug
       if (!response.ok) {
-        const errText = await response.text();
-        console.error(`❌ HB API error (${orderNo}) status=${response.status}:`, errText);
+        const err = await response.text();
+        console.error(`❌ HB API ERR (order ${orderNo}) status=${response.status}:`, err);
         return res.status(500).json({ success: false, message: "HB order fetch failed" });
       }
 
-      // ✅ Bazı HB stub cevapları boş döner → text fallback
+      // ✅ JSON boş dönebilir
       let orderDetail;
       try {
-        const text = await response.text();
-        orderDetail = text ? JSON.parse(text) : null;
+        const raw = await response.text();
+        orderDetail = raw ? JSON.parse(raw) : null;
       } catch {
         orderDetail = null;
       }
 
       if (!orderDetail) {
-        console.warn(`⚠️ HB boş cevap döndü → OMS stub sipariş hazır olmayabilir: ${orderNo}`);
-        return res.status(200).json({ success: true, note: "HB returned empty" });
+        console.warn(`⚠️ HB boş cevap döndü (stub) - ${orderNo}`);
+        return res.status(200).json({ success: true, info: "HB returned empty" });
       }
 
       console.log(`📦 Sipariş Detayı Alındı: ${orderNo}`);
 
-      // ✅ DB'ye sipariş kaydı (upsert)
+      // ✅ DB upsert
       await db.collection("orders").updateOne(
         { orderNumber: orderNo },
         {
