@@ -1,4 +1,6 @@
+"use client";
 import { useState, useEffect } from "react";
+import Cookies from "js-cookie";
 
 export default function CariTahsilat() {
   const [cariler, setCariler] = useState([]);
@@ -11,9 +13,10 @@ export default function CariTahsilat() {
     note: "",
   });
 
+  const token = Cookies.get("token");
+
   // ✅ Carileri çek
   const fetchCariler = async () => {
-    const token = localStorage.getItem("token");
     const res = await fetch("/api/cari", {
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -21,9 +24,8 @@ export default function CariTahsilat() {
     setCariler(data || []);
   };
 
-  // ✅ Tahsilat/Ödeme listesi çek
+  // ✅ Tahsilat/Ödeme listesi
   const fetchList = async () => {
-    const token = localStorage.getItem("token");
     const res = await fetch("/api/tahsilat", {
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -42,7 +44,6 @@ export default function CariTahsilat() {
     if (!form.accountId || !form.amount)
       return alert("⚠️ Cari ve tutar zorunlu");
 
-    const token = localStorage.getItem("token");
     const res = await fetch("/api/tahsilat", {
       method: "POST",
       headers: {
@@ -51,9 +52,10 @@ export default function CariTahsilat() {
       },
       body: JSON.stringify(form),
     });
-    const data = await res.json();
 
+    const data = await res.json();
     if (!res.ok) return alert(data.message);
+
     alert("✅ Kayıt başarıyla eklendi");
 
     setForm({ accountId: "", type: "tahsilat", amount: "", note: "" });
@@ -126,7 +128,7 @@ export default function CariTahsilat() {
               <td className={`p-2 font-bold ${t.type === "tahsilat" ? "text-green-600" : "text-red-600"}`}>
                 {t.type === "tahsilat" ? "Tahsilat" : "Ödeme"}
               </td>
-              <td className="p-2">₺{t.amount.toLocaleString("tr-TR")}</td>
+              <td className="p-2">₺{Number(t.amount).toLocaleString("tr-TR")}</td>
               <td className="p-2">{t.note || "-"}</td>
               <td className="p-2">{new Date(t.date).toLocaleString("tr-TR")}</td>
             </tr>

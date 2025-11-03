@@ -1,22 +1,27 @@
+"use client";
 import { useEffect, useState } from "react";
+import Cookies from "js-cookie";
 
 export default function StokRaporu() {
   const [urunler, setUrunler] = useState([]);
   const [search, setSearch] = useState("");
 
+  const token = Cookies.get("token");
+
   const fetchData = async () => {
-    const token = localStorage.getItem("token");
     const res = await fetch("/api/urunler", {
       headers: { Authorization: `Bearer ${token}` }
     });
     const data = await res.json();
-    setUrunler(data || []);
+    setUrunler(Array.isArray(data) ? data : []);
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+  }, []);
 
   const filtered = urunler.filter(u =>
-    u.ad.toLowerCase().includes(search.toLowerCase()) ||
+    u.ad?.toLowerCase().includes(search.toLowerCase()) ||
     (u.barkod && u.barkod.includes(search)) ||
     (u.sku && u.sku.includes(search))
   );
@@ -48,7 +53,7 @@ export default function StokRaporu() {
         <tbody>
           {filtered.map((u,i)=>(
             <tr key={u._id} className="border-b hover:bg-slate-50">
-              <td>{i+1}</td>
+              <td className="p-2">{i+1}</td>
 
               <td className="flex items-center gap-2 p-2">
                 {u.resimUrl && <img src={u.resimUrl} className="w-8 h-8 rounded"/>}

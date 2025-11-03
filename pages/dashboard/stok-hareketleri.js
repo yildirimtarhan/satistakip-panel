@@ -1,16 +1,19 @@
+"use client";
 import { useEffect, useState } from "react";
+import Cookies from "js-cookie";
 
 export default function StokHareketleri() {
   const [logs, setLogs] = useState([]);
   const [filter, setFilter] = useState({ urun: "", cari: "", type: "" });
 
+  const token = Cookies.get("token");
+
   const fetchLogs = async () => {
-    const token = localStorage.getItem("token");
     const res = await fetch("/api/stok-hareketleri", {
       headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();
-    setLogs(data);
+    setLogs(Array.isArray(data) ? data : []);
   };
 
   useEffect(() => {
@@ -25,7 +28,7 @@ export default function StokHareketleri() {
 
   return (
     <div className="p-6 space-y-4">
-      <h2 className="text-xl font-bold mb-3">📥 Stok Hareketleri</h2>
+      <h2 className="text-xl font-bold mb-3">📦 Stok Hareketleri</h2>
 
       {/* Filtreler */}
       <div className="bg-white border p-3 rounded grid grid-cols-12 gap-3 text-sm">
@@ -66,6 +69,7 @@ export default function StokHareketleri() {
               <th className="p-2">Toplam</th>
             </tr>
           </thead>
+
           <tbody>
             {filtered.map((l, i) => (
               <tr key={i} className="border-b hover:bg-gray-50">

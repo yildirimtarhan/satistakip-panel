@@ -1,4 +1,6 @@
+"use client";
 import { useState, useEffect } from "react";
+import Cookies from "js-cookie";
 
 export default function UrunAlis() {
   const [cariler, setCariler] = useState([]);
@@ -16,14 +18,15 @@ export default function UrunAlis() {
 
   const [rows, setRows] = useState([ emptyRow ]);
 
-  // 🔹 Cari & ürünler
+  const token = Cookies.get("token");
+
+  // ✅ Cari & ürünler
   useEffect(() => {
-    const token = localStorage.getItem("token");
     fetch("/api/cari",{ headers:{ Authorization:`Bearer ${token}` }}).then(r=>r.json()).then(setCariler);
     fetch("/api/urunler",{ headers:{ Authorization:`Bearer ${token}` }}).then(r=>r.json()).then(setUrunler);
   }, []);
 
-  // 🔹 Kur çek
+  // ✅ Kur çek
   const fetchRates = async () => {
     setLoadingRates(true);
     try {
@@ -43,7 +46,6 @@ export default function UrunAlis() {
     return 1;
   };
 
-  // 🔹 Barkod arama
   const handleBarkod = (i, val) => {
     let copy = [...rows];
     copy[i].barkod = val;
@@ -57,7 +59,6 @@ export default function UrunAlis() {
     setRows(copy);
   };
 
-  // 🔹 Ürün adı
   const handleUrunAd = (i, val) => {
     let copy = [...rows];
     copy[i].ad = val;
@@ -80,7 +81,6 @@ export default function UrunAlis() {
   const addRow = () => setRows([...rows, { ...emptyRow }]);
   const removeRow = (i) => setRows(rows.filter((_,x)=>x!==i));
 
-  // ✅ Satırı TL'ye çevir (KDV dahil)
   const rowTL = (r) => {
     const fx = effectiveRate(r.currency);
     const total = Number(r.adet) * Number(r.fiyat);
@@ -90,13 +90,11 @@ export default function UrunAlis() {
 
   // ✅ Kaydet
   const handleSave = async () => {
-    const token = localStorage.getItem("token");
     if (!cariId) return alert("⚠️ Tedarikçi seçin");
 
     for (let r of rows) {
       let productId = r.productId;
 
-      // ✅ Ürün yoksa otomatik oluştur
       if (!productId && r.ad.trim() !== "") {
         const res = await fetch("/api/urunler", {
           method:"POST",
@@ -143,10 +141,13 @@ export default function UrunAlis() {
     <div className="p-6 space-y-4">
       <h2 className="text-xl font-bold">📦 Ürün Alışı</h2>
 
-      {/* Kur alanı */}
       <div className="p-3 bg-white rounded border flex items-center gap-4 text-sm">
         <b>Kur:</b> {loadingRates ? "Yükleniyor..." : `USD ₺${rates.USD}, EUR ₺${rates.EUR}`}
-        <button onClick={fetchRates} className="px-2 py-1 bg-gray-100 border rounded">Güncelle</button>
+        <button 
+          onClick={fetchRates}
+          className="px-2 py-1 bg-gray-100 border rounded">
+          Güncelle
+        </button>
       </div>
 
       <select className="border p-2 rounded" value={cariId} onChange={(e)=>setCariId(e.target.value)}>

@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
+import Link from "next/link";
 
 export default function Cariler() {
   const fileRef = useRef(null);
@@ -10,19 +11,30 @@ export default function Cariler() {
   const [editingId, setEditingId] = useState(null);
   const [cariler, setCariler] = useState([]);
   const [activeTab, setActiveTab] = useState("form");
+  const [detail, setDetail] = useState(null); // ✅ Cari detay modal
 
   const emptyForm = {
-    ad:"", tur:"Müşteri", telefon:"", email:"",
-    vergiTipi:"TCKN", vergiNo:"", adres:"", il:"", ilce:"",
-    postaKodu:"", paraBirimi:"TRY", kdvOrani:20,
-    trendyolCustomerId:"", hbCustomerId:""
+    ad:"",
+    tur:"Müşteri",
+    telefon:"",
+    email:"",
+    vergiTipi:"TCKN",
+    vergiNo:"",
+    adres:"",
+    il:"",
+    ilce:"",
+    postaKodu:"",
+    paraBirimi:"TRY",
+    trendyolCustomerId:"",
+    hbCustomerId:""
   };
 
   const [form, setForm] = useState(emptyForm);
 
   const fetchCariler = async () => {
-    const token = localStorage.getItem("token");
-    const res = await fetch("/api/cari", { headers: { Authorization:`Bearer ${token}` }});
+    const res = await fetch("/api/cari", {
+      headers: { Authorization:`Bearer ${localStorage.getItem("token")}` }
+    });
     setCariler(await res.json());
   };
 
@@ -33,14 +45,12 @@ export default function Cariler() {
   const saveCari = async (e) => {
     e.preventDefault();
     setLoading(true);
-
-    const token = localStorage.getItem("token");
     const method = editingId ? "PUT" : "POST";
     const url = editingId ? `/api/cari?cariId=${editingId}` : "/api/cari";
 
     await fetch(url, {
       method,
-      headers:{ "Content-Type":"application/json", Authorization:`Bearer ${token}` },
+      headers:{ "Content-Type":"application/json", Authorization:`Bearer ${localStorage.getItem("token")}` },
       body: JSON.stringify(form)
     });
 
@@ -50,7 +60,17 @@ export default function Cariler() {
     setLoading(false);
   };
 
-  // ✅ Excel Dışa Aktar
+  const deleteCari = async (id) => {
+    if (!confirm("Bu cariyi silmek istediğine emin misin?")) return;
+    await fetch(`/api/cari?cariId=${id}`, {
+      method:"DELETE",
+      headers:{ Authorization:`Bearer ${localStorage.getItem("token")}` }
+    });
+    fetchCariler();
+    alert("🗑️ Cari silindi");
+  };
+
+  // ✅ Excel Export
   const exportExcel = () => {
     const ws = XLSX.utils.json_to_sheet(cariler);
     const wb = XLSX.utils.book_new();
@@ -59,13 +79,14 @@ export default function Cariler() {
     saveAs(new Blob([excelBuffer]), "cariler.xlsx");
   };
 
-  // ✅ Excel İçeri Aktar
+  // ✅ Excel Import
   const importExcel = (e) => {
     const file = e.target.files[0];
     const reader = new FileReader();
     reader.onload = async (evt) => {
       const data = XLSX.read(evt.target.result, { type:"binary" });
       const json = XLSX.utils.sheet_to_json(data.Sheets[data.SheetNames[0]]);
+
       for (let row of json) {
         await fetch("/api/cari", {
           method:"POST",
@@ -73,6 +94,7 @@ export default function Cariler() {
           body: JSON.stringify({ ...emptyForm, ...row })
         });
       }
+
       alert("✅ Excel'den cariler yüklendi");
       fetchCariler();
     };
@@ -83,7 +105,7 @@ export default function Cariler() {
     <div className="p-6 space-y-4">
       <h1 className="text-2xl font-bold text-orange-600 text-center">💼 Cari Yönetimi</h1>
 
-      {/* ✅ Sekmeler */}
+      {/* ✅ Tabs */}
       <div className="flex gap-2 mb-3">
         {["form","liste","excel"].map(t=>(
           <button key={t}
@@ -134,7 +156,6 @@ export default function Cariler() {
           <textarea className="input col-span-12" placeholder="Adres"
             value={form.adres} onChange={(e)=>setForm({...form, adres:e.target.value})} />
 
-          {/* ✅ Pazaryeri Field UX */}
           <input className="input col-span-6" placeholder="🛒 Trendyol Müşteri ID"
             value={form.trendyolCustomerId}
             onChange={(e)=>setForm({...form, trendyolCustomerId:e.target.value})} />
@@ -150,22 +171,38 @@ export default function Cariler() {
         </form>
       )}
 
-      {/* ✅ LİSTE */}
+      {/* ✅ LIST */}
       {activeTab==="liste" && (
         <table className="w-full bg-white rounded-xl shadow text-sm">
           <thead className="bg-orange-100"><tr>
             <th>#</th><th>Ad</th><th>Tür</th><th>Telefon</th><th>Vergi</th>
-            <th>Trendyol</th><th>HB</th><th>İşlem</th>
+            <th>Trendyol</th><th>HB</th><th>Bakiye</th><th>İşlem</th>
           </tr></thead>
           <tbody>
             {cariler.map((c,i)=>(
               <tr key={c._id} className="border-b hover:bg-slate-50">
-                <td>{i+1}</td><td>{c.ad}</td><td>{c.tur}</td><td>{c.telefon}</td>
+                <td>{i+1}</td>
+                <td>{c.ad}</td>
+                <td>{c.tur}</td>
+                <td>
+                  {c.telefon}{" "}
+                  <a href={`https://wa.me/90${c.telefon}`} target="_blank" className="text-green-600">WhatsApp</a>
+                </td>
                 <td>{c.vergiTipi}:{c.vergiNo}</td>
                 <td>{c.trendyolCustomerId || "-"}</td>
                 <td>{c.hbCustomerId || "-"}</td>
-                <td>
-                  <button className="text-blue-600" onClick={()=>{setForm(c); setEditingId(c._id); setActiveTab("form")}}>✏️</button>
+                <td className={`font-bold ${c.bakiye>0?"text-green-600":"text-red-600"}`}>
+                  ₺{(c.bakiye||0).toLocaleString("tr-TR")}
+                </td>
+                <td className="flex gap-2">
+                  <button className="text-blue-600" 
+                    onClick={()=>{setForm(c); setEditingId(c._id); setActiveTab("form")}}>✏️</button>
+
+                  <Link href={`/dashboard/cari-ekstre?cariId=${c._id}`} className="text-orange-600">📄</Link>
+
+                  <button className="text-red-600" onClick={()=>deleteCari(c._id)}>🗑️</button>
+
+                  <button className="text-purple-600" onClick={()=>setDetail(c)}>ℹ️</button>
                 </td>
               </tr>
             ))}
@@ -173,7 +210,7 @@ export default function Cariler() {
         </table>
       )}
 
-      {/* ✅ EXCEL */}
+      {/* ✅ Excel */}
       {activeTab==="excel" && (
         <div className="bg-white p-6 rounded-xl shadow space-y-4 text-center">
           <button onClick={exportExcel} className="btn-primary">📤 Excel Dışa Aktar</button>
@@ -181,6 +218,26 @@ export default function Cariler() {
           <button onClick={()=>fileRef.current.click()} className="btn-gray">📥 Excel İçeri Al</button>
         </div>
       )}
+
+      {/* ✅ Cari Detay Modal */}
+      {detail && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center">
+          <div className="bg-white p-6 rounded-xl w-96 shadow-lg space-y-2">
+            <h2 className="font-bold text-lg">👤 {detail.ad}</h2>
+            <p>Tel: {detail.telefon}</p>
+            <p>Email: {detail.email}</p>
+            <p>Adres: {detail.adres}</p>
+
+            <div className="flex gap-2 mt-4">
+              <Link href={`/dashboard/cari-ekstre?cariId=${detail._id}`} className="btn-primary w-full text-center">
+                📄 Ekstre
+              </Link>
+              <button className="btn-gray w-full" onClick={()=>setDetail(null)}>Kapat</button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

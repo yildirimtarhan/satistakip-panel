@@ -21,6 +21,7 @@ export default function CariEkstresi() {
   const [typeFilter, setTypeFilter] = useState("");
   const [logoDataUrl, setLogoDataUrl] = useState(null);
   const logoInputRef = useRef(null);
+  const excelInputRef = useRef(null);
 
   // ✅ Login koruması
   useEffect(() => {
@@ -67,7 +68,7 @@ export default function CariEkstresi() {
     setSeciliCari(c || null);
   }, [seciliCariId, cariler]);
 
-  // ✅ Filtreleme düzeltildi
+  // ✅ Filtre ve Türkçe tür
   const filtered = useMemo(() => {
     const start = new Date(dateFrom + "T00:00:00");
     const end = new Date(dateTo + "T23:59:59");
@@ -78,104 +79,117 @@ export default function CariEkstresi() {
         const d = new Date(it.date || Date.now());
         const okDate = d >= start && d <= end;
         const okType = typeFilter
-          ? String(it.type || it.tur).toLowerCase() === typeFilter.toLowerCase()
+          ? String(it.type).toLowerCase() === typeFilter
           : true;
         return okCari && okDate && okType;
       })
+      .map((t) => ({
+        ...t,
+        typeTR: t.type === "sale" ? "Satış" : t.type === "purchase" ? "Alış" : t.type,
+      }))
       .sort((a, b) => new Date(a.date) - new Date(b.date));
   }, [items, seciliCari, dateFrom, dateTo, typeFilter]);
 
   // ✅ Özet
   const summary = useMemo(() => {
-    let borc = 0,
-      alacak = 0;
-
+    let borc = 0, alacak = 0;
     filtered.forEach((t) => {
-      const tur = (t.type || t.tur || "").toString();
-      const tutarTRY = Number(t.totalTRY ?? t.total ?? 0);
-      if (/purchase|alış/i.test(tur)) borc += tutarTRY;
-      else if (/sale|satış/i.test(tur)) alacak += tutarTRY;
+      const tutar = Number(t.totalTRY ?? t.total ?? 0);
+      if (t.type === "purchase") borc += tutar;
+      if (t.type === "sale") alacak += tutar;
     });
-
     return { borc, alacak, bakiye: alacak - borc };
   }, [filtered]);
 
-  // ✅ Logo seç
+  // ✅ LOGO seç
   const handleLogoPick = (e) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
     const reader = new FileReader();
     reader.onload = () => setLogoDataUrl(reader.result);
-    reader.readAsDataURL(f);
+    reader.readAsDataURL(file);
   };
 
-  // ✅ Excel Export
+  // ✅ EXCEL IMPORT
+  const importExcel = async (file) => {
+    const data = await file.arrayBuffer();
+    const workbook = XLSX.read(data);
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet);
+
+    for (let r of rows) {
+      await fetch("/api/cari/transactions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: JSON.stringify({
+          accountId: seciliCariId,
+          type: r.Tür === "Satış" ? "sale" : "purchase",
+          date: r.Tarih,
+          totalTRY: r.Tutar,
+        }),
+      });
+    }
+    alert("✅ Excel yüklendi");
+    fetchTransactions();
+  };
+
+  const downloadTemplate = () => {
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet([
+      { Tarih: "", Tür: "Satış/Alış", Tutar: "" },
+    ]);
+    XLSX.utils.book_append_sheet(wb, ws, "Şablon");
+    XLSX.writeFile(wb, "cari-ekstre-sablon.xlsx");
+  };
+
+  // ✅ EXCEL Export
   const exportExcel = () => {
     const rows = filtered.map((t) => ({
-      Tarih: toDateOnly(t.date || Date.now()),
-      Cari: seciliCari?.ad || "-",
-      Ürün: t.product,
-      Tür: t.type || t.tur,
-      Miktar: t.quantity ?? "-",
-      "Birim Fiyat": t.unitPrice ?? 0,
-      PB: t.currency ?? "TRY",
-      "Tutar (TL)": t.totalTRY ?? t.total ?? 0,
+      Tarih: toDateOnly(t.date),
+      Cari: seciliCari?.ad,
+      Tür: t.typeTR,
+      Miktar: t.quantity,
+      "Birim Fiyat": t.unitPrice,
+      PB: t.currency,
+      Tutar: t.totalTRY,
     }));
 
-    const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(rows);
     XLSX.utils.book_append_sheet(wb, ws, "Ekstre");
-
-    XLSX.writeFile(
-      wb,
-      `cari-ekstre_${seciliCari?.ad || "tum"}_${dateFrom}_${dateTo}.xlsx`
-    );
+    XLSX.writeFile(wb, `cari-ekstre_${seciliCari?.ad}_${dateFrom}_${dateTo}.xlsx`);
   };
 
   // ✅ PDF Export
   const exportPDF = () => {
     const doc = new jsPDF();
-    doc.setFontSize(14);
     doc.text("Cari Ekstresi", 14, 15);
-
     if (logoDataUrl) doc.addImage(logoDataUrl, "PNG", 150, 5, 50, 20);
 
-    doc.setFontSize(10);
-    doc.text(`Cari: ${seciliCari?.ad || "-"}`, 14, 30);
-    doc.text(`Tarih Aralığı: ${dateFrom} - ${dateTo}`, 14, 38);
-
-    const rows = filtered.map((t) => [
-      toDateOnly(t.date),
-      t.product,
-      t.type,
-      t.quantity ?? "-",
-      tl(t.unitPrice ?? 0),
-      t.currency || "TRY",
-      tl(t.totalTRY ?? t.total ?? 0),
-    ]);
-
     doc.autoTable({
-      startY: 50,
-      head: [["Tarih", "Ürün", "Tür", "Miktar", "B.Fiyat", "PB", "Tutar"]],
-      body: rows,
+      startY: 30,
+      head: [["Tarih", "Tür", "Tutar"]],
+      body: filtered.map((t) => [
+        toDateOnly(t.date),
+        t.typeTR,
+        tl(t.totalTRY),
+      ]),
     });
 
-    doc.save(`cari-ekstre_${seciliCari?.ad || "tum"}.pdf`);
+    doc.save(`cari-ekstre_${seciliCari?.ad}.pdf`);
   };
 
   return (
     <div className="p-6 space-y-4">
-      <h1 className="text-2xl font-bold text-orange-600 text-center">
-        📄 Cari Ekstresi
-      </h1>
+      <h1 className="text-2xl font-bold text-orange-600 text-center">📄 Cari Ekstresi</h1>
 
-      {/* Filtre Bar */}
       <div className="bg-white rounded-xl shadow p-4 grid grid-cols-12 gap-3">
-        <select
-          className="border p-2 rounded col-span-12 md:col-span-4"
-          value={seciliCariId}
-          onChange={(e) => setSeciliCariId(e.target.value)}
-        >
+        
+        <select className="border p-2 rounded col-span-12 md:col-span-4"
+          value={seciliCariId} onChange={(e) => setSeciliCariId(e.target.value)}>
           <option value="">Cari Seç</option>
           {cariler.map((c) => (
             <option key={c._id} value={c._id}>{c.ad}</option>
@@ -188,27 +202,22 @@ export default function CariEkstresi() {
         <input type="date" className="border p-2 rounded col-span-6 md:col-span-2"
           value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
 
-        <button onClick={fetchTransactions}
-          className="bg-orange-600 text-white col-span-6 md:col-span-2 rounded px-3">
-          🔍 Getir
+        <button onClick={fetchTransactions} className="bg-orange-600 text-white col-span-6 md:col-span-2 rounded">🔍 Getir</button>
+        <button onClick={exportPDF} className="bg-gray-700 text-white col-span-6 md:col-span-2 rounded">📄 PDF</button>
+        <button onClick={exportExcel} className="bg-green-600 text-white col-span-6 md:col-span-2 rounded">📥 Excel</button>
+
+        <button onClick={() => excelInputRef.current?.click()}
+         className="bg-blue-600 text-white col-span-6 md:col-span-2 rounded">📤 Excel Yükle</button>
+        <input ref={excelInputRef} type="file" hidden accept=".xlsx" onChange={(e)=>importExcel(e.target.files[0])} />
+
+        <button onClick={downloadTemplate} className="bg-purple-600 text-white col-span-6 md:col-span-2 rounded">
+          📎 Şablon
         </button>
 
-        <button onClick={exportPDF}
-          className="bg-gray-700 text-white col-span-6 md:col-span-2 rounded px-3">
-          📄 PDF
-        </button>
-
-        <button className="bg-green-600 text-white col-span-6 md:col-span-2 rounded px-3"
-          onClick={exportExcel}>
-          📥 Excel
-        </button>
-
-        <button onClick={() => logoInputRef.current?.click()}
-          className="border rounded px-3 col-span-6 md:col-span-2">
+        <button onClick={() => logoInputRef.current?.click()} className="border col-span-6 md:col-span-2 rounded">
           🖼️ Logo
         </button>
-
-        <input ref={logoInputRef} type="file" accept="image/*" hidden onChange={handleLogoPick} />
+        <input ref={logoInputRef} hidden accept="image/*" type="file" onChange={handleLogoPick}/>
       </div>
 
       {/* Özet */}
@@ -223,32 +232,19 @@ export default function CariEkstresi() {
         <table className="w-full text-sm">
           <thead className="bg-orange-100">
             <tr>
-              <th className="p-2 text-left">Tarih</th>
-              <th className="p-2 text-left">Ürün</th>
-              <th className="p-2 text-left">Tür</th>
-              <th className="p-2 text-right">Miktar</th>
-              <th className="p-2 text-right">Birim Fiyat</th>
-              <th className="p-2 text-center">PB</th>
-              <th className="p-2 text-right">Tutar (TL)</th>
+              <th className="p-2">Tarih</th>
+              <th className="p-2">Tür</th>
+              <th className="p-2 text-right">Tutar</th>
             </tr>
           </thead>
           <tbody>
             {filtered.map((t, i) => (
-              <tr key={i} className="border-b hover:bg-slate-50">
-                <td className="p-2">{toDateOnly(t.date || Date.now())}</td>
-                <td className="p-2">{t.product || "-"}</td>
-                <td className="p-2">{t.type || t.tur}</td>
-                <td className="p-2 text-right">{t.quantity ?? "-"}</td>
-                <td className="p-2 text-right">{tl(t.unitPrice ?? 0)}</td>
-                <td className="p-2 text-center">{t.currency || "TRY"}</td>
-                <td className="p-2 text-right">{tl(t.totalTRY ?? t.total ?? 0)}</td>
+              <tr key={i} className="border-b">
+                <td className="p-2">{toDateOnly(t.date)}</td>
+                <td className="p-2">{t.typeTR}</td>
+                <td className="p-2 text-right">{tl(t.totalTRY)}</td>
               </tr>
             ))}
-            {filtered.length === 0 && (
-              <tr>
-                <td className="p-4 text-center text-gray-500" colSpan={7}>Kayıt yok</td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>

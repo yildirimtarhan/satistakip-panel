@@ -1,4 +1,6 @@
+"use client";
 import { useState, useEffect } from "react";
+import Cookies from "js-cookie";
 
 export default function UrunSatis() {
   const [cariler, setCariler] = useState([]);
@@ -14,9 +16,10 @@ export default function UrunSatis() {
 
   const [rows, setRows] = useState([ emptyRow ]);
 
+  const token = Cookies.get("token");
+
   // ✅ Veri yükleme
-  useEffect(() => {
-    const token = localStorage.getItem("token");
+  useEffect(() => {  
     fetch("/api/cari",{ headers:{ Authorization:`Bearer ${token}` }}).then(r=>r.json()).then(setCariler);
     fetch("/api/urunler",{ headers:{ Authorization:`Bearer ${token}` }}).then(r=>r.json()).then(setUrunler);
     fetchRates();
@@ -42,7 +45,6 @@ export default function UrunSatis() {
     setRows(c);
   };
 
-  // ✅ Barkod okuma
   const handleBarkod = (i, val) => {
     setRow(i, { barkod: val });
     const urun = urunler.find(u => u.barkod === val);
@@ -57,10 +59,8 @@ export default function UrunSatis() {
     }
   };
 
-  // ✅ Ürün seçimi
   const handleUrunAd = (i, val) => {
     setRow(i, { ad: val });
-
     const urun = urunler.find(x=>x.ad === val);
     if (urun) setRow(i, {
       productId: urun._id,
@@ -71,7 +71,6 @@ export default function UrunSatis() {
     });
   };
 
-  // ✅ TL Hesap
   const rowTL = (r) => {
     const fx = effectiveRate(r.currency);
     const total = Number(r.adet) * Number(r.fiyat);
@@ -84,8 +83,6 @@ export default function UrunSatis() {
 
   // ✅ Kaydet
   const handleSave = async () => {
-    const token = localStorage.getItem("token");
-
     if (!cariId) return alert("⚠️ Müşteri seçin");
 
     for (let r of rows) {
@@ -133,7 +130,6 @@ export default function UrunSatis() {
     <div className="p-6 space-y-4">
       <h2 className="text-xl font-bold">🛒 Ürün Satışı</h2>
 
-      {/* Kurlar */}
       <div className="p-3 bg-white rounded border flex-wrap flex items-center gap-2 text-sm">
         <b>Kur:</b> USD ₺{rates.USD} | EUR ₺{rates.EUR}
         <input placeholder="USD" className="border p-1 w-20" value={manualRates.USD} onChange={e=>setManualRates({...manualRates,USD:e.target.value})}/>
@@ -141,13 +137,11 @@ export default function UrunSatis() {
         <button onClick={fetchRates} className="px-2 py-1 border rounded">🔄</button>
       </div>
 
-      {/* Cari seç */}
       <select className="border p-2 rounded" value={cariId} onChange={(e)=>setCariId(e.target.value)}>
         <option value="">Müşteri Seç *</option>
         {cariler.map(c=> <option key={c._id} value={c._id}>{c.ad}</option>)}
       </select>
 
-      {/* Satış tablosu */}
       <table className="w-full border text-sm">
         <thead className="bg-gray-100 text-xs">
           <tr>
@@ -161,10 +155,8 @@ export default function UrunSatis() {
             return (
             <tr key={i} className="text-xs">
               <td><input className="border p-1 w-full" value={r.barkod} onChange={(e)=>handleBarkod(i,e.target.value)} /></td>
-
               <td><input list="urunList" className="border p-1 w-full" value={r.ad} onChange={(e)=>handleUrunAd(i,e.target.value)} /></td>
 
-              {/* ✅ VARYANT SEÇİM ALANI */}
               <td>
                 {urun?.varyantlar?.length > 0 ? (
                   <select className="border p-1 w-full" value={r.varyant} onChange={(e)=>setRow(i,{varyant:e.target.value})}>
