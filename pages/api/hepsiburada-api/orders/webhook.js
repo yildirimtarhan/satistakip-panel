@@ -39,7 +39,7 @@ export default async function handler(req, res) {
     if (eventType === "OrderCreated" && orderNo) {
       console.log(`🔄 Sipariş detayı çekiliyor: ${orderNo}`);
 
-      // ✅ UTF-8 ile Base64 HB SIT zorunlu
+      // ✅ UTF-8 Base64 ile auth
       const authString = Buffer.from(
         `${process.env.HB_MERCHANT_ID}:${process.env.HB_SECRET_KEY}`,
         "utf8"
@@ -54,6 +54,8 @@ export default async function handler(req, res) {
           Authorization: `Basic ${authString}`,
           "User-Agent": process.env.HB_USER_AGENT || "tigdes_dev",
           Accept: "application/json",
+          ChannelType: "OMS",              // ✅ Zorunlu
+          AuthenticationType: "INTEGRATOR" // ✅ Zorunlu
         },
       });
 
@@ -79,7 +81,7 @@ export default async function handler(req, res) {
 
       console.log(`📦 Sipariş Detayı Alındı: ${orderNo}`);
 
-      // ✅ DB upsert
+      // ✅ DB'ye kaydet
       await db.collection("orders").updateOne(
         { orderNumber: orderNo },
         {
