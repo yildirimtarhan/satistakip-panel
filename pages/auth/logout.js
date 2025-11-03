@@ -1,17 +1,28 @@
 "use client";
 import { useEffect } from "react";
 import { useRouter } from "next/router";
-import Cookies from "js-cookie";
 
-export const runtime = "nodejs"; 
+export const runtime = "nodejs"; // ✅ SSR kapatma
 
 export default function Logout() {
   const router = useRouter();
 
   useEffect(() => {
-    Cookies.remove("token", { path: "/" });
-    router.push("/auth/login");
+    async function doLogout() {
+      try {
+        // API çağır
+        await fetch("/api/auth/logout", { method: "POST" });
+      } catch (e) {}
+
+      // Token temizle
+      localStorage.removeItem("token");
+      document.cookie = "token=; Max-Age=0; path=/;";
+
+      router.push("/auth/login");
+    }
+
+    doLogout();
   }, [router]);
 
-  return null;
+  return <p style={{ padding: 20 }}>Çıkış yapılıyor...</p>;
 }

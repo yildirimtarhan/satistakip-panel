@@ -4,14 +4,15 @@ import { useEffect } from "react";
 import { useRouter } from "next/router";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import RequireAuth from "@/components/RequireAuth";
+import Cookies from "js-cookie";
 
 export default function App({ Component, pageProps }) {
   const router = useRouter();
   const isDashboard = router.pathname.startsWith("/dashboard");
 
-  // 🔁 Token yenileme fonksiyonu
+  // 🔁 Token yenileme - COOKIE versiyonu
   async function refreshTokenIfNeeded() {
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    const token = Cookies.get("token");
     if (!token) return;
 
     try {
@@ -19,15 +20,22 @@ export default function App({ Component, pageProps }) {
       const exp = payload.exp * 1000;
       const now = Date.now();
 
+      // Token bitimine < 1 gün varsa yenile
       if (exp - now < 24 * 60 * 60 * 1000) {
         const res = await fetch("/api/auth/refresh", {
+          method: "POST",
           headers: { Authorization: `Bearer ${token}` },
         });
-        const data = await res.json();
 
+        const data = await res.json();
         if (data?.token) {
-          localStorage.setItem("token", data.token);
-          console.log("🔄 Token yenilendi ✅");
+          Cookies.set("token", data.token, {
+            expires: 7,
+            secure: true,
+            sameSite: "lax",
+            path: "/"
+          });
+          console.log("🔄 Cookie token yenilendi");
         }
       }
     } catch (err) {
@@ -41,7 +49,7 @@ export default function App({ Component, pageProps }) {
     return () => clearInterval(interval);
   }, []);
 
-  // ✅ Dashboard korumalı
+  // ✅ Dashboard sayfalarını sar
   if (isDashboard) {
     return (
       <RequireAuth>
@@ -52,6 +60,6 @@ export default function App({ Component, pageProps }) {
     );
   }
 
-  // ✅ Login / Register / Public sayfalar
+  // ✅ Public sayfalar
   return <Component {...pageProps} />;
 }
