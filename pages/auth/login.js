@@ -1,7 +1,7 @@
+"use client";
 import { useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import Cookies from "js-cookie"; // ✅ Cookie import
 
 export default function LoginPage() {
   const router = useRouter();
@@ -23,28 +23,14 @@ export default function LoginPage() {
         body: JSON.stringify(form),
       });
 
-      const data = await res.json();
-
       if (!res.ok) {
+        const data = await res.json();
         setError(data.message || "Giriş başarısız");
         return;
       }
 
-      // ✅ Güvenli token (cookie)
-      Cookies.set("token", data.token, {
-  expires: 7,
-  secure: true,
-  sameSite: "lax",
-  path: "/",
-});
-
-
-      // 🧹 Eski localStorage sistemi temizlensin
-      localStorage.removeItem("token");
-
-      // ✅ Dashboard'a yönlendir
+      // ✅ Token cookie'ye otomatik yazıldı
       router.push("/dashboard");
-
     } catch (err) {
       console.error("Giriş hatası:", err);
       setError("Bir hata oluştu.");
