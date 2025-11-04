@@ -4,14 +4,15 @@ import { useRouter } from "next/router";
 import { jwtDecode } from "jwt-decode";
 
 export default function Dashboard() {
-  const [user, setUser] = useState(null);
   const router = useRouter();
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true); // ✅ EKLENDİ
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
     if (!token) {
-      router.replace("/auth/login");
+      setLoading(false);
       return;
     }
 
@@ -19,39 +20,33 @@ export default function Dashboard() {
       const decoded = jwtDecode(token);
       const now = Date.now() / 1000;
 
-      if (decoded.exp && decoded.exp < now) {
+      if (decoded.exp && decoded.exp > now) {
+        setUser(decoded);
+      } else {
         localStorage.removeItem("token");
-        router.replace("/auth/login");
-        return;
       }
-
-      setUser(decoded);
     } catch (err) {
-      console.error("Token çözümleme hatası:", err);
+      console.error("Token error:", err);
       localStorage.removeItem("token");
-      router.replace("/auth/login");
     }
-  }, []); // ✅ Sonsuz döngü yok
 
+    setLoading(false);
+  }, []);
+
+  // ✅ Token kontrolü tamamlanana kadar boş ekran göster
+  if (loading) return <p style={{ padding: 20 }}>⏳ Kontrol ediliyor...</p>;
+
+  // ✅ Token yok -> login ekranına gönder
   if (!user) {
-    return <p style={{ padding: "2rem" }}>⏳ Yükleniyor...</p>;
+    router.replace("/auth/login");
+    return null;
   }
 
   return (
     <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
-      <h1 style={{ fontSize: "1.8rem", fontWeight: "bold" }}>
-        📊 Satış Takip Paneli
-      </h1>
-
-      <p style={{ fontSize: "1.1rem", marginTop: "0.5rem" }}>
-        Hoş geldin, <b>{user.email}</b> 👋
-      </p>
-
-      <div style={{ marginTop: "2rem", fontSize: "1rem", color: "#444" }}>
-        ✅ Sol menüden işlemleri seçebilirsiniz.  
-        <br />
-        ✅ Hepsiburada API ayarlarınızı yaparak siparişleri çekebilirsiniz.
-      </div>
+      <h1>📊 Satış Takip Paneli</h1>
+      <p>Hoş geldin, <b>{user.email}</b> 👋</p>
+      <p>✅ Sol menüden işlem seçebilirsiniz</p>
     </div>
   );
 }

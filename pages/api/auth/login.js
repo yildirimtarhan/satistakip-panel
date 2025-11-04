@@ -28,10 +28,19 @@ export default async function handler(req, res) {
       { expiresIn: "7d" }
     );
 
-    // ✅ Token'ı HTTP-Only cookie'ye yaz
-    res.setHeader("Set-Cookie", `token=${token}; Path=/; HttpOnly; SameSite=Lax; Secure`);
+    // ✅ Token cookie
+    res.setHeader(
+      "Set-Cookie",
+      `token=${token}; Path=/; HttpOnly; SameSite=Lax; Secure`
+    );
 
-    return res.status(200).json({ success: true });
+    // ✅ Token response (localStorage için)
+    return res.status(200).json({
+      success: true,
+      token,
+      user: { email: user.email }
+    });
+
   } catch (err) {
     console.error("Login error:", err);
     return res.status(500).json({ message: "Server error" });

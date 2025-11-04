@@ -23,13 +23,18 @@ export default function LoginPage() {
         body: JSON.stringify(form),
       });
 
+      const data = await res.json();
+
       if (!res.ok) {
-        const data = await res.json();
         setError(data.message || "Giriş başarısız");
         return;
       }
 
-      // ✅ Token cookie'ye otomatik yazıldı
+      // ✅ TOKEN'ı localStorage'a yaz
+      if (data.token) {
+        localStorage.setItem("token", data.token);
+      }
+
       router.push("/dashboard");
     } catch (err) {
       console.error("Giriş hatası:", err);

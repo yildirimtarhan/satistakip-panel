@@ -9,7 +9,7 @@ export default function Home() {
   const [checkingAuth, setCheckingAuth] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
     if (!token) {
       setCheckingAuth(false);
@@ -21,8 +21,8 @@ export default function Home() {
       const now = Date.now() / 1000;
 
       if (decoded.exp && decoded.exp > now) {
-        // ✅ Token valid -> Go dashboard
-        router.replace("/dashboard");
+        // ✅ Token valid -> dashboard'a gönder
+        router.push("/dashboard");
       } else {
         localStorage.removeItem("token");
         setCheckingAuth(false);
@@ -32,7 +32,7 @@ export default function Home() {
       localStorage.removeItem("token");
       setCheckingAuth(false);
     }
-  }, []);
+  }, []); // ✅ dependencies boş, loop olmaz
 
   if (checkingAuth) {
     return (
