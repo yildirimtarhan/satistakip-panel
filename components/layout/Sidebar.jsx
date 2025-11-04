@@ -20,6 +20,7 @@ const MenuItem = ({ href, icon, label }) => {
 export default function Sidebar() {
   return (
     <aside className="h-screen w-64 border-r bg-white p-4 flex flex-col">
+
       {/* Logo */}
       <div className="flex items-center gap-2 mb-4 px-2">
         <div className="w-9 h-9 rounded-xl bg-orange-500" />
@@ -33,13 +34,16 @@ export default function Sidebar() {
         {/* Firma */}
         <MenuItem href="/dashboard/ayarlar/firma" icon="🏢" label="Firma Ayarları" />
 
-        {/* Pazaryeri */}
+        {/* API Ayarları */}
+        <MenuItem href="/dashboard/api-settings" icon="⚙️" label="API Ayarları" />
+
+        {/* Pazaryerleri */}
         <div className="mt-3 mb-1 px-3 text-xs font-bold text-slate-500 uppercase">
           Pazaryerleri
         </div>
 
-        {/* ✅ Doğru HB linki */}
-        <MenuItem href="/dashboard/hepsiburada/orders" icon="🛍️" label="Hepsiburada Siparişleri" />
+        {/* ✅ Düzeltilmiş Hepsiburada yolu */}
+        <MenuItem href="/hepsiburada/orders" icon="🛍️" label="Hepsiburada Siparişleri" />
 
         {/* Ticari & Ürün */}
         <MenuItem href="/dashboard/cari" icon="👥" label="Cariler" />
@@ -48,7 +52,7 @@ export default function Sidebar() {
         <MenuItem href="/dashboard/urun-alis" icon="📥" label="Ürün Alış" />
         <MenuItem href="/dashboard/cari-tahsilat" icon="💰" label="Cari Tahsilat / Ödeme" />
 
-        {/* Raporlama */}
+        {/* Raporlar */}
         <MenuItem href="/dashboard/cari-ekstresi" icon="📑" label="Cari Ekstresi" />
         <MenuItem href="/dashboard/stok-raporu" icon="📊" label="Stok Raporu" />
         <MenuItem href="/dashboard/stok-hareketleri" icon="🔄" label="Stok Hareketleri" />

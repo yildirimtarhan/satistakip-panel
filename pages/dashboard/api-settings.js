@@ -1,53 +1,73 @@
-// pages/dashboard/orders.js
-import { useEffect, useState } from "react";
+// pages/dashboard/api-settings.js
+import { useState, useEffect } from "react";
 
-export default function OrdersPage() {
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
+export default function ApiSettings() {
+  const [form, setForm] = useState({
+    hbMerchantId: "",
+    hbSecretKey: "",
+    hbUserAgent: "",
+  });
+
+  const [message, setMessage] = useState("");
 
   useEffect(() => {
-    async function fetchOrders() {
+    async function loadSettings() {
       try {
-        const res = await fetch("/api/hepsiburada-api/orders/list");
+        const res = await fetch("/api/settings/get");
         const data = await res.json();
-        setOrders(data.orders || []);
-      } catch (err) {
-        console.error("Siparişler alınamadı:", err);
-      } finally {
-        setLoading(false);
+        if (data.settings) setForm(data.settings);
+      } catch (error) {
+        console.log("Ayarlar alınamadı");
       }
     }
-    fetchOrders();
+    loadSettings();
   }, []);
 
-  if (loading) return <p className="p-4">Yükleniyor...</p>;
+  const saveSettings = async () => {
+    const res = await fetch("/api/settings/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form),
+    });
+
+    const data = await res.json();
+    setMessage(data.message);
+  };
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">📦 Hepsiburada Siparişleri</h1>
-      {orders.length === 0 ? (
-        <p>Henüz sipariş bulunmuyor.</p>
-      ) : (
-        <table className="min-w-full border-collapse border border-gray-300">
-          <thead>
-            <tr className="bg-gray-100">
-              <th className="border p-2">Sipariş No</th>
-              <th className="border p-2">Durum</th>
-              <th className="border p-2">Tarih</th>
-            </tr>
-          </thead>
-          <tbody>
-            {orders.map((order) => (
-              <tr key={order._id}>
-                <td className="border p-2">{order.orderNumber}</td>
-                <td className="border p-2">{order.data?.status || "—"}</td>
-                <td className="border p-2">
-                  {new Date(order.fetchedAt).toLocaleString("tr-TR")}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <div style={{ padding: "2rem", maxWidth: "400px" }}>
+      <h1 className="text-xl font-bold mb-4">⚙️ Hepsiburada API Ayarları</h1>
+
+      <label>Merchant ID</label>
+      <input
+        className="border p-2 w-full mb-2"
+        value={form.hbMerchantId}
+        onChange={(e) => setForm({ ...form, hbMerchantId: e.target.value })}
+      />
+
+      <label>Secret Key</label>
+      <input
+        className="border p-2 w-full mb-2"
+        value={form.hbSecretKey}
+        onChange={(e) => setForm({ ...form, hbSecretKey: e.target.value })}
+      />
+
+      <label>User Agent</label>
+      <input
+        className="border p-2 w-full mb-2"
+        value={form.hbUserAgent}
+        onChange={(e) => setForm({ ...form, hbUserAgent: e.target.value })}
+      />
+
+      <button
+        onClick={saveSettings}
+        className="bg-blue-600 text-white px-4 py-2 rounded mt-2"
+      >
+        Kaydet
+      </button>
+
+      {message && (
+        <p className="mt-3 text-green-600 font-bold">{message}</p>
       )}
     </div>
   );

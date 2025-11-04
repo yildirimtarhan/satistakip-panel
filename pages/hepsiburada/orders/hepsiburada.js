@@ -1,3 +1,4 @@
+// pages/hepsiburada/orders/hepsiburada.js
 import { useEffect, useState } from "react";
 
 export default function HepsiburadaOrders() {
@@ -8,14 +9,14 @@ export default function HepsiburadaOrders() {
   useEffect(() => {
     const fetchOrders = async () => {
       try {
-        const response = await fetch("/api/hepsiburada/orders");
+        const response = await fetch("/api/hepsiburada-api/orders");
         const result = await response.json();
 
-        if (!response.ok) {
+        if (!response.ok || !result.success) {
           throw new Error(result.message || "Siparişler alınamadı.");
         }
 
-        setOrders(result);
+        setOrders(result.orders || []);
       } catch (err) {
         setError(err.message);
       } finally {
@@ -28,12 +29,16 @@ export default function HepsiburadaOrders() {
 
   return (
     <div style={{ padding: "2rem" }}>
-      <h1>Hepsiburada Siparişleri</h1>
+      <h1>🛍️ Hepsiburada Siparişleri</h1>
 
-      {loading && <p>Yükleniyor...</p>}
-      {error && <p style={{ color: "red" }}>Hata: {error}</p>}
+      {loading && <p>⏳ Yükleniyor...</p>}
+      {error && <p style={{ color: "red" }}>⚠️ Hata: {error}</p>}
 
-      {!loading && !error && (
+      {!loading && !error && orders.length === 0 && (
+        <p>📭 Sipariş bulunamadı.</p>
+      )}
+
+      {!loading && !error && orders.length > 0 && (
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr>
@@ -46,13 +51,15 @@ export default function HepsiburadaOrders() {
           </thead>
           <tbody>
             {orders.map((order) => (
-              <tr key={order.id}>
+              <tr key={order.orderNumber}>
                 <td style={tdStyle}>{order.orderNumber}</td>
                 <td style={tdStyle}>{order.customer || "Bilinmiyor"}</td>
                 <td style={tdStyle}>{order.status || "Bilinmiyor"}</td>
                 <td style={tdStyle}>{order.totalPrice || "Bilinmiyor"}</td>
                 <td style={tdStyle}>
-                  {order.createdAt ? new Date(order.createdAt).toLocaleString() : "Bilinmiyor"}
+                  {order.createdAt
+                    ? new Date(order.createdAt).toLocaleString("tr-TR")
+                    : "Bilinmiyor"}
                 </td>
               </tr>
             ))}

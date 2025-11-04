@@ -24,39 +24,23 @@ export default function Dashboard() {
     }
   }, [router]);
 
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    router.push("/auth/login");
-  };
-
   return (
     <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
-      <h1>📊 Satış Takip Paneli</h1>
+      <h1 style={{ fontSize: "1.8rem", fontWeight: "bold" }}>📊 Satış Takip Paneli</h1>
 
       {user ? (
-        <p>Hoş geldin, <b>{user.email}</b> 👋</p>
+        <p style={{ fontSize: "1.1rem", marginTop: "0.5rem" }}>
+          Hoş geldin, <b>{user.email}</b> 👋
+        </p>
       ) : (
         <p>Yükleniyor...</p>
       )}
 
-      <p style={{ color: "#666", marginTop: "1rem" }}>
-        Sol menüden işlem seçebilirsiniz.
-      </p>
-
-      <button
-        onClick={handleLogout}
-        style={{
-          marginTop: "2rem",
-          padding: "10px",
-          background: "#ef4444",
-          color: "#fff",
-          borderRadius: "6px",
-          border: "none",
-          cursor: "pointer",
-        }}
-      >
-        🚪 Çıkış Yap
-      </button>
+      <div style={{ marginTop: "2rem", fontSize: "1rem", color: "#444" }}>
+        ✅ Sol menüden işlemleri seçebilirsiniz.  
+        <br />
+        ✅ Hepsiburada API ayarlarınızı yaparak siparişleri çekebilirsiniz.
+      </div>
     </div>
   );
 }
