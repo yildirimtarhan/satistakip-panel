@@ -2,7 +2,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { jwtDecode } from "jwt-decode";
-import Link from "next/link";
 
 export default function Dashboard() {
   const [user, setUser] = useState(null);
@@ -25,6 +24,10 @@ export default function Dashboard() {
     }
   }, [router]);
 
+  const goTo = (path) => {
+    router.push(path);
+  };
+
   const handleLogout = () => {
     localStorage.removeItem("token");
     router.push("/auth/login");
@@ -42,13 +45,19 @@ export default function Dashboard() {
 
       <div style={{ marginTop: "2rem", display: "flex", flexDirection: "column", gap: "10px", maxWidth: "250px" }}>
 
-        <Link href="/dashboard/hepsiburada/orders" style={{ textDecoration: "none" }}>
-          <button style={{ padding: "10px", width: "100%" }}>📦 Hepsiburada Siparişleri</button>
-        </Link>
+        <button 
+          onClick={() => goTo("/dashboard/hepsiburada/orders")}
+          style={{ padding: "10px", width: "100%", cursor: "pointer" }}
+        >
+          📦 Hepsiburada Siparişleri
+        </button>
 
-        <Link href="/dashboard/settings" style={{ textDecoration: "none" }}>
-          <button style={{ padding: "10px", width: "100%" }}>⚙️ API Ayarları</button>
-        </Link>
+        <button 
+          onClick={() => goTo("/dashboard/settings")}
+          style={{ padding: "10px", width: "100%", cursor: "pointer" }}
+        >
+          ⚙️ API Ayarları
+        </button>
 
         <button
           onClick={handleLogout}
