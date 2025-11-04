@@ -18,6 +18,13 @@ const MenuItem = ({ href, icon, label }) => {
 };
 
 export default function Sidebar() {
+  const router = useRouter();
+
+  const logout = () => {
+    localStorage.removeItem("token");
+    router.replace("/auth/login");
+  };
+
   return (
     <aside className="h-screen w-64 border-r bg-white p-4 flex flex-col">
 
@@ -34,7 +41,7 @@ export default function Sidebar() {
         {/* Firma */}
         <MenuItem href="/dashboard/ayarlar/firma" icon="🏢" label="Firma Ayarları" />
 
-        {/* API Ayarları */}
+        {/* API Settings */}
         <MenuItem href="/dashboard/api-settings" icon="⚙️" label="API Ayarları" />
 
         {/* Pazaryerleri */}
@@ -42,10 +49,10 @@ export default function Sidebar() {
           Pazaryerleri
         </div>
 
-        {/* ✅ Düzeltilmiş Hepsiburada yolu */}
-        <MenuItem href="/hepsiburada/orders" icon="🛍️" label="Hepsiburada Siparişleri" />
+        {/* ✅ Correct HB orders path */}
+        <MenuItem href="/dashboard/hepsiburada/orders" icon="🛍️" label="Hepsiburada Siparişleri" />
 
-        {/* Ticari & Ürün */}
+        {/* Ticari */}
         <MenuItem href="/dashboard/cari" icon="👥" label="Cariler" />
         <MenuItem href="/dashboard/urunler" icon="📦" label="Ürünler" />
         <MenuItem href="/dashboard/urun-satis" icon="🛒" label="Ürün Satış" />
@@ -58,11 +65,17 @@ export default function Sidebar() {
         <MenuItem href="/dashboard/stok-hareketleri" icon="🔄" label="Stok Hareketleri" />
         <MenuItem href="/dashboard/teklifler" icon="📄" label="Fiyat Teklifleri" />
         <MenuItem href="/dashboard/raporlar" icon="📈" label="Genel Raporlar" />
-        <MenuItem href="/dashboard/ayarlar" icon="⚙️" label="Ayarlar" />
       </nav>
 
-      {/* Footer */}
-      <div className="text-xs text-slate-500 px-2">
+      {/* ✅ Logout Button */}
+      <button
+        onClick={logout}
+        className="mt-4 bg-red-500 text-white px-3 py-2 rounded-lg hover:bg-red-600"
+      >
+        🚪 Çıkış Yap
+      </button>
+
+      <div className="text-xs text-slate-500 px-2 mt-2">
         v1.0 • {new Date().getFullYear()}
       </div>
     </aside>
