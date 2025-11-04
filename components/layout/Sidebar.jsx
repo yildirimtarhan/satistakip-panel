@@ -38,8 +38,8 @@ export default function Sidebar() {
           Pazaryerleri
         </div>
 
-        {/* ✅ Düzeltilmiş Hepsiburada yolu */}
-        <MenuItem href="/hepsiburada/orders" icon="🛍️" label="Hepsiburada Siparişleri" />
+        {/* ✅ Doğru HB linki */}
+        <MenuItem href="/dashboard/hepsiburada/orders" icon="🛍️" label="Hepsiburada Siparişleri" />
 
         {/* Ticari & Ürün */}
         <MenuItem href="/dashboard/cari" icon="👥" label="Cariler" />

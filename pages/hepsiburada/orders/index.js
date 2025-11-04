@@ -13,6 +13,7 @@ export default function HepsiburadaOrdersPage() {
       setLoading(true);
       try {
         const res = await fetch(`/api/hepsiburada-api/orders?page=${page}&limit=${limit}`);
+
         const data = await res.json();
 
         if (!res.ok) throw new Error(data.message || "Hepsiburada siparişleri alınamadı");

@@ -24,10 +24,6 @@ export default function Dashboard() {
     }
   }, [router]);
 
-  const goTo = (path) => {
-    router.push(path);
-  };
-
   const handleLogout = () => {
     localStorage.removeItem("token");
     router.push("/auth/login");
@@ -38,35 +34,29 @@ export default function Dashboard() {
       <h1>📊 Satış Takip Paneli</h1>
 
       {user ? (
-        <p>Hoş geldin, <b>{user.email}</b></p>
+        <p>Hoş geldin, <b>{user.email}</b> 👋</p>
       ) : (
         <p>Yükleniyor...</p>
       )}
 
-      <div style={{ marginTop: "2rem", display: "flex", flexDirection: "column", gap: "10px", maxWidth: "250px" }}>
+      <p style={{ color: "#666", marginTop: "1rem" }}>
+        Sol menüden işlem seçebilirsiniz.
+      </p>
 
-        <button 
-          onClick={() => goTo("/dashboard/hepsiburada/orders")}
-          style={{ padding: "10px", width: "100%", cursor: "pointer" }}
-        >
-          📦 Hepsiburada Siparişleri
-        </button>
-
-        <button 
-          onClick={() => goTo("/dashboard/settings")}
-          style={{ padding: "10px", width: "100%", cursor: "pointer" }}
-        >
-          ⚙️ API Ayarları
-        </button>
-
-        <button
-          onClick={handleLogout}
-          style={{ padding: "10px", background: "#ef4444", color: "#fff", borderRadius: "6px", border: "none", cursor: "pointer" }}
-        >
-          🚪 Çıkış Yap
-        </button>
-
-      </div>
+      <button
+        onClick={handleLogout}
+        style={{
+          marginTop: "2rem",
+          padding: "10px",
+          background: "#ef4444",
+          color: "#fff",
+          borderRadius: "6px",
+          border: "none",
+          cursor: "pointer",
+        }}
+      >
+        🚪 Çıkış Yap
+      </button>
     </div>
   );
 }
