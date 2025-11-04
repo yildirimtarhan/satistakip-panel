@@ -29,19 +29,24 @@ export default function Sidebar() {
       {/* Menu */}
       <nav className="flex-1 space-y-1">
         <MenuItem href="/dashboard" icon="🏠" label="Anasayfa" />
+
+        {/* Firma */}
         <Link
-         href="/dashboard/ayarlar/firma"
-        className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-orange-50"
+          href="/dashboard/ayarlar/firma"
+          className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-orange-50"
         >
           🏢 <span>Firma Ayarları</span>
-      </Link>
+        </Link>
 
+        {/* 🔥 Pazaryeri İşlemleri */}
+        <div className="mt-3 mb-1 px-3 text-xs font-bold text-slate-500 uppercase">
+          Pazaryerleri
+        </div>
+        <MenuItem href="/dashboard/hepsiburada/orders" icon="🛍️" label="Hepsiburada Siparişleri" />
 
-        {/* ✅ Cari - Ürün İşlemleri */}
+        {/* ✅ Ticari & Ürün */}
         <MenuItem href="/dashboard/cari" icon="👥" label="Cariler" />
         <MenuItem href="/dashboard/urunler" icon="📦" label="Ürünler" />
-
-        {/* ✅ Ticari İşlemler */}
         <MenuItem href="/dashboard/urun-satis" icon="🛒" label="Ürün Satış" />
         <MenuItem href="/dashboard/urun-alis" icon="📥" label="Ürün Alış" />
         <MenuItem href="/dashboard/cari-tahsilat" icon="💰" label="Cari Tahsilat / Ödeme" />
@@ -50,8 +55,6 @@ export default function Sidebar() {
         <MenuItem href="/dashboard/cari-ekstresi" icon="📑" label="Cari Ekstresi" />
         <MenuItem href="/dashboard/stok-raporu" icon="📊" label="Stok Raporu" />
         <MenuItem href="/dashboard/stok-hareketleri" icon="🔄" label="Stok Hareketleri" />
-
-        {/* ✅ Diğer */}
         <MenuItem href="/dashboard/teklifler" icon="📄" label="Fiyat Teklifleri" />
         <MenuItem href="/dashboard/raporlar" icon="📈" label="Genel Raporlar" />
         <MenuItem href="/dashboard/ayarlar" icon="⚙️" label="Ayarlar" />

@@ -1,4 +1,4 @@
-// pages/Dashboard.js
+// pages/dashboard/index.js
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { jwtDecode } from "jwt-decode";
@@ -40,28 +40,23 @@ export default function Dashboard() {
         <p>Yükleniyor...</p>
       )}
 
-      <div style={{
-        marginTop: "2rem",
-        display: "flex",
-        gap: "1rem",
-        flexDirection: "column",
-        maxWidth: "220px"
-      }}>
-        
-        <Link href="/dashboard/hepsiburada/orders">
-          📦 Hepsiburada Siparişleri
+      <div style={{ marginTop: "2rem", display: "flex", flexDirection: "column", gap: "10px", maxWidth: "250px" }}>
+
+        <Link href="/dashboard/hepsiburada/orders" style={{ textDecoration: "none" }}>
+          <button style={{ padding: "10px", width: "100%" }}>📦 Hepsiburada Siparişleri</button>
         </Link>
 
-        <Link href="/dashboard/settings">
-          ⚙️ API Ayarları
+        <Link href="/dashboard/settings" style={{ textDecoration: "none" }}>
+          <button style={{ padding: "10px", width: "100%" }}>⚙️ API Ayarları</button>
         </Link>
 
-        <button 
+        <button
           onClick={handleLogout}
-          style={{ background: "#ef4444", color: "#fff", padding: "8px", borderRadius: "5px", border: "none", cursor: "pointer" }}
+          style={{ padding: "10px", background: "#ef4444", color: "#fff", borderRadius: "6px", border: "none", cursor: "pointer" }}
         >
           🚪 Çıkış Yap
         </button>
+
       </div>
     </div>
   );
