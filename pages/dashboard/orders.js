@@ -7,6 +7,10 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // ✅ Modal state
+  const [showModal, setShowModal] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState(null);
+
   // 🔹 Kullanıcı oturumu kontrol
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -43,6 +47,24 @@ export default function OrdersPage() {
   const handleLogout = () => {
     localStorage.removeItem("token");
     router.push("/auth/login");
+  };
+
+  // ✅ Kargo takip modalını aç
+  const openTracking = (order) => {
+    const trackingNumber = order.trackingNumber || order.shipmentTrackingNumber;
+
+    const trackingUrl =
+      order.shipmentTrackingUrl ||
+      (trackingNumber
+        ? `https://kargotakip.hepsiburada.com/?trackingNumber=${trackingNumber}`
+        : null);
+
+    setSelectedOrder({
+      number: order.orderNumber,
+      trackingNumber,
+      trackingUrl,
+    });
+    setShowModal(true);
   };
 
   return (
@@ -87,7 +109,9 @@ export default function OrdersPage() {
         {loading && <div className="text-center">⏳ Yükleniyor...</div>}
         {error && <div className="text-center text-red-600">❌ Hata: {error}</div>}
         {!loading && orders.length === 0 && (
-          <div className="text-center text-gray-500">📭 Şu anda sipariş bulunmamaktadır.</div>
+          <div className="text-center text-gray-500">
+            📭 Şu anda sipariş bulunmamaktadır.
+          </div>
         )}
 
         <ul className="max-w-2xl mx-auto">
@@ -98,11 +122,58 @@ export default function OrdersPage() {
             >
               <strong>Sipariş No:</strong> {order.orderNumber || order.id} <br />
               <strong>Tarih:</strong> {order.orderDate || "-"} <br />
-              <strong>Durum:</strong> {order.status || "-"}
+              <strong>Durum:</strong> {order.status || "-"} <br />
+
+              {/* ✅ Kargo Takip Button */}
+              {order.trackingNumber || order.shipmentTrackingUrl ? (
+                <button
+                  className="mt-2 w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700"
+                  onClick={() => openTracking(order)}
+                >
+                  🚚 Kargo Takip
+                </button>
+              ) : (
+                <p className="text-gray-500 mt-2 text-sm">📦 Kargo bilgisi yok</p>
+              )}
             </li>
           ))}
         </ul>
       </div>
+
+      {/* ✅ Modal */}
+      {showModal && selectedOrder && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+          <div className="bg-white p-6 rounded shadow-lg w-80">
+            <h2 className="text-xl font-bold mb-2">Kargo Takip</h2>
+
+            <p className="mb-3">
+              <strong>Sipariş:</strong> {selectedOrder.number}
+            </p>
+            <p className="mb-3">
+              <strong>Takip Kodu:</strong> {selectedOrder.trackingNumber}
+            </p>
+
+            {selectedOrder.trackingUrl ? (
+              <a
+                href={selectedOrder.trackingUrl}
+                target="_blank"
+                className="bg-green-600 text-white w-full block text-center px-4 py-2 rounded hover:bg-green-700"
+              >
+                Takip Linki ➜
+              </a>
+            ) : (
+              <p className="text-gray-400 text-sm">Link bulunamadı</p>
+            )}
+
+            <button
+              onClick={() => setShowModal(false)}
+              className="mt-3 w-full bg-gray-300 px-4 py-2 rounded"
+            >
+              Kapat
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
