@@ -13,10 +13,39 @@ export default async function handler(req, res) {
       .limit(100)
       .toArray();
 
+    // ✅ Eğer DB'de kayıt yoksa örnek test siparişi döndür
+    if (!docs || docs.length === 0) {
+      console.log("📦 HB Local: DB boş → Test siparişi dönülüyor");
+
+      const testOrder = [
+        {
+          orderNumber: "TEST-HB-ORDER-123456",
+          status: "AwaitingShipment",
+          updatedAt: new Date().toISOString(),
+          trackingNumber: "TESTTRACK123456",
+          shipmentTrackingNumber: "TESTTRACK123456",
+          raw: {
+            orderNumber: "TEST-HB-ORDER-123456",
+            status: "AwaitingShipment",
+            lastStatusUpdateDate: new Date().toISOString(),
+            shipmentTrackingNumber: "TESTTRACK123456",
+          }
+        }
+      ];
+
+      return res.status(200).json({
+        success: true,
+        total: 1,
+        orders: testOrder
+      });
+    }
+
+    // ✅ DB'deki gerçek siparişleri map'le
     const orders = docs.map((d) => ({
       orderNumber: d.data?.orderNumber || d.orderNumber,
       status: d.data?.status || d.data?.orderStatus || "-",
       updatedAt: d.data?.lastStatusUpdateDate || d.fetchedAt,
+      trackingNumber: d.data?.shipmentTrackingNumber || null,
       raw: d.data
     }));
 
