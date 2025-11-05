@@ -1,79 +1,250 @@
 // pages/dashboard/hepsiburada/orders/index.js
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+
+const pageWrap = { padding: "24px" };
+const card = {
+  maxWidth: 1100,
+  margin: "0 auto",
+  background: "#fff",
+  borderRadius: 12,
+  border: "1px solid #e5e7eb",
+  boxShadow: "0 6px 18px rgba(0,0,0,0.06)",
+};
+const header = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  padding: "16px 20px",
+  borderBottom: "1px solid #f1f5f9",
+};
+const h1 = { fontSize: 20, fontWeight: 700, color: "#334155" };
+const bar = { display: "flex", gap: 10, alignItems: "center" };
+const input = {
+  height: 36,
+  border: "1px solid #e5e7eb",
+  borderRadius: 8,
+  padding: "0 10px",
+};
+const btn = {
+  height: 36,
+  borderRadius: 8,
+  padding: "0 12px",
+  background: "#2563eb",
+  color: "#fff",
+  border: "none",
+  cursor: "pointer",
+};
+const table = { width: "100%", borderCollapse: "collapse" };
+const th = {
+  textAlign: "left",
+  padding: "12px 16px",
+  fontSize: 13,
+  color: "#64748b",
+  borderBottom: "1px solid #f1f5f9",
+};
+const td = {
+  padding: "12px 16px",
+  fontSize: 14,
+  color: "#334155",
+  borderBottom: "1px solid #f8fafc",
+  verticalAlign: "top",
+};
+const pill = (bg, fg) => ({
+  display: "inline-block",
+  padding: "3px 10px",
+  borderRadius: 999,
+  fontSize: 12,
+  fontWeight: 600,
+  background: bg,
+  color: fg,
+});
 
 export default function HepsiburadaOrdersPage() {
+  // Liste & UI state
   const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  // Basit tarih aralığı (son 20 gün)
+  const [begin, setBegin] = useState(
+    new Date(Date.now() - 1000 * 60 * 60 * 24 * 20).toISOString().slice(0, 10)
+  );
+  const [end, setEnd] = useState(new Date().toISOString().slice(0, 10));
+
+  // API’den çek
+  const fetchOrders = async () => {
+    setLoading(true);
+    setErr("");
+    try {
+      const qs = new URLSearchParams({
+        offset: "0",
+        limit: "100",
+        beginDate: `${begin}T00:00:00+03:00`,
+        endDate: `${end}T23:59:59+03:00`,
+      }).toString();
+
+      const res = await fetch(`/api/hepsiburada-api/orders?${qs}`);
+      const data = await res.json();
+
+      if (res.ok && (data?.orders?.length || data?.items?.length || data?.content?.items?.length)) {
+        // çeşitli şekillerde gelebilecek alanları normalize et
+        const list =
+          data.orders ||
+          data.items ||
+          data.content?.items ||
+          [];
+        setOrders(list);
+      } else if (data?.success === false && data?.message) {
+        setOrders([]);
+        setErr(data.message);
+      } else {
+        setOrders([]);
+        // hata değil ama sonuç boşsa anlamlı bir mesaj
+        setErr("Bu tarih aralığında sipariş bulunamadı.");
+      }
+    } catch (e) {
+      setOrders([]);
+      setErr(e.message || "Bilinmeyen hata");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchOrders = async () => {
-      try {
-        const res = await fetch("/api/hepsiburada-api/orders");
-        const data = await res.json();
-
-        if (!data.success) {
-          setError(data.error || "Siparişler alınamadı");
-        } else {
-          const items = data.content?.items || data.items || [];
-          setOrders(items);
-        }
-      } catch (err) {
-        console.error("🔥 Frontend Hatası:", err);
-        setError("Bağlantı hatası");
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchOrders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // HB takip linki üretici
+  const buildTrackingLink = (o) => {
+    const trackingNumber =
+      o?.trackingNumber ||
+      o?.shipmentTrackingNumber ||
+      o?.shipment?.trackingNumber ||
+      o?.delivery?.trackingNumber ||
+      o?.cargo?.trackingNumber ||
+      o?.deliveryInfo?.trackingNumber ||
+      ""; // yoksa boş
+
+    if (!trackingNumber) return "";
+    // HB formatı
+    return `https://kargotakip.hepsiburada.com/?trackingNumber=${encodeURIComponent(
+      trackingNumber
+    )}`;
+  };
+
+  // UI
+  const topCount = useMemo(() => orders.length, [orders]);
+
   return (
-    <div style={{ padding: "2rem" }}>
-      <h1 style={{ fontSize: "24px", marginBottom: "16px" }}>🛍️ Hepsiburada Siparişleri</h1>
+    <div style={pageWrap}>
+      <div style={card}>
+        <div style={header}>
+          <h1 style={h1}>Hepsiburada Siparişleri</h1>
+          <div style={bar}>
+            <input
+              type="date"
+              value={begin}
+              onChange={(e) => setBegin(e.target.value)}
+              style={input}
+            />
+            <span>—</span>
+            <input
+              type="date"
+              value={end}
+              onChange={(e) => setEnd(e.target.value)}
+              style={input}
+            />
+            <button onClick={fetchOrders} style={btn}>
+              Yenile
+            </button>
+          </div>
+        </div>
 
-      {loading && <p>⏳ Yükleniyor...</p>}
-      {error && <p style={{ color: "red" }}>⚠️ {error}</p>}
+        <div style={{ padding: 16 }}>
+          {loading && <div>⏳ Yükleniyor…</div>}
 
-      {!loading && !error && orders.length === 0 && <p>📭 Sipariş bulunamadı.</p>}
+          {!loading && err && (
+            <div style={{ ...pill("#FEF3C7", "#92400E"), marginBottom: 12 }}>
+              {err}
+            </div>
+          )}
 
-      {!loading && orders.length > 0 && (
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr>
-              <th style={thStyle}>Sipariş No</th>
-              <th style={thStyle}>Durum</th>
-              <th style={thStyle}>Tarih</th>
-            </tr>
-          </thead>
-          <tbody>
-            {orders.map((order, i) => (
-              <tr key={i}>
-                <td style={tdStyle}>{order.orderNumber}</td>
-                <td style={tdStyle}>{order.orderStatus || order.status || "–"}</td>
-                <td style={tdStyle}>
-                  {order.lastStatusUpdateDate
-                    ? new Date(order.lastStatusUpdateDate).toLocaleString("tr-TR")
-                    : "—"}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+          {!loading && !err && topCount === 0 && (
+            <div style={{ ...pill("#E2E8F0", "#334155") }}>
+              Bu aralıkta sipariş bulunamadı.
+            </div>
+          )}
+
+          {!loading && topCount > 0 && (
+            <div style={{ overflowX: "auto" }}>
+              <table style={table}>
+                <thead>
+                  <tr>
+                    <th style={th}>Sipariş No</th>
+                    <th style={th}>Durum</th>
+                    <th style={th}>Son Güncelleme</th>
+                    <th style={th}>Kargo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {orders.map((o, i) => {
+                    const status = o.orderStatus || o.status || "—";
+                    const updated =
+                      o.lastStatusUpdateDate ||
+                      o.updatedAt ||
+                      o.orderDate ||
+                      null;
+                    const trackUrl = buildTrackingLink(o);
+
+                    return (
+                      <tr key={i}>
+                        <td style={td}>{o.orderNumber || o.id || "—"}</td>
+                        <td style={td}>
+                          <span
+                            style={
+                              status?.toLowerCase().includes("kargo") ||
+                              status?.toLowerCase().includes("ship")
+                                ? pill("#DCFCE7", "#166534")
+                                : pill("#E5E7EB", "#111827")
+                            }
+                          >
+                            {status}
+                          </span>
+                        </td>
+                        <td style={td}>
+                          {updated
+                            ? new Date(updated).toLocaleString("tr-TR")
+                            : "—"}
+                        </td>
+                        <td style={td}>
+                          {trackUrl ? (
+                            <a
+                              href={trackUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                ...pill("#DBEAFE", "#1D4ED8"),
+                                textDecoration: "none",
+                              }}
+                            >
+                              Kargo Takip
+                            </a>
+                          ) : (
+                            <span style={{ color: "#94a3b8", fontSize: 13 }}>
+                              takip numarası yok
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
-
-const thStyle = {
-  border: "1px solid #ddd",
-  padding: "8px",
-  backgroundColor: "#f8f8f8",
-  textAlign: "left",
-};
-
-const tdStyle = {
-  border: "1px solid #ddd",
-  padding: "8px",
-};
