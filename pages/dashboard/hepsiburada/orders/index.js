@@ -1,4 +1,4 @@
-// pages/dashboard/hepsiburada/orders/index.js
+// pages/dashboard/hepsiburada/index.js
 import { useEffect, useState, useMemo } from "react";
 
 const pageWrap = { padding: "24px" };
@@ -60,7 +60,6 @@ const pill = (bg, fg) => ({
 });
 
 export default function HepsiburadaOrdersPage() {
-  // Liste & UI state
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
@@ -71,35 +70,19 @@ export default function HepsiburadaOrdersPage() {
   );
   const [end, setEnd] = useState(new Date().toISOString().slice(0, 10));
 
-  // API’den çek
+  // ✅ LOCAL DB'den çekiyoruz — webhook sonrası gelen siparişler
   const fetchOrders = async () => {
     setLoading(true);
     setErr("");
-    try {
-      const qs = new URLSearchParams({
-        offset: "0",
-        limit: "100",
-        beginDate: `${begin}T00:00:00+03:00`,
-        endDate: `${end}T23:59:59+03:00`,
-      }).toString();
 
-      const res = await fetch(`/api/hepsiburada-api/orders?${qs}`);
+    try {
+      const res = await fetch(`/api/hepsiburada-api/orders/local`);
       const data = await res.json();
 
-      if (res.ok && (data?.orders?.length || data?.items?.length || data?.content?.items?.length)) {
-        // çeşitli şekillerde gelebilecek alanları normalize et
-        const list =
-          data.orders ||
-          data.items ||
-          data.content?.items ||
-          [];
-        setOrders(list);
-      } else if (data?.success === false && data?.message) {
-        setOrders([]);
-        setErr(data.message);
+      if (res.ok && data.orders?.length) {
+        setOrders(data.orders);
       } else {
         setOrders([]);
-        // hata değil ama sonuç boşsa anlamlı bir mesaj
         setErr("Bu tarih aralığında sipariş bulunamadı.");
       }
     } catch (e) {
@@ -112,28 +95,16 @@ export default function HepsiburadaOrdersPage() {
 
   useEffect(() => {
     fetchOrders();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // HB takip linki üretici
-  const buildTrackingLink = (o) => {
-    const trackingNumber =
-      o?.trackingNumber ||
-      o?.shipmentTrackingNumber ||
-      o?.shipment?.trackingNumber ||
-      o?.delivery?.trackingNumber ||
-      o?.cargo?.trackingNumber ||
-      o?.deliveryInfo?.trackingNumber ||
-      ""; // yoksa boş
+  // ✅ Takip linki
+  const buildTrackingLink = (o) =>
+    o?.data?.trackingNumber
+      ? `https://kargotakip.hepsiburada.com/?trackingNumber=${encodeURIComponent(
+          o.data.trackingNumber
+        )}`
+      : "";
 
-    if (!trackingNumber) return "";
-    // HB formatı
-    return `https://kargotakip.hepsiburada.com/?trackingNumber=${encodeURIComponent(
-      trackingNumber
-    )}`;
-  };
-
-  // UI
   const topCount = useMemo(() => orders.length, [orders]);
 
   return (
@@ -142,22 +113,10 @@ export default function HepsiburadaOrdersPage() {
         <div style={header}>
           <h1 style={h1}>Hepsiburada Siparişleri</h1>
           <div style={bar}>
-            <input
-              type="date"
-              value={begin}
-              onChange={(e) => setBegin(e.target.value)}
-              style={input}
-            />
+            <input type="date" value={begin} onChange={(e) => setBegin(e.target.value)} style={input} />
             <span>—</span>
-            <input
-              type="date"
-              value={end}
-              onChange={(e) => setEnd(e.target.value)}
-              style={input}
-            />
-            <button onClick={fetchOrders} style={btn}>
-              Yenile
-            </button>
+            <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} style={input} />
+            <button onClick={fetchOrders} style={btn}>Yenile</button>
           </div>
         </div>
 
@@ -183,56 +142,37 @@ export default function HepsiburadaOrdersPage() {
                   <tr>
                     <th style={th}>Sipariş No</th>
                     <th style={th}>Durum</th>
-                    <th style={th}>Son Güncelleme</th>
+                    <th style={th}>Geldigi Tarih</th>
                     <th style={th}>Kargo</th>
                   </tr>
                 </thead>
                 <tbody>
                   {orders.map((o, i) => {
-                    const status = o.orderStatus || o.status || "—";
-                    const updated =
-                      o.lastStatusUpdateDate ||
-                      o.updatedAt ||
-                      o.orderDate ||
-                      null;
-                    const trackUrl = buildTrackingLink(o);
-
+                    const order = o.data || o;
                     return (
                       <tr key={i}>
-                        <td style={td}>{o.orderNumber || o.id || "—"}</td>
+                        <td style={td}>{order.orderNumber}</td>
                         <td style={td}>
-                          <span
-                            style={
-                              status?.toLowerCase().includes("kargo") ||
-                              status?.toLowerCase().includes("ship")
-                                ? pill("#DCFCE7", "#166534")
-                                : pill("#E5E7EB", "#111827")
-                            }
-                          >
-                            {status}
+                          <span style={pill("#E5E7EB", "#111827")}>
+                            {order.status || "—"}
                           </span>
                         </td>
                         <td style={td}>
-                          {updated
-                            ? new Date(updated).toLocaleString("tr-TR")
-                            : "—"}
+                          {o.createdAt ? new Date(o.createdAt).toLocaleString("tr-TR") : "—"}
                         </td>
                         <td style={td}>
-                          {trackUrl ? (
+                          {buildTrackingLink(o) ? (
                             <a
-                              href={trackUrl}
+                              href={buildTrackingLink(o)}
                               target="_blank"
                               rel="noopener noreferrer"
-                              style={{
-                                ...pill("#DBEAFE", "#1D4ED8"),
-                                textDecoration: "none",
-                              }}
+                              style={{ ...pill("#DBEAFE", "#1D4ED8"), textDecoration: "none" }}
                             >
                               Kargo Takip
                             </a>
                           ) : (
                             <span style={{ color: "#94a3b8", fontSize: 13 }}>
-                              takip numarası yok
+                              takip yok
                             </span>
                           )}
                         </td>
