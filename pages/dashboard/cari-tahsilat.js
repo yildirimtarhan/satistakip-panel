@@ -13,30 +13,40 @@ export default function CariTahsilat() {
     note: "",
   });
 
-  const token = Cookies.get("token");
+  const [token, setToken] = useState(""); // ✅ Token state olarak tanımlandı
+
+  // ✅ Component yüklendiğinde güvenli şekilde cookie’den token al
+  useEffect(() => {
+    const t = Cookies.get("token");
+    if (t) setToken(t);
+  }, []);
 
   // ✅ Carileri çek
   const fetchCariler = async () => {
+    if (!token) return; // Token yoksa bekle
     const res = await fetch("/api/cari", {
       headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();
-    setCariler(data || []);
+    setCariler(Array.isArray(data) ? data : []);
   };
 
   // ✅ Tahsilat/Ödeme listesi
   const fetchList = async () => {
+    if (!token) return;
     const res = await fetch("/api/tahsilat", {
       headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();
-    setList(data || []);
+    setList(Array.isArray(data) ? data : []);
   };
 
   useEffect(() => {
-    fetchCariler();
-    fetchList();
-  }, []);
+    if (token) {
+      fetchCariler();
+      fetchList();
+    }
+  }, [token]);
 
   // ✅ Kaydet
   const handleSubmit = async (e) => {
@@ -70,15 +80,22 @@ export default function CariTahsilat() {
       </h1>
 
       {/* ✅ Form */}
-      <form onSubmit={handleSubmit} className="bg-white p-4 rounded-xl shadow grid grid-cols-12 gap-4 mb-8">
-
+      <form
+        onSubmit={handleSubmit}
+        className="bg-white p-4 rounded-xl shadow grid grid-cols-12 gap-4 mb-8"
+      >
         <select
           className="border p-2 rounded col-span-4"
           value={form.accountId}
           onChange={(e) => setForm({ ...form, accountId: e.target.value })}
         >
           <option value="">Cari Seç *</option>
-          {cariler.map(c => <option key={c._id} value={c._id}>{c.ad}</option>)}
+          {Array.isArray(cariler) &&
+            cariler.map((c) => (
+              <option key={c._id} value={c._id}>
+                {c.ad}
+              </option>
+            ))}
         </select>
 
         <select
@@ -122,17 +139,30 @@ export default function CariTahsilat() {
           </tr>
         </thead>
         <tbody>
-          {list.map((t, i) => (
-            <tr key={i} className="border-t">
-              <td className="p-2">{t.cari}</td>
-              <td className={`p-2 font-bold ${t.type === "tahsilat" ? "text-green-600" : "text-red-600"}`}>
-                {t.type === "tahsilat" ? "Tahsilat" : "Ödeme"}
-              </td>
-              <td className="p-2">₺{Number(t.amount).toLocaleString("tr-TR")}</td>
-              <td className="p-2">{t.note || "-"}</td>
-              <td className="p-2">{new Date(t.date).toLocaleString("tr-TR")}</td>
-            </tr>
-          ))}
+          {Array.isArray(list) &&
+            list.map((t, i) => (
+              <tr key={i} className="border-t">
+                <td className="p-2">{t.cari || "-"}</td>
+                <td
+                  className={`p-2 font-bold ${
+                    t.type === "tahsilat"
+                      ? "text-green-600"
+                      : "text-red-600"
+                  }`}
+                >
+                  {t.type === "tahsilat" ? "Tahsilat" : "Ödeme"}
+                </td>
+                <td className="p-2">
+                  ₺{Number(t.amount || 0).toLocaleString("tr-TR")}
+                </td>
+                <td className="p-2">{t.note || "-"}</td>
+                <td className="p-2">
+                  {t.date
+                    ? new Date(t.date).toLocaleString("tr-TR")
+                    : "-"}
+                </td>
+              </tr>
+            ))}
         </tbody>
       </table>
     </div>
