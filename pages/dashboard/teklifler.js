@@ -537,55 +537,75 @@ export default function Teklifler() {
             onClick={() => excelInRef.current?.click()}
             className="px-3 py-2 border rounded hover:bg-gray-50"
           >
-            📥 Excel İçe
-          </button>
-          <input
-            ref={excelInRef}
-            type="file"
-            hidden
-            accept=".xlsx,.xls"
-            onChange={(e) => e.target.files?.[0] && importExcel(e.target.files[0])}
-          />
-          <button onClick={exportExcel} className="px-3 py-2 border rounded hover:bg-gray-50">
-            📤 Excel Dışa
-          </button>
-          <button
-            <button
-  onClick={async () => {
-    try {
-      const response = await fetch("/api/export/pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: `Teklif - ${cari?.ad || "Müşteri"}`,
-          cari: cari?.ad || "",
-          items: lines.map((l) => ({
-            name: l.urunAd || "-",
-            quantity: Number(l.adet || 0),
-            price: Number(l.fiyat || 0),
-          })),
-          kdv: kdvTutar,
-          genelToplam,
-        }),
-      });
+            {/* Aksiyonlar */}
+<div className="col-span-12 md:col-span-4 flex flex-wrap gap-2 justify-end">
+  {/* 🖼️ Logo */}
+  <button
+    onClick={() => logoRef.current?.click()}
+    className="px-3 py-2 border rounded hover:bg-gray-50"
+  >
+    🖼️ Logo
+  </button>
+  <input ref={logoRef} type="file" hidden accept="image/*" onChange={pickLogo} />
 
-      if (!response.ok) throw new Error("PDF oluşturulamadı");
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
-    } catch (err) {
-      console.error("❌ PDF oluşturma hatası:", err);
-      alert("PDF oluşturulamadı veya sunucu hatası");
-    }
-  }}
-  className="px-3 py-2 rounded bg-orange-600 text-white hover:bg-orange-700"
->
-  📎 PDF
-</button>
+  {/* 📥 Excel içe aktar */}
+  <button
+    onClick={() => excelInRef.current?.click()}
+    className="px-3 py-2 border rounded hover:bg-gray-50"
+  >
+    📥 Excel İçe
+  </button>
+  <input
+    ref={excelInRef}
+    type="file"
+    hidden
+    accept=".xlsx,.xls"
+    onChange={(e) => e.target.files?.[0] && importExcel(e.target.files[0])}
+  />
 
-          >
-            📎 
-          
+  {/* 📤 Excel dışa aktar */}
+  <button onClick={exportExcel} className="px-3 py-2 border rounded hover:bg-gray-50">
+    📤 Excel Dışa
+  </button>
+
+  {/* 🧾 PDF butonu */}
+  <button
+    onClick={async () => {
+      try {
+        const response = await fetch("/api/export/pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: `Teklif - ${cari?.ad || "Müşteri"}`,
+            cari: cari || {},
+            firma: company || {},
+            items: lines.map((l) => ({
+              name: l.urunAd || "-",
+              quantity: Number(l.adet || 0),
+              price: Number(l.fiyat || 0),
+            })),
+            kdv: kdvTutar,
+            genelToplam,
+            logo,
+            not,
+          }),
+        });
+
+        if (!response.ok) throw new Error("PDF oluşturulamadı");
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        window.open(url, "_blank");
+      } catch (err) {
+        console.error("❌ PDF oluşturma hatası:", err);
+        alert("PDF oluşturulamadı veya sunucu hatası");
+      }
+    }}
+    className="px-3 py-2 rounded bg-orange-600 text-white hover:bg-orange-700"
+  >
+    📎 PDF
+  </button>
+</div>
+
        
         {/* Alt aksiyon satırı */}
         <div className="col-span-12 flex flex-wrap gap-2 justify-end">
