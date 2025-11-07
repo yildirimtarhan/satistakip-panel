@@ -550,13 +550,43 @@ export default function Teklifler() {
             📤 Excel Dışa
           </button>
           <button
-            onClick={() => pdfOlustur(true)}
-            className="px-3 py-2 rounded bg-orange-600 text-white hover:bg-orange-700"
-          >
-            📎 PDF
-          </button>
-        </div>
+            <button
+  onClick={async () => {
+    try {
+      const response = await fetch("/api/export/pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: `Teklif - ${cari?.ad || "Müşteri"}`,
+          cari: cari?.ad || "",
+          items: lines.map((l) => ({
+            name: l.urunAd || "-",
+            quantity: Number(l.adet || 0),
+            price: Number(l.fiyat || 0),
+          })),
+          kdv: kdvTutar,
+          genelToplam,
+        }),
+      });
 
+      if (!response.ok) throw new Error("PDF oluşturulamadı");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+    } catch (err) {
+      console.error("❌ PDF oluşturma hatası:", err);
+      alert("PDF oluşturulamadı veya sunucu hatası");
+    }
+  }}
+  className="px-3 py-2 rounded bg-orange-600 text-white hover:bg-orange-700"
+>
+  📎 PDF
+</button>
+
+          >
+            📎 
+          
+       
         {/* Alt aksiyon satırı */}
         <div className="col-span-12 flex flex-wrap gap-2 justify-end">
           <button onClick={sunucuyaKaydet} className="px-3 py-2 border rounded hover:bg-gray-50">
