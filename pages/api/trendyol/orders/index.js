@@ -9,7 +9,7 @@ export default async function handler(req, res) {
     const supplierId = process.env.TRENDYOL_SUPPLIER_ID;
     const apiKey = process.env.TRENDYOL_API_KEY;
     const apiSecret = process.env.TRENDYOL_API_SECRET;
-    const baseUrl = process.env.TRENDYOL_API_BASE || "https://stageapi.trendyol.com/stagesapigw";
+    const baseUrl = process.env.TRENDYOL_BASE_URL || "https://stageapi.trendyol.com/stagesapigw";
 
     // 🔒 Ortam değişkeni kontrolü
     if (!supplierId || !apiKey || !apiSecret) {
