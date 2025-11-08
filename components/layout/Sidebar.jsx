@@ -27,7 +27,6 @@ export default function Sidebar() {
 
   return (
     <aside className="h-screen w-64 border-r bg-white p-4 flex flex-col">
-
       {/* Logo */}
       <div className="flex items-center gap-2 mb-4 px-2">
         <div className="w-9 h-9 rounded-xl bg-orange-500" />
@@ -49,8 +48,26 @@ export default function Sidebar() {
           Pazaryerleri
         </div>
 
-        {/* ✅ Correct HB orders path */}
-        <MenuItem href="/dashboard/hepsiburada/orders" icon="🛍️" label="Hepsiburada Siparişleri" />
+        {/* ✅ Hepsiburada */}
+        <MenuItem
+          href="/dashboard/hepsiburada/orders"
+          icon="🛍️"
+          label="Hepsiburada Siparişleri"
+        />
+
+        {/* ✅ Trendyol Orders */}
+        <MenuItem
+          href="/dashboard/trendyol/orders"
+          icon="🧾"
+          label="Trendyol Siparişleri"
+        />
+
+        {/* ✅ Trendyol BuyBox */}
+        <MenuItem
+          href="/dashboard/pazaryeri/buybox"
+          icon="📊"
+          label="Trendyol BuyBox"
+        />
 
         {/* Ticari */}
         <MenuItem href="/dashboard/cari" icon="👥" label="Cariler" />

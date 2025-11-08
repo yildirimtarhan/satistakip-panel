@@ -1,68 +1,38 @@
-import React, { useEffect, useState } from 'react';
+// /pages/api/trendyol/shipment/index.js
+export default async function handler(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ message: "Sadece POST isteği kabul edilir." });
 
-const TrendyolOrders = () => {
-  const [orders, setOrders] = useState([]);
+  try {
+    const { orderNumber, cargoTrackingNumber, cargoCompanyId, items } = req.body;
+    const { TRENDYOL_SUPPLIER_ID, TRENDYOL_API_KEY, TRENDYOL_API_SECRET, TRENDYOL_API_BASE } = process.env;
+    const auth = Buffer.from(`${TRENDYOL_API_KEY}:${TRENDYOL_API_SECRET}`).toString("base64");
 
-  useEffect(() => {
-    const fetchOrders = async () => {
-      const res = await fetch('/api/trendyol/orders');
-      const data = await res.json();
-      setOrders(data.content || []);
+    const url = `${TRENDYOL_API_BASE}/suppliers/${TRENDYOL_SUPPLIER_ID}/shipment-packages`;
+
+    const body = {
+      orderNumber,
+      shipmentAddressId: 1,
+      lines: items,
+      cargoTrackingNumber,
+      cargoCompanyId,
     };
-    fetchOrders();
-  }, []);
 
-  const handleShipment = async () => {
-    const res = await fetch('/api/trendyol/shipment', {
-      method: 'POST',
+    const response = await fetch(url, {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        Authorization: `Basic ${auth}`,
+        "User-Agent": "tigdes_dev",
+        "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        orderNumber: '10296069785',
-        cargoTrackingNumber: '7330024301231809',
-        cargoCompanyId: 204, // Trendyol Express örneği
-        items: [
-          {
-            lineItemId: 12345678, // burayı senin gerçek lineItemId verinle değiştireceğiz
-            quantity: 1,
-          },
-        ],
-      }),
+      body: JSON.stringify(body),
     });
 
-    const result = await res.json();
-    console.log('📦 Shipment response:', result);
-    alert(result.message || 'Kargo bildirimi yapıldı.');
-  };
+    const data = await response.json();
+    if (!response.ok)
+      return res.status(response.status).json({ message: "Kargo bildirimi başarısız", raw: data });
 
-  return (
-    <div className="p-4">
-      <h1 className="text-xl font-bold mb-4">📦 Trendyol Siparişleri</h1>
-
-      {orders.length === 0 ? (
-        <p className="text-gray-500">📭 Henüz sipariş bulunmuyor.</p>
-      ) : (
-        orders.map((order) => (
-          <div key={order.id} className="border rounded p-4 mb-4 shadow-sm">
-            <p><strong>Sipariş No:</strong> {order.orderNumber}</p>
-            <p><strong>Müşteri:</strong> {order.customerFirstName} {order.customerLastName}</p>
-            <p><strong>Durum:</strong> {order.status}</p>
-            <p><strong>Tutar:</strong> {order.totalPrice} TRY</p>
-            <p><strong>Kargo:</strong> {order.cargoTrackingNumber || 'Henüz gönderilmedi'}</p>
-
-            {/* Geçici test butonu */}
-            <button
-              onClick={handleShipment}
-              className="mt-2 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-            >
-              📤 Kargoya Ver (Test)
-            </button>
-          </div>
-        ))
-      )}
-    </div>
-  );
-};
-
-export default TrendyolOrders;
+    return res.status(200).json({ message: "✅ Kargo bildirimi başarıyla gönderildi", data });
+  } catch (err) {
+    return res.status(500).json({ message: "Sunucu hatası", error: err.message });
+  }
+}
