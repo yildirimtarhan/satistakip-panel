@@ -1,79 +1,57 @@
-// 📁 /pages/api/trendyol/test-connection.js
-// ✅ Trendyol API bağlantısını test eder (SatışTakip ERP entegrasyonu için)
-// Destek: TRENDYOL_BASE_URL veya TRENDYOL_API_BASE (her ikisi de çalışır)
-
+// 📄 /pages/api/trendyol/test-connection.js
 export default async function handler(req, res) {
-  // 🌍 Ortam değişkenlerini oku (fallback desteği ile)
-  const baseUrl =
-    process.env.TRENDYOL_BASE_URL ||
-    process.env.TRENDYOL_API_BASE; // geriye uyumluluk
+  const { TRENDYOL_SUPPLIER_ID, TRENDYOL_API_KEY, TRENDYOL_API_SECRET, TRENDYOL_BASE_URL, TRENDYOL_USER_AGENT } = process.env;
 
-  const supplierId = process.env.TRENDYOL_SUPPLIER_ID;
-  const apiKey = process.env.TRENDYOL_API_KEY;
-  const apiSecret = process.env.TRENDYOL_API_SECRET;
-
-  // ⚠️ Ortam değişkenleri kontrolü
-  if (!baseUrl || !supplierId || !apiKey || !apiSecret) {
-    console.error("❌ Eksik environment değişkeni:");
-    return res.status(500).json({
-      ok: false,
-      message: "Eksik environment değişkeni. Lütfen .env.local ve Render Environment ayarlarını kontrol edin.",
-      required: [
-        "TRENDYOL_BASE_URL (veya TRENDYOL_API_BASE)",
-        "TRENDYOL_SUPPLIER_ID",
-        "TRENDYOL_API_KEY",
-        "TRENDYOL_API_SECRET",
-      ],
+  // Ortam değişkenleri kontrolü
+  if (!TRENDYOL_SUPPLIER_ID || !TRENDYOL_API_KEY || !TRENDYOL_API_SECRET || !TRENDYOL_BASE_URL || !TRENDYOL_USER_AGENT) {
+    return res.status(400).json({
+      success: false,
+      message: "Trendyol ortam değişkenleri eksik. Lütfen .env.local veya Render ayarlarını kontrol edin."
     });
   }
 
-  // 🔐 Basic Auth oluştur
-  const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString("base64");
-  const url = `${baseUrl.replace(/\/$/, "")}/suppliers/${supplierId}/orders?status=Created`;
-
-  console.log("📡 Trendyol bağlantı testi başlatıldı...");
-  console.log("🌍 Endpoint:", url);
+  const startDate = Date.now() - 7 * 24 * 60 * 60 * 1000; // son 7 gün
+  const endDate = Date.now();
+  const url = `${TRENDYOL_BASE_URL}/suppliers/${TRENDYOL_SUPPLIER_ID}/orders?startDate=${startDate}&endDate=${endDate}&size=1`;
 
   try {
-    // ⏱ Trendyol API isteği
+    const auth = Buffer.from(`${TRENDYOL_API_KEY}:${TRENDYOL_API_SECRET}`).toString("base64");
+
     const response = await fetch(url, {
-      method: "GET",
       headers: {
-        Authorization: `Basic ${auth}`,
-        "User-Agent": "tigdes_dev",
-        "Content-Type": "application/json",
+        "Authorization": `Basic ${auth}`,
+        "User-Agent": TRENDYOL_USER_AGENT,
+        "Content-Type": "application/json"
       },
     });
 
-    const data = await response.json();
+    const text = await response.text();
+    const status = response.status;
 
-    // 🚨 Trendyol hata yanıtı
-    if (!response.ok) {
-      console.error("❌ Trendyol API bağlantı hatası:", data);
-      return res.status(response.status).json({
-        ok: false,
-        message: "Trendyol API bağlantı hatası",
-        status: response.status,
-        raw: data,
+    // Başarılıysa
+    if (status === 200) {
+      return res.status(200).json({
+        success: true,
+        message: "✅ Trendyol API bağlantısı başarılı!",
+        timestamp: new Date().toISOString(),
+        data: text
       });
     }
 
-    // ✅ Başarılı sonuç
-    console.log("✅ Trendyol API bağlantısı başarılı!");
-    return res.status(200).json({
-      ok: true,
-      message: "✅ Trendyol API bağlantısı başarılı!",
-      supplierId,
-      status: response.status,
-      resultCount: data?.content?.length || 0,
-      sampleOrder: data?.content?.[0] || null,
+    // Hata varsa
+    return res.status(status).json({
+      success: false,
+      message: `❌ Trendyol API bağlantısı başarısız. HTTP ${status}`,
+      error: text,
+      timestamp: new Date().toISOString()
     });
+
   } catch (error) {
-    console.error("🔥 Sunucu hatası:", error);
     return res.status(500).json({
-      ok: false,
-      message: "Sunucu hatası veya Trendyol API erişilemiyor.",
+      success: false,
+      message: "❌ Bağlantı testi sırasında hata oluştu.",
       error: error.message,
+      timestamp: new Date().toISOString()
     });
   }
 }

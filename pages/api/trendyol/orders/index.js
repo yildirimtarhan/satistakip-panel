@@ -1,3 +1,4 @@
+// 📄 /pages/api/trendyol/orders/index.js
 export default async function handler(req, res) {
   try {
     const supplierId = process.env.TRENDYOL_SUPPLIER_ID;
@@ -7,57 +8,57 @@ export default async function handler(req, res) {
     const userAgent = process.env.TRENDYOL_USER_AGENT || "satistakip_online";
 
     if (!supplierId || !apiKey || !apiSecret || !baseUrl) {
-      return res
-        .status(500)
-        .json({ success: false, message: "Trendyol ortam değişkenleri eksik." });
+      return res.status(500).json({
+        success: false,
+        message: "Trendyol ortam değişkenleri eksik.",
+      });
     }
 
-    const start = Date.now() - 3 * 24 * 60 * 60 * 1000; // 3 gün önce
-    const end = Date.now();
-    const url = `${baseUrl}/suppliers/${supplierId}/orders?status=Created&startDate=${start}&endDate=${end}&size=50`;
+    const now = Date.now();
+    const startDate = now - 1000 * 60 * 60 * 24 * 3; // Son 3 gün
+    const endDate = now;
+    const status = "Created";
 
-    const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString("base64");
+    const url = `${baseUrl}/suppliers/${supplierId}/orders?status=${status}&startDate=${startDate}&endDate=${endDate}&size=50`;
+
+    // ✅ Gelişmiş Header Yapısı (Cloudflare korumasını aşmak için)
+    const authToken = Buffer.from(`${apiKey}:${apiSecret}`).toString("base64");
+
+    const headers = {
+      "User-Agent": userAgent,
+      "Authorization": `Basic ${authToken}`,
+      "Accept": "application/json, text/plain, */*",
+      "Accept-Encoding": "gzip, deflate, br",
+      "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
+      "Origin": "https://stagepartner.trendyol.com",
+      "Referer": "https://stagepartner.trendyol.com/",
+      "Connection": "keep-alive",
+      "DNT": "1",
+      "Cache-Control": "no-cache",
+    };
 
     console.log("📡 Trendyol Orders API çağrısı:", url);
 
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        "User-Agent": userAgent,
-        Authorization: `Basic ${auth}`,
-        Accept: "application/json",
-      },
-    });
+    const response = await fetch(url, { method: "GET", headers });
 
-    const text = await response.text();
-
-    // Cloudflare HTML dönüşünü yakala
-    if (!response.ok || text.startsWith("<!DOCTYPE")) {
-      console.error("❌ Trendyol Orders API hatası:", text.slice(0, 200));
-      return res.status(403).json({
+    if (!response.ok) {
+      const text = await response.text();
+      console.error("❌ Trendyol Orders API hatası:", text);
+      return res.status(response.status).json({
         success: false,
-        message:
-          "Trendyol API erişimi başarısız. IP engeli olabilir veya test ortamı kapalı.",
-        error: text.substring(0, 500),
+        message: "Trendyol API erişimi başarısız. IP engeli olabilir veya test ortamı kapalı.",
+        error: text,
       });
     }
 
-    const data = JSON.parse(text);
-
-    // Stage ortamı boşsa bilgilendir
-    if (!data.content || data.content.length === 0) {
-      return res.status(200).json({
-        success: true,
-        message: "Henüz test siparişi bulunmuyor (Stage ortamı boş).",
-        orders: [],
-      });
-    }
-
-    return res.status(200).json({ success: true, orders: data.content });
-  } catch (err) {
-    console.error("🚨 Sunucu hatası:", err);
-    return res
-      .status(500)
-      .json({ success: false, message: "Sunucu hatası", error: err.message });
+    const data = await response.json();
+    return res.status(200).json({ success: true, orders: data });
+  } catch (error) {
+    console.error("🔥 Trendyol Orders API hata:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Trendyol API bağlantı hatası.",
+      error: error.message,
+    });
   }
 }
