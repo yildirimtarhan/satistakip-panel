@@ -1,8 +1,6 @@
 // 📄 /pages/api/export/pdf.js
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import { pdfmetrics } from "jspdf";
-import { UnicodeCIDFont } from "jspdf-unicode";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -25,15 +23,10 @@ export default async function handler(req, res) {
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
 
-    // 🔹 Türkçe font desteği
-    try {
-      pdfmetrics.registerFont(UnicodeCIDFont("HeiseiKakuGo-W5"));
-      doc.setFont("HeiseiKakuGo-W5");
-    } catch {
-      doc.setFont("helvetica");
-    }
+    // 🔹 Font ayarı (helvetica Türkçe karakter desteği)
+    doc.setFont("helvetica", "normal");
 
-    // 🔸 Logo (varsa)
+    // 🔸 Logo
     if (logo) {
       try {
         doc.addImage(logo, "PNG", 40, 35, 80, 80, undefined, "FAST");
@@ -45,12 +38,12 @@ export default async function handler(req, res) {
     // 🔸 Üst başlık
     doc.setFontSize(20);
     doc.setTextColor(40, 40, 40);
-    doc.setFont(undefined, "bold");
+    doc.setFont("helvetica", "bold");
     doc.text("KURUMSAL TEDARİKÇİ / YILDIRIM AYLUÇTARHAN", pageW / 2, 65, { align: "center" });
 
     doc.setFontSize(13);
     doc.setTextColor(255, 102, 0);
-    doc.setFont(undefined, "normal");
+    doc.setFont("helvetica", "normal");
     doc.text(title.toUpperCase(), pageW / 2, 85, { align: "center" });
 
     // 🔹 Turuncu çizgi
@@ -89,13 +82,13 @@ export default async function handler(req, res) {
     doc.roundedRect(pageW / 2 + 20, 135, pageW / 2 - 60, boxH, 6, 6);
 
     doc.setFontSize(11);
-    doc.setFont(undefined, "bold");
+    doc.setFont("helvetica", "bold");
     doc.setTextColor(40);
     doc.text("FİRMA", 52, 152);
     doc.text("MÜŞTERİ", pageW / 2 + 32, 152);
 
     doc.setFontSize(10);
-    doc.setFont(undefined, "normal");
+    doc.setFont("helvetica", "normal");
     doc.setTextColor(70);
     doc.text(firmaText, 52, 168);
     doc.text(cariText, pageW / 2 + 32, 168);
@@ -139,7 +132,7 @@ export default async function handler(req, res) {
       doc.setFillColor(...color);
       doc.roundedRect(x, yy - 14, boxW, 22, 6, 6, "F");
       doc.setTextColor(255);
-      doc.setFont(undefined, "bold");
+      doc.setFont("helvetica", "bold");
       doc.setFontSize(10);
       doc.text(label, x + 10, yy);
       doc.text(val, x + boxW - 10, yy, { align: "right" });
@@ -151,12 +144,12 @@ export default async function handler(req, res) {
     let noteY = y + 90;
     doc.setDrawColor(220);
     doc.line(40, noteY - 10, pageW - 40, noteY - 10);
-    doc.setFont(undefined, "bold");
+    doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
     doc.setTextColor(40);
     doc.text("Notlar / Şartlar", 40, noteY);
     doc.setFontSize(10);
-    doc.setFont(undefined, "normal");
+    doc.setFont("helvetica", "normal");
     doc.setTextColor(70);
     const defaultTerms =
       "• Teklif geçerlilik süresi: 7 gündür.\n• Ödeme: Peşin / Havale.\n• Teslim: Stok durumuna göre bilgilendirilecektir.";
@@ -175,7 +168,7 @@ export default async function handler(req, res) {
       align: "center",
     });
 
-    // 🔸 PDF çıktısı
+    // PDF çıktısı
     const pdfBuffer = Buffer.from(doc.output("arraybuffer"));
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", "inline; filename=teklif.pdf");
