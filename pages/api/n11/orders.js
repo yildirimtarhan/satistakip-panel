@@ -4,7 +4,7 @@ import xml2js from "xml2js";
 export default async function handler(req, res) {
   const { N11_APP_KEY, N11_APP_SECRET } = process.env;
 
-  const url = "https://api.n11.com/ws/OrderService.wsdl";
+  const url = "https://api.n11.com/ws/OrderService.ws";
 
   const xmlBody = `<?xml version="1.0" encoding="UTF-8"?>
   <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sch="http://www.n11.com/ws/schemas">
