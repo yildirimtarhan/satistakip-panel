@@ -1,6 +1,8 @@
 // 📄 /pages/api/export/pdf.js
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import { pdfmetrics } from "jspdf";
+import { UnicodeCIDFont } from "jspdf-unicode";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -23,31 +25,45 @@ export default async function handler(req, res) {
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
 
-    // 🔸 Logo & Başlık
+    // 🔹 Türkçe font desteği
+    try {
+      pdfmetrics.registerFont(UnicodeCIDFont("HeiseiKakuGo-W5"));
+      doc.setFont("HeiseiKakuGo-W5");
+    } catch {
+      doc.setFont("helvetica");
+    }
+
+    // 🔸 Logo (varsa)
     if (logo) {
       try {
-        doc.addImage(logo, "PNG", 40, 40, 90, 90, undefined, "FAST");
+        doc.addImage(logo, "PNG", 40, 35, 80, 80, undefined, "FAST");
       } catch {
         console.warn("⚠️ Logo eklenemedi.");
       }
     }
 
-    doc.setFont("helvetica", "bold");
+    // 🔸 Üst başlık
     doc.setFontSize(20);
-    doc.setTextColor(30, 30, 30);
-    doc.text("KURUMSAL TEDARİKÇİ", pageW / 2, 60, { align: "center" });
+    doc.setTextColor(40, 40, 40);
+    doc.setFont(undefined, "bold");
+    doc.text("KURUMSAL TEDARİKÇİ / YILDIRIM AYLUÇTARHAN", pageW / 2, 65, { align: "center" });
 
     doc.setFontSize(13);
-    doc.setTextColor(255, 128, 0);
-    doc.text(title.toUpperCase(), pageW / 2, 80, { align: "center" });
+    doc.setTextColor(255, 102, 0);
+    doc.setFont(undefined, "normal");
+    doc.text(title.toUpperCase(), pageW / 2, 85, { align: "center" });
 
-    // Tarih ve No
-    doc.setFont("helvetica", "normal");
+    // 🔹 Turuncu çizgi
+    doc.setDrawColor(255, 140, 0);
+    doc.setLineWidth(1);
+    doc.line(100, 95, pageW - 100, 95);
+
+    // 🔸 Tarih
     doc.setFontSize(10);
-    doc.setTextColor(80, 80, 80);
-    doc.text(`Tarih: ${new Date().toLocaleDateString("tr-TR")}`, pageW - 40, 100, { align: "right" });
+    doc.setTextColor(90);
+    doc.text(`Tarih: ${new Date().toLocaleDateString("tr-TR")}`, pageW - 40, 115, { align: "right" });
 
-    // 🔸 Firma & Müşteri Bilgileri
+    // 🔸 Firma / Müşteri kutuları
     const firmaText = [
       firma.firmaAdi || "Kurumsal Tedarikçi",
       firma.adres || "",
@@ -67,20 +83,24 @@ export default async function handler(req, res) {
         ].filter(Boolean).join("\n")
       : String(cari);
 
-    doc.setDrawColor(200);
-    doc.roundedRect(40, 130, pageW / 2 - 60, 90, 6, 6);
-    doc.roundedRect(pageW / 2 + 20, 130, pageW / 2 - 60, 90, 6, 6);
+    const boxH = 100;
+    doc.setDrawColor(180);
+    doc.roundedRect(40, 135, pageW / 2 - 60, boxH, 6, 6);
+    doc.roundedRect(pageW / 2 + 20, 135, pageW / 2 - 60, boxH, 6, 6);
 
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(50, 50, 50);
-    doc.text("FİRMA", 52, 146);
-    doc.text("MÜŞTERİ", pageW / 2 + 32, 146);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(60, 60, 60);
-    doc.text(firmaText, 52, 162);
-    doc.text(cariText, pageW / 2 + 32, 162);
+    doc.setFontSize(11);
+    doc.setFont(undefined, "bold");
+    doc.setTextColor(40);
+    doc.text("FİRMA", 52, 152);
+    doc.text("MÜŞTERİ", pageW / 2 + 32, 152);
 
-    // 🔸 Ürün Tablosu
+    doc.setFontSize(10);
+    doc.setFont(undefined, "normal");
+    doc.setTextColor(70);
+    doc.text(firmaText, 52, 168);
+    doc.text(cariText, pageW / 2 + 32, 168);
+
+    // 🔸 Ürün tablosu
     const rows = items.map((l, i) => {
       const tutar = Number(l.quantity || 0) * Number(l.price || 0);
       const kdvTutar = tutar * 0.2;
@@ -95,33 +115,31 @@ export default async function handler(req, res) {
     });
 
     autoTable(doc, {
-      startY: 250,
+      startY: 260,
       head: [["#", "Ürün", "Adet", "Birim Fiyat", "KDV", "Toplam"]],
       body: rows,
-      styles: { fontSize: 9, lineColor: [220, 220, 220], lineWidth: 0.2 },
+      theme: "grid",
+      styles: { fontSize: 9, textColor: [40, 40, 40], lineColor: [230, 230, 230] },
       headStyles: {
         fillColor: [255, 140, 0],
         textColor: 255,
         halign: "center",
         fontSize: 10,
-        fontStyle: "bold",
       },
-      alternateRowStyles: { fillColor: [250, 250, 250] },
-      bodyStyles: { textColor: 50 },
-      theme: "striped",
+      alternateRowStyles: { fillColor: [252, 252, 252] },
     });
 
-    let y = doc.lastAutoTable.finalY + 20;
+    let y = doc.lastAutoTable.finalY + 25;
 
-    // 🔸 Toplamlar
+    // 🔸 Toplam kutuları
     const boxW = 180;
     const box = (label, val, idx, color = [255, 140, 0]) => {
       const x = pageW - 40 - boxW;
-      const yy = y + idx * 26;
+      const yy = y + idx * 28;
       doc.setFillColor(...color);
       doc.roundedRect(x, yy - 14, boxW, 22, 6, 6, "F");
       doc.setTextColor(255);
-      doc.setFont("helvetica", "bold");
+      doc.setFont(undefined, "bold");
       doc.setFontSize(10);
       doc.text(label, x + 10, yy);
       doc.text(val, x + boxW - 10, yy, { align: "right" });
@@ -131,28 +149,33 @@ export default async function handler(req, res) {
 
     // 🔸 Notlar
     let noteY = y + 90;
-    doc.setFont("helvetica", "bold");
+    doc.setDrawColor(220);
+    doc.line(40, noteY - 10, pageW - 40, noteY - 10);
+    doc.setFont(undefined, "bold");
     doc.setFontSize(11);
-    doc.setTextColor(40, 40, 40);
+    doc.setTextColor(40);
     doc.text("Notlar / Şartlar", 40, noteY);
-    doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
-    doc.setTextColor(80, 80, 80);
+    doc.setFont(undefined, "normal");
+    doc.setTextColor(70);
     const defaultTerms =
       "• Teklif geçerlilik süresi: 7 gündür.\n• Ödeme: Peşin / Havale.\n• Teslim: Stok durumuna göre bilgilendirilecektir.";
     doc.text(not?.trim() ? not : defaultTerms, 40, noteY + 16);
 
+    // 🔸 İmza alanı
+    doc.setFontSize(10);
+    doc.setTextColor(60);
+    doc.text("Yetkili: ____________________", 40, pageH - 80);
+    doc.text("İmza / Kaşe: ____________________", pageW / 2 + 40, pageH - 80);
+
     // 🔸 Footer
     doc.setFontSize(9);
     doc.setTextColor(150);
-    doc.text(
-      "SatışTakip • www.satistakip.online",
-      pageW / 2,
-      pageH - 30,
-      { align: "center" }
-    );
+    doc.text("SatışTakip • www.satistakip.online", pageW / 2, pageH - 30, {
+      align: "center",
+    });
 
-    // PDF çıktısı
+    // 🔸 PDF çıktısı
     const pdfBuffer = Buffer.from(doc.output("arraybuffer"));
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", "inline; filename=teklif.pdf");
