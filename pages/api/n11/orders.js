@@ -6,8 +6,9 @@ export default async function handler(req, res) {
 
   const url = "https://api.n11.com/ws/OrderService.ws";
 
-  const xmlBody = `<?xml version="1.0" encoding="UTF-8"?>
-  <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sch="http://www.n11.com/ws/schemas">
+  const xmlBody = `<?xml version="1.0" encoding="utf-8"?>
+  <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:sch="http://www.n11.com/ws/schemas">
     <soapenv:Header/>
     <soapenv:Body>
       <sch:GetOrderListRequest>
@@ -28,19 +29,21 @@ export default async function handler(req, res) {
       method: "POST",
       headers: {
         "Content-Type": "text/xml; charset=utf-8",
-        SOAPAction: "http://www.n11.com/ws/GetOrderList",
+        SOAPAction: "https://api.n11.com/ws/GetOrderList", // ✅ Zorunlu header
       },
-      body: xmlBody.trim(),
+      body: xmlBody,
     });
 
     const xml = await response.text();
-    console.log("🧩 Raw XML Response:", xml);
+
+    if (!xml.trim().startsWith("<")) {
+      throw new Error("Geçersiz XML yanıtı: " + xml.substring(0, 200));
+    }
 
     const result = await xml2js.parseStringPromise(xml, { explicitArray: false });
-
     res.status(200).json({
       success: true,
-      message: "✅ N11 siparişleri başarıyla alındı.",
+      message: "✅ N11 sipariş listesi başarıyla alındı.",
       data: result,
     });
   } catch (err) {
