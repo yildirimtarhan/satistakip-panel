@@ -1,4 +1,4 @@
-// components/layout/Sidebar.jsx
+// 📁 /components/layout/Sidebar.jsx
 import Link from "next/link";
 import { useRouter } from "next/router";
 
@@ -67,6 +67,20 @@ export default function Sidebar() {
           href="/dashboard/pazaryeri/buybox"
           icon="📊"
           label="Trendyol BuyBox"
+        />
+
+        {/* ✅ N11 Orders */}
+        <MenuItem
+          href="/dashboard/n11/orders"
+          icon="🛒"
+          label="N11 Siparişleri"
+        />
+
+        {/* ✅ N11 API Settings */}
+        <MenuItem
+          href="/dashboard/n11/settings"
+          icon="🔑"
+          label="N11 API Ayarları"
         />
 
         {/* Ticari */}

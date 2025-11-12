@@ -1,4 +1,4 @@
-// pages/api/settings/save.js
+// 📁 /pages/api/settings/save.js
 import dbConnect from "@/lib/mongodb";
 import User from "@/models/User";
 import jwt from "jsonwebtoken";
@@ -11,13 +11,14 @@ export default async function handler(req, res) {
   try {
     await dbConnect();
 
-    // Token kontrolü (giriş yapan kullanıcıyı bulmak için)
+    // 🔐 Token kontrolü (kullanıcı doğrulama)
     const token = req.headers.authorization?.split(" ")[1];
     if (!token) return res.status(401).json({ message: "Token eksik" });
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const email = decoded.email;
 
+    // 🧩 Gelen body verileri
     const {
       hepsiburadaMerchantId,
       hepsiburadaSecretKey,
@@ -25,8 +26,12 @@ export default async function handler(req, res) {
       trendyolSupplierId,
       trendyolApiKey,
       trendyolApiSecret,
+      n11AppKey,
+      n11AppSecret,
+      n11Environment,
     } = req.body;
 
+    // 🔄 Kullanıcı verilerini güncelle
     const updatedUser = await User.findOneAndUpdate(
       { email },
       {
@@ -40,13 +45,20 @@ export default async function handler(req, res) {
           apiKey: trendyolApiKey,
           apiSecret: trendyolApiSecret,
         },
+        n11: {
+          appKey: n11AppKey,
+          appSecret: n11AppSecret,
+          environment: n11Environment || "production",
+        },
       },
       { new: true, upsert: true }
     );
 
-    return res.status(200).json({ message: "API bilgileri kaydedildi", user: updatedUser });
+    return res
+      .status(200)
+      .json({ message: "API bilgileri başarıyla kaydedildi.", user: updatedUser });
   } catch (error) {
     console.error("API Settings Save Error:", error);
-    return res.status(500).json({ message: "Sunucu hatası" });
+    return res.status(500).json({ message: "Sunucu hatası", error: error.message });
   }
 }
