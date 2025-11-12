@@ -15,6 +15,7 @@ export default async function handler(req, res) {
       });
     }
 
+    // 🔧 Onaylı ürünleri çekmek için approvalStatus=2 eklendi
     const xmlBody = `
       <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
                         xmlns:sch="http://www.n11.com/ws/schemas">
@@ -27,8 +28,9 @@ export default async function handler(req, res) {
             </auth>
             <pagingData>
               <currentPage>0</currentPage>
-              <pageSize>5</pageSize>
+              <pageSize>10</pageSize>
             </pagingData>
+            <approvalStatus>2</approvalStatus>
           </sch:GetProductListRequest>
         </soapenv:Body>
       </soapenv:Envelope>
@@ -37,7 +39,7 @@ export default async function handler(req, res) {
     const response = await axios.post(`${baseUrl}/ProductService.wsdl`, xmlBody, {
       headers: {
         "Content-Type": "text/xml;charset=UTF-8",
-        SOAPAction: "",
+        SOAPAction: "http://www.n11.com/ws/GetProductList",
       },
       timeout: 15000,
     });
@@ -54,7 +56,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       message: "✅ N11 ürün listesi başarıyla çekildi.",
-      count: productList.length || 0,
+      count: Array.isArray(productList) ? productList.length : productList ? 1 : 0,
       products: productList,
     });
   } catch (error) {
