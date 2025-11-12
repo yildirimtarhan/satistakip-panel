@@ -15,7 +15,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // 🔧 Onaylı ürünleri çekmek için approvalStatus=2 eklendi
+    // ⚙️ approvalStatus kaldırıldı, currentPage 1 yapıldı
     const xmlBody = `
       <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
                         xmlns:sch="http://www.n11.com/ws/schemas">
@@ -27,10 +27,9 @@ export default async function handler(req, res) {
               <appSecret>${appSecret}</appSecret>
             </auth>
             <pagingData>
-              <currentPage>0</currentPage>
+              <currentPage>1</currentPage>
               <pageSize>10</pageSize>
             </pagingData>
-            <approvalStatus>2</approvalStatus>
           </sch:GetProductListRequest>
         </soapenv:Body>
       </soapenv:Envelope>
