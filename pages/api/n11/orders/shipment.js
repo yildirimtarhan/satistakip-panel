@@ -9,14 +9,11 @@ export default async function handler(req, res) {
 
   const { orderNumber, shipmentCompany, trackingNumber } = req.body;
   if (!orderNumber || !shipmentCompany || !trackingNumber) {
-    return res
-      .status(400)
-      .json({ error: "orderNumber, shipmentCompany ve trackingNumber zorunludur" });
+    return res.status(400).json({ error: "Eksik parametre: orderNumber, shipmentCompany, trackingNumber" });
   }
 
   const { N11_APP_KEY, N11_APP_SECRET } = process.env;
 
-  // 🧾 Kargo gönderimi için SOAP XML
   const xml = `<?xml version="1.0" encoding="utf-8"?>
   <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
     xmlns:sch="http://www.n11.com/ws/schemas">
@@ -41,6 +38,7 @@ export default async function handler(req, res) {
   try {
     const { data } = await axios.post("https://api.n11.com/ws/OrderService.wsdl", xml, {
       headers: { "Content-Type": "text/xml; charset=utf-8" },
+      timeout: 15000, // 🧭 15 saniye sonra kes
     });
 
     const parser = new xml2js.Parser({ explicitArray: false });
