@@ -1,12 +1,12 @@
-// ✅ /pages/api/n11/products/index.js
+// ✅ /pages/api/n11/orders/index.js
 import axios from "axios";
 import xml2js from "xml2js";
 
 export default async function handler(req, res) {
   try {
-    const appKey = process.env.N11_API_KEY;
-    const appSecret = process.env.N11_API_SECRET;
-    const baseUrl = process.env.N11_BASE_URL || "https://api.n11.com/ws";
+    const appKey = process.env.N11_APP_KEY;
+    const appSecret = process.env.N11_APP_SECRET;
+    const baseUrl = process.env.N11_API_URL || "https://api.n11.com/ws";
 
     if (!appKey || !appSecret) {
       return res.status(400).json({
@@ -15,7 +15,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // 🧱 XML gövdesi (dokümandaki birebir SOAP format)
     const xmlBody = `
       <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
                         xmlns:sch="http://www.n11.com/ws/schemas">
@@ -35,25 +34,27 @@ export default async function handler(req, res) {
       </soapenv:Envelope>
     `;
 
-    // 🛰️ SOAP isteği
     const response = await axios.post(`${baseUrl}/ProductService.wsdl`, xmlBody, {
       headers: {
         "Content-Type": "text/xml;charset=UTF-8",
-        SOAPAction: "GetProductListRequest",
+        SOAPAction: "",
       },
       timeout: 15000,
     });
 
-    // 🧩 XML'i JSON'a çevir
     const parser = new xml2js.Parser({ explicitArray: false });
     const result = await parser.parseStringPromise(response.data);
 
     const productList =
-      result?.["soapenv:Envelope"]?.["soapenv:Body"]?.["ns3:GetProductListResponse"]?.products?.product || [];
+      result?.["soapenv:Envelope"]?.["soapenv:Body"]?.["ns3:GetProductListResponse"]?.products?.product ||
+      result?.["soapenv:Envelope"]?.["soapenv:Body"]?.["ns2:GetProductListResponse"]?.products?.product ||
+      result?.["soapenv:Envelope"]?.["soapenv:Body"]?.["sch:GetProductListResponse"]?.products?.product ||
+      [];
 
     return res.status(200).json({
       success: true,
-      message: "✅ Ürün listesi başarıyla çekildi.",
+      message: "✅ N11 ürün listesi başarıyla çekildi.",
+      count: productList.length || 0,
       products: productList,
     });
   } catch (error) {
