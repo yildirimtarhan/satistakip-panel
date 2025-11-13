@@ -1,5 +1,10 @@
-import fs from "fs";
-import path from "path";
+import { v2 as cloudinary } from "cloudinary";
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -10,36 +15,23 @@ export default async function handler(req, res) {
     const { fileName, pdfBase64 } = req.body || {};
 
     if (!fileName || !pdfBase64) {
-      return res.status(400).json({ message: "Eksik parametre: fileName veya pdfBase64 yok" });
+      return res.status(400).json({ message: "fileName veya pdfBase64 eksik" });
     }
 
-    // 📌 PDF kaydedilecek dizin (her zaman doğru yolu verir!)
-    const saveDir = path.resolve("./public/teklifler");
-
-    // 📁 Klasör yoksa oluştur
-    if (!fs.existsSync(saveDir)) {
-      fs.mkdirSync(saveDir, { recursive: true });
-      console.log("📂 Klasör oluşturuldu:", saveDir);
-    }
-
-    // 📄 Kaydedilecek dosya yolu
-    const filePath = path.join(saveDir, fileName);
-
-    console.log("📁 PDF şu konuma kaydedilecek:", filePath);
-
-    // Base64 -> Buffer dönüştür
-    const buffer = Buffer.from(pdfBase64, "base64");
-
-    // 📌 Dosyayı yaz
-    fs.writeFileSync(filePath, buffer);
-
-    return res.status(200).json({
-      message: "PDF başarıyla kaydedildi",
-      filePath: `/teklifler/${fileName}`
+    // Base64 → Cloudinary upload
+    const uploaded = await cloudinary.uploader.upload(`data:application/pdf;base64,${pdfBase64}`, {
+      folder: "teklifler",
+      resource_type: "raw",
+      public_id: fileName.replace(".pdf", ""),
+      overwrite: true,
     });
 
+    return res.status(200).json({
+      message: "PDF Cloudinary'ye kaydedildi",
+      url: uploaded.secure_url,
+    });
   } catch (err) {
-    console.error("❌ PDF kaydedilirken hata:", err);
+    console.error("PDF upload hatası:", err);
     return res.status(500).json({ message: "Sunucu hatası", error: err.message });
   }
 }

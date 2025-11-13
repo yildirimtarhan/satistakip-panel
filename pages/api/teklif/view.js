@@ -1,37 +1,43 @@
-import fs from "fs";
-import path from "path";
+// pages/api/teklif/view.js
+import { connectToDatabase } from "@/lib/mongodb";
 
-export default function handler(req, res) {
+export default async function handler(req, res) {
+  if (req.method !== "GET") {
+    return res.status(405).json({ message: "Only GET allowed" });
+  }
+
   try {
-    const { name } = req.query;
+    const { id } = req.query;
 
-    if (!name) {
-      return res.status(400).json({ message: "PDF adı belirtilmedi." });
+    if (!id) {
+      return res.status(400).json({ message: "Teklif ID eksik" });
     }
 
-    console.log("📄 İstenen PDF:", name);
+    const { db } = await connectToDatabase();
+    const teklifler = db.collection("teklifler");
 
-    // 📌 Doğru dizin (Windows + Linux + Render uyumlu)
-    const filePath = path.resolve("./public/teklifler", name);
+    const teklif = await teklifler.findOne({ _id: id });
 
-    console.log("📁 Okunan dosya yolu:", filePath);
-
-    // Dosya var mı?
-    if (!fs.existsSync(filePath)) {
-      console.log("❌ Dosya bulunamadı:", filePath);
-      return res.status(404).json({ message: "Dosya bulunamadı." });
+    if (!teklif) {
+      return res.status(404).json({ message: "Teklif bulunamadı" });
     }
 
-    // Dosyayı oku
-    const fileBuffer = fs.readFileSync(filePath);
+    // 🌐 Cloudinary linki (artık disk yok, direkt URL döner)
+    const pdfUrl = teklif.pdfUrl || null;
 
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `inline; filename=${name}`);
-
-    return res.status(200).send(fileBuffer);
+    return res.status(200).json({
+      success: true,
+      teklif,
+      pdfUrl,
+      message: "Teklif başarıyla getirildi"
+    });
 
   } catch (err) {
-    console.error("❌ PDF gösterme hatası:", err);
-    return res.status(500).json({ message: "Sunucu hatası", error: err.message });
+    console.error("❌ Teklif görüntüleme hatası:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Sunucu hatası",
+      error: err.message
+    });
   }
 }

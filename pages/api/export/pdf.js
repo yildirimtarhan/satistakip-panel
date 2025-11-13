@@ -3,6 +3,7 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import fs from "fs";
 import path from "path";
+import QRCode from "qrcode";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -11,18 +12,21 @@ export default async function handler(req, res) {
 
   try {
     const {
-      title = "Teklif - Müşteri",
-      cari = "Müşteri",
+      title = "Teklif",
+      cari = {},
       firma = {},
       items = [],
       kdv = 0,
+      currency = "TL",
       genelToplam = 0,
       logo = null,
       not = "",
       teklifNo = "",
+      teklifId = "",
+      token = "",
     } = req.body || {};
 
-    // 📁 Font yolları
+    // ✔ FONT
     const fontDir = path.join(process.cwd(), "public", "fonts");
     const robotoRegular = path.join(fontDir, "Roboto-Regular.ttf");
     const robotoBold = path.join(fontDir, "Roboto-Bold.ttf");
@@ -31,6 +35,7 @@ export default async function handler(req, res) {
 
     let normalB64 = null;
     let boldB64 = null;
+
     if (fs.existsSync(robotoRegular)) {
       normalB64 = fs.readFileSync(robotoRegular).toString("base64");
       if (fs.existsSync(robotoBold)) boldB64 = fs.readFileSync(robotoBold).toString("base64");
@@ -39,12 +44,10 @@ export default async function handler(req, res) {
       if (fs.existsSync(dejaBold)) boldB64 = fs.readFileSync(dejaBold).toString("base64");
     }
 
-    // 📄 Yatay PDF
     const doc = new jsPDF({ unit: "pt", format: "a4", orientation: "landscape" });
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
 
-    // Fontları yükle
     if (normalB64) {
       doc.addFileToVFS("Custom-Regular.ttf", normalB64);
       doc.addFont("Custom-Regular.ttf", "CustomFont", "normal");
@@ -55,19 +58,17 @@ export default async function handler(req, res) {
     }
 
     const setFont = (style = "normal") => {
-      if (normalB64) doc.setFont("CustomFont", style);
-      else doc.setFont("helvetica", style);
+      doc.setFont(normalB64 ? "CustomFont" : "helvetica", style);
     };
 
-    // 🧾 Üst bilgi
-    if (logo && typeof logo === "string" && logo.startsWith("data:image")) {
+    // ✔ LOGO
+    if (logo && logo.startsWith("data:image")) {
       try {
         doc.addImage(logo, "PNG", 40, 30, 90, 90);
-      } catch (err) {
-        console.warn("Logo eklenemedi:", err.message);
-      }
+      } catch {}
     }
 
+    // ✔ Başlık
     setFont("bold");
     doc.setFontSize(20);
     doc.text("KURUMSAL TEDARİKÇİ / YILDIRIM AYLUÇTARHAN", pageW / 2, 60, { align: "center" });
@@ -79,16 +80,17 @@ export default async function handler(req, res) {
     doc.setFontSize(10);
     doc.setTextColor(90, 90, 90);
     const tarihStr = new Date().toLocaleDateString("tr-TR");
-    const sagUst = [`Tarih: ${tarihStr}`, teklifNo ? `Teklif No: ${teklifNo}` : ""]
+
+    const ustBilgi = [`Tarih: ${tarihStr}`, teklifNo ? `Teklif No: ${teklifNo}` : ""]
       .filter(Boolean)
       .join("   •   ");
-    doc.text(sagUst, pageW - 60, 82, { align: "right" });
 
-    // Alt çizgi
+    doc.text(ustBilgi, pageW - 60, 82, { align: "right" });
+
     doc.setDrawColor(255, 140, 0);
     doc.line(40, 96, pageW - 40, 96);
 
-    // 🏢 Firma ve Müşteri
+    // ✔ Firma & Müşteri Bilgileri
     const firmaText = [
       firma.firmaAdi || "Kurumsal Tedarikçi",
       firma.adres || "",
@@ -96,50 +98,45 @@ export default async function handler(req, res) {
       `E-posta: ${firma.eposta || "-"}`,
       `Vergi: ${firma.vergiDairesi || "-"} / ${firma.vergiNo || "-"}`,
       firma.web || "www.tedarikci.org.tr",
-    ].filter(Boolean).join("\n");
+    ]
+      .filter(Boolean)
+      .join("\n");
 
-    const cariText =
-      typeof cari === "object"
-        ? [
-            cari.ad || "Müşteri",
-            cari.adres || "",
-            `${cari.il || ""}${cari.ilce ? " / " + cari.ilce : ""}`,
-            `Tel: ${cari.telefon || "-"}`,
-            `Vergi: ${cari.vergiTipi || "-"} ${cari.vergiNo || "-"}`,
-          ]
-            .filter(Boolean)
-            .join("\n")
-        : String(cari || "Müşteri");
+    const cariText = [
+      cari.ad || "Müşteri",
+      cari.adres || "",
+      `${cari.il || ""}${cari.ilce ? " / " + cari.ilce : ""}`,
+      `Tel: ${cari.telefon || "-"}`,
+      `Vergi: ${cari.vergiTipi || "-"} ${cari.vergiNo || "-"}`,
+    ]
+      .filter(Boolean)
+      .join("\n");
 
     doc.setFillColor(248, 248, 248);
     doc.roundedRect(40, 112, pageW / 2 - 70, 92, 8, 8, "F");
     doc.roundedRect(pageW / 2 + 30, 112, pageW / 2 - 70, 92, 8, 8, "F");
+
     setFont("bold");
     doc.text("FİRMA", 52, 130);
     doc.text("MÜŞTERİ", pageW / 2 + 42, 130);
+
     setFont("normal");
     doc.text(firmaText, 52, 148);
     doc.text(cariText, pageW / 2 + 42, 148);
 
-    // 🧾 Ürün Tablosu
+    // ✔ Ürün tablosu
     const bodyRows = (items || []).map((it, i) => {
-      const adet = Number(it.quantity || it.adet || 0);
-      const fiyat = Number(it.price || it.fiyat || 0);
-      const tutar = adet * fiyat;
-      const kdvT = Number(
-        it.kdvTutar != null
-          ? it.kdvTutar
-          : it.kdvOran != null
-          ? (tutar * Number(it.kdvOran)) / 100
-          : 0
-      );
+      const adet = Number(it.quantity || 0);
+      const fiyat = Number(it.price || 0);
+      const araToplam = adet * fiyat;
+      const kdvT = araToplam * (Number(it.kdvOran || 0) / 100);
       return [
         i + 1,
-        it.name || it.urun || it.urunAd || "-",
+        it.name || "-",
         adet,
-        `${fiyat.toFixed(2)} TL`,
-        `${kdvT.toFixed(2)} TL`,
-        `${(tutar + kdvT).toFixed(2)} TL`,
+        `${fiyat.toFixed(2)} ${currency}`,
+        `${kdvT.toFixed(2)} ${currency}`,
+        `${(araToplam + kdvT).toFixed(2)} ${currency}`,
       ];
     });
 
@@ -154,28 +151,24 @@ export default async function handler(req, res) {
 
     let y = doc.lastAutoTable.finalY + 30;
 
-    // 💬 Notlar / Şartlar (satır kaydırmalı)
+    // ✔ Şartlar
     const defaultTerms = `
-• Firmanız talebi üzerine yukarıda miktar ve birim fiyatları paylaşılmış olan ürün teklifinizi onayınıza sunar.
-• Teslimat, sipariş onayına istinaden stoktan teslimde aynı gün sevk edilebilir. Yurtdışı siparişi durumunda 3–6 haftadır.
-• Fiyatlar USD bazındadır. Fatura tarihindeki TCMB döviz kuru esas alınır. Kur farkı, güncel kura göre hesaplanır.
-• Teklifteki fiyatlar peşin olup KDV dahil değildir.
-• Ürünler distribütör garantisindedir (2 yıl).
-• Kesin sipariş için teklif mektubunun imzalanarak tarafımıza gönderilmesi gerekir.
+• Ürünler distribütör garantisindedir.
+• Fiyatlar peşin olup KDV dahil değildir.
+• Teslimat süresi stok durumuna göre değişebilir.
 • Teklif geçerlilik süresi 7 gündür.
-─────────────────────────────
-💳 Vadeli satışlar için ek şartlar:
-• Vade farkı piyasa koşullarına göre belirlenir.
-• Temerrüt faizi 3095 Sayılı Kanuna göre uygulanır.
-─────────────────────────────
+──────────────────────────────────────
 `;
+
+    setFont("normal");
     doc.setFontSize(10);
     doc.setTextColor(60, 60, 60);
-    const splitText = doc.splitTextToSize(not && not.trim() ? not : defaultTerms, pageW - 80);
-    doc.text(splitText, 40, y);
 
-    // ✍️ İmza kutusu
-    const signTop = y + splitText.length * 12 + 30;
+    const splitTerms = doc.splitTextToSize(not.trim() ? not : defaultTerms, pageW - 80);
+    doc.text(splitTerms, 40, y);
+
+    // ✔ İmza alanı
+    const signTop = y + splitTerms.length * 12 + 30;
     doc.roundedRect(pageW - 240, signTop, 200, 80, 8, 8);
     setFont("bold");
     doc.text("Yetkili / İmza", pageW - 230, signTop + 18);
@@ -183,26 +176,49 @@ export default async function handler(req, res) {
     doc.text("Ad Soyad:", pageW - 230, signTop + 38);
     doc.text("Tarih - Kaşe - İmza", pageW - 230, signTop + 58);
 
-    // 📅 Teklif geçerlilik tarihi
-    const validUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString("tr-TR");
-    doc.text(`Teklif geçerlilik tarihi: ${validUntil}`, 40, signTop + 110);
+    // ✔ ONAY LİNKİ + QR CODE
+    let approvalUrl = "";
+    if (teklifId && token) {
+      approvalUrl = `${process.env.NEXT_PUBLIC_SITE_URL || "https://www.satistakip.online"}/teklif/onay/${teklifId}?token=${token}`;
+    }
 
-    // Footer
-    doc.line(40, pageH - 60, pageW - 40, pageH - 60);
-    doc.setFontSize(9);
-    doc.text("Kurumsal Tedarikçi • www.tedarikci.org.tr", pageW / 2, pageH - 40, { align: "center" });
+    if (approvalUrl) {
+      setFont("bold");
+      doc.setFontSize(12);
+      doc.text("🔗 Teklifi İnceleme & Onay Linki:", 40, pageH - 110);
 
-    // 📥 PDF oluştur ve sunucuya kaydet
-    const buffer = Buffer.from(doc.output("arraybuffer"));
+      setFont("normal");
+      doc.setTextColor(0, 102, 204);
+      doc.textWithLink(approvalUrl, 40, pageH - 90, { url: approvalUrl });
+
+      // QR
+      try {
+        const qr = await QRCode.toDataURL(approvalUrl);
+        doc.addImage(qr, "PNG", pageW - 180, pageH - 170, 120, 120);
+      } catch {}
+    }
+
+    // ✔ PDF KAYDETME
+    const safeName = (cari.ad || "musteri")
+      .replace(/[^a-z0-9ğüşöçıİĞÜŞÖÇ ]/gi, "")
+      .replace(/\s+/g, "-")
+      .toLowerCase();
+
     const outputDir = path.join(process.cwd(), "public", "pdfs");
     if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
-    const filePath = path.join(outputDir, `teklif-${Date.now()}.pdf`);
-    fs.writeFileSync(filePath, buffer);
 
-    // Yanıt
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", "inline; filename=teklif.pdf");
-    return res.status(200).send(buffer);
+    const finalFileName = `teklif-${safeName}-${Date.now()}.pdf`;
+    const savePath = path.join(outputDir, finalFileName);
+
+    const buffer = Buffer.from(doc.output("arraybuffer"));
+    fs.writeFileSync(savePath, buffer);
+
+    return res.status(200).json({
+      success: true,
+      pdfUrl: `/pdfs/${finalFileName}`,
+      approvalUrl,
+    });
+
   } catch (err) {
     console.error("❌ PDF oluşturma hatası:", err);
     return res.status(500).json({ message: "Sunucu hatası", error: err.message });
