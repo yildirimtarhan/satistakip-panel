@@ -31,6 +31,7 @@
     "nodemailer": "^7.0.7",
     "nookies": "^2.5.2",
     "postcss": "^8.4.47",
+    "qrcode": "^1.5.4",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "recharts": "^3.3.0",
