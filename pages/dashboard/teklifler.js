@@ -1,19 +1,22 @@
+// 📄 /pages/dashboard/teklifler.js
 "use client";
-
 import { useEffect, useRef, useState, useMemo } from "react";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import RequireAuth from "@/components/RequireAuth";
 
-/* ──────────── Helpers ──────────── */
+/* ──────────────────────────────────────────────
+   Helpers
+───────────────────────────────────────────────*/
 
+// TRY format
 const fmt = (n) =>
   Number(n || 0).toLocaleString("tr-TR", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
 
-// jsPDF & autoTable
+// Dinamik jsPDF + autoTable import (SSR hatalarını önler)
 async function makeJsPDF() {
   const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
     import("jspdf"),
@@ -22,50 +25,53 @@ async function makeJsPDF() {
   return { jsPDF, autoTable };
 }
 
-// Font loader
+// Roboto fontlarını base64’e çevir
 async function loadFontBase64(url) {
   try {
     const res = await fetch(url);
     if (!res.ok) return null;
     const buf = await res.arrayBuffer();
-    return btoa(String.fromCharCode(...new Uint8Array(buf)));
+    const bytes = new Uint8Array(buf);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
   } catch {
     return null;
   }
 }
 
+// jsPDF’e Roboto ekler; yoksa Helvetica
 async function ensureRoboto(doc) {
-  const reg = await loadFontBase64("/fonts/Roboto-Regular.ttf");
-  const bold = await loadFontBase64("/fonts/Roboto-Bold.ttf");
+  const regularB64 = await loadFontBase64("/fonts/Roboto-Regular.ttf");
+  const boldB64 = await loadFontBase64("/fonts/Roboto-Bold.ttf");
 
-  if (reg) {
-    doc.addFileToVFS("Roboto-Regular.ttf", reg);
+  if (regularB64) {
+    doc.addFileToVFS("Roboto-Regular.ttf", regularB64);
     doc.addFont("Roboto-Regular.ttf", "Roboto", "normal");
   }
-  if (bold) {
-    doc.addFileToVFS("Roboto-Bold.ttf", bold);
+  if (boldB64) {
+    doc.addFileToVFS("Roboto-Bold.ttf", boldB64);
     doc.addFont("Roboto-Bold.ttf", "Roboto", "bold");
   }
 
-  const has = !!reg;
-  const setFont = (s = "normal") =>
-    has ? doc.setFont("Roboto", s) : doc.setFont("helvetica", s);
-
-  return { hasRoboto: has, setFont };
+  const hasRoboto = !!regularB64;
+  const setFont = (style = "normal") => {
+    if (hasRoboto) doc.setFont("Roboto", style);
+    else doc.setFont("helvetica", style);
+  };
+  return { hasRoboto, setFont };
 }
 
-// Firma bilgisi
+// Firma bilgisi (API -> localStorage -> varsayılan)
 async function loadCompanyInfo() {
   try {
     const r = await fetch("/api/settings/company");
     if (r.ok) return await r.json();
   } catch {}
-
   try {
     const local = JSON.parse(localStorage.getItem("company_info") || "{}");
-    if (local?.firmaAdi) return local;
+    if (local && local.firmaAdi) return local;
   } catch {}
-
   return {
     firmaAdi: "Kurumsal Tedarikçi",
     yetkili: "Yıldırım Ayluçtarhan",
@@ -79,35 +85,44 @@ async function loadCompanyInfo() {
   };
 }
 
-// Teklif numarası
+// Teklif numarası üretimi (sadece front için fallback)
 function nextOfferNumber(lastNumber) {
   const y = new Date().getFullYear();
   if (!lastNumber) return `T-${y}-0001`;
   const m = String(lastNumber).match(/^T-(\d{4})-(\d{4})$/);
   if (!m) return `T-${y}-0001`;
-  if (Number(m[1]) !== y) return `T-${y}-0001`;
-  return `T-${y}-${String(Number(m[2]) + 1).padStart(4, "0")}`;
+  const lastY = Number(m[1]);
+  const lastSeq = Number(m[2]);
+  if (lastY !== y) return `T-${y}-0001`;
+  return `T-${y}-${String(lastSeq + 1).padStart(4, "0")}`;
 }
 
 // UUID fallback
 function safeUUID() {
-  if (crypto?.randomUUID) return crypto.randomUUID();
-  return "id-" + Math.random().toString(36).substring(2) + Date.now();
+  if (typeof crypto !== "undefined" && crypto.randomUUID)
+    return crypto.randomUUID();
+  return "id-" + Math.random().toString(36).slice(2) + Date.now();
 }
 
-/* ───────── Component ───────── */
+/* ──────────────────────────────────────────────
+   Component
+───────────────────────────────────────────────*/
 
 export default function Teklifler() {
+  // Data
   const [cariler, setCariler] = useState([]);
   const [urunler, setUrunler] = useState([]);
   const [teklifler, setTeklifler] = useState([]);
   const [company, setCompany] = useState(null);
 
+  // Form
   const [cariId, setCariId] = useState("");
   const [not, setNot] = useState("");
   const [logo, setLogo] = useState(null);
-
   const [offerNumber, setOfferNumber] = useState(null);
+  const [savedTeklifId, setSavedTeklifId] = useState(null); // ✅ DB id
+
+  // 💱 Para birimi
   const [currency, setCurrency] = useState("TL");
 
   const logoRef = useRef(null);
@@ -116,10 +131,13 @@ export default function Teklifler() {
     { urunId: "", urunAd: "", adet: 1, fiyat: 0, kdv: 20 },
   ]);
 
-  /* Hesaplamalar */
+  // Tutar hesapları
   const araToplam = useMemo(
     () =>
-      lines.reduce((t, l) => t + Number(l.adet || 0) * Number(l.fiyat || 0), 0),
+      lines.reduce(
+        (t, l) => t + Number(l.adet || 0) * Number(l.fiyat || 0),
+        0
+      ),
     [lines]
   );
   const kdvTutar = useMemo(
@@ -132,58 +150,65 @@ export default function Teklifler() {
   );
   const genelToplam = useMemo(() => araToplam + kdvTutar, [araToplam, kdvTutar]);
 
-  /* Veri Yükleme */
+  // Veri yükleme
   useEffect(() => {
     (async () => {
       try {
-        const [cR, uR, compR, tR] = await Promise.allSettled([
+        const [cariR, urunR, compR, tklfR] = await Promise.allSettled([
           fetch("/api/cari/list"),
           fetch("/api/urun/list"),
           fetch("/api/settings/company"),
           fetch("/api/teklif/list"),
         ]);
 
-        if (cR.value?.ok) {
-          const d = await cR.value.json();
-          setCariler(Array.isArray(d) ? d : d.items || []);
-        }
-        if (uR.value?.ok) {
-          const d = await uR.value.json();
-          setUrunler(Array.isArray(d) ? d : d.items || []);
+        if (cariR.status === "fulfilled" && cariR.value.ok) {
+          const d = await cariR.value.json();
+          setCariler(Array.isArray(d) ? d : d?.items || []);
         }
 
-        if (compR.value?.ok) {
-          setCompany(await compR.value.json());
+        if (urunR.status === "fulfilled" && urunR.value.ok) {
+          const d = await urunR.value.json();
+          setUrunler(Array.isArray(d) ? d : d?.items || []);
+        }
+
+        if (compR.status === "fulfilled" && compR.value.ok) {
+          const d = await compR.value.json();
+          setCompany(d);
         } else {
-          setCompany(await loadCompanyInfo());
+          const local = await loadCompanyInfo();
+          setCompany(local);
         }
 
-        if (tR.value?.ok) {
-          const d = await tR.value.json();
-          const list = Array.isArray(d) ? d : d.items || [];
+        if (tklfR.status === "fulfilled" && tklfR.value.ok) {
+          const d = await tklfR.value.json();
+          const list = Array.isArray(d) ? d : d?.items || [];
           setTeklifler(list);
-          setOfferNumber(nextOfferNumber(list[0]?.number));
+          const lastNo = list[0]?.number || list[0]?.offerNumber;
+          setOfferNumber(nextOfferNumber(lastNo));
         } else {
           setOfferNumber(nextOfferNumber(null));
         }
-      } catch (err) {
-        console.warn("Yükleme hatası:", err);
+      } catch (e) {
+        console.warn("Yükleme sırasında uyarı:", e);
       }
     })();
   }, []);
-  /* Satır İşlemleri */
+
+  /* ───────── Satır işlemleri ───────── */
+
   const addLine = () =>
     setLines((prev) => [
       ...prev,
       { urunId: "", urunAd: "", adet: 1, fiyat: 0, kdv: 20 },
     ]);
 
-  const removeLine = (idx) =>
-    setLines((prev) => prev.filter((_, i) => i !== idx));
+  const removeLine = (idx) => setLines((prev) => prev.filter((_, i) => i !== idx));
 
   const updateLine = (idx, key, val) =>
     setLines((prev) =>
-      prev.map((l, i) => (i === idx ? { ...l, [key]: val } : l))
+      prev.map((l, i) =>
+        i === idx ? { ...l, [key]: key === "urunId" ? val : val } : l
+      )
     );
 
   const handleLogoPick = async (e) => {
@@ -197,21 +222,39 @@ export default function Teklifler() {
   const selectProduct = (idx, urunId) => {
     const u = urunler.find((x) => x._id === urunId);
     if (!u) return updateLine(idx, "urunId", urunId);
-    setLines((prev) =>
-      prev.map((l, i) =>
-        i === idx
-          ? {
-              ...l,
-              urunId,
-              urunAd: u.ad || u.name || "",
-              fiyat: Number(u.satisFiyati || u.price || 0),
-            }
-          : l
-      )
-    );
+    const patch = {
+      urunId,
+      urunAd: u.ad || u.name || "",
+      fiyat: Number(u.satisFiyati || u.price || 0),
+    };
+    setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
   };
 
-  /* 💾 Sunucuya Teklif Kaydet */
+  /* ───────── Teklif yükle / revize ───────── */
+
+  const loadTeklifToForm = (t) => {
+    setCariId(t.cariId || "");
+    setLines(
+      (t.lines && t.lines.length
+        ? t.lines
+        : [{ urunId: "", urunAd: "", adet: 1, fiyat: 0, kdv: 20 }]
+      ).map((l) => ({
+        urunId: l.urunId || "",
+        urunAd: l.urunAd || "",
+        adet: Number(l.adet || 0),
+        fiyat: Number(l.fiyat || 0),
+        kdv: Number(l.kdv || 20),
+      }))
+    );
+    setNot(t.note || "");
+    setCurrency(t.currency || "TL");
+    setOfferNumber(t.number || t.offerNumber || offerNumber);
+    setSavedTeklifId(t._id || t.id || null);
+    alert("📝 Teklif formu revize için yüklendi.");
+  };
+
+  /* ───────── Kaydet (DB’ye) ───────── */
+
   const kaydet = async () => {
     if (!cariId) return alert("Önce cari seçiniz.");
     if (!lines.length) return alert("En az bir satır ekleyiniz.");
@@ -239,33 +282,42 @@ export default function Teklifler() {
       }
 
       alert("✅ Teklif kaydedildi");
+
+      // API'den dönen ID ve numarayı al
+      const newId = data.id || data._id || null;
+      const newNumber = data.number || data.offerNumber || offerNumber;
+
+      setSavedTeklifId(newId);
+      setOfferNumber(newNumber);
+
       setTeklifler((prev) => [
-        { number: data.offerNumber, ...body, _id: safeUUID() },
+        {
+          ...body,
+          _id: newId || safeUUID(),
+          number: newNumber,
+          tarih: new Date().toISOString(),
+          status: "Beklemede",
+        },
         ...prev,
       ]);
-      setOfferNumber(data.offerNumber || offerNumber);
     } catch (err) {
       console.error("Kaydet hatası:", err);
       alert("❌ Kayıt sırasında hata oluştu.");
     }
   };
 
-  /* 🧾 PDF OLUŞTUR (Sunucuya da uyumlu) */
+  /* ───────── PDF oluştur ───────── */
+
   const pdfOlustur = async (downloadOnly = true) => {
     try {
       const { jsPDF, autoTable } = await makeJsPDF();
-      const doc = new jsPDF({
-        unit: "pt",
-        format: "a4",
-        orientation: "landscape",
-      });
+      const doc = new jsPDF({ unit: "pt", format: "a4", orientation: "landscape" });
+      doc.setLineHeightFactor(1.4);
       const { setFont } = await ensureRoboto(doc);
-
       const pageW = doc.internal.pageSize.getWidth();
       const pageH = doc.internal.pageSize.getHeight();
-      doc.setLineHeightFactor(1.4);
 
-      /* --- LOGO & BAŞLIK --- */
+      // Logo
       if (logo) {
         try {
           doc.addImage(logo, "PNG", 40, 30, 110, 110);
@@ -274,10 +326,10 @@ export default function Teklifler() {
         }
       }
 
+      // Başlıklar
       setFont("bold");
       doc.setFontSize(18);
       doc.text("TEKLİF FORMU", pageW - 40, 58, { align: "right" });
-
       setFont("normal");
       doc.setFontSize(10);
       doc.text(`Tarih: ${new Date().toLocaleDateString("tr-TR")}`, pageW - 40, 76, {
@@ -286,38 +338,35 @@ export default function Teklifler() {
       if (offerNumber)
         doc.text(`Teklif No: ${offerNumber}`, pageW - 40, 92, { align: "right" });
 
-      /* --- FİRMA & MÜŞTERİ --- */
+      // Firma bilgileri
       let y = 130;
-
       setFont("bold");
       doc.setFontSize(12);
       doc.text(company?.firmaAdi || "Kurumsal Tedarikçi", 40, y);
-
       setFont("normal");
       doc.setFontSize(10);
-      if (company?.adres) doc.text(String(company.adres), 40, y + 16);
-      if (company?.telefon) doc.text(`Tel: ${company.telefon}`, 40, y + 32);
-      if (company?.eposta) doc.text(`E-posta: ${company.eposta}`, 40, y + 48);
+      if (company?.adres) doc.text(String(company.adres), 40, y + 16, { maxWidth: pageW / 2 - 60 });
+      if (company?.telefon) doc.text(`Tel: ${company.telefon}`, 40, y + 40);
+      if (company?.eposta) doc.text(`E-posta: ${company.eposta}`, 40, y + 56);
 
-      /* CUSTOMER */
-      const c = cariler.find((cc) => cc._id === cariId);
+      // Müşteri bilgileri
       setFont("bold");
       doc.setFontSize(12);
-      doc.text(c?.ad || "Müşteri", pageW / 2, y);
-
+      const cari = cariler.find((c) => c._id === cariId);
+      doc.text(cari ? cari.ad || cari.name || "Müşteri" : "Müşteri", pageW / 2, y);
       setFont("normal");
       doc.setFontSize(10);
-      if (c?.adres) doc.text(String(c.adres), pageW / 2, y + 16);
-      if (c?.telefon) doc.text(`Tel: ${c.telefon}`, pageW / 2, y + 32);
-      if (c?.eposta) doc.text(`E-posta: ${c.eposta}`, pageW / 2, y + 48);
+      if (cari?.adres)
+        doc.text(String(cari.adres), pageW / 2, y + 16, { maxWidth: pageW / 2 - 60 });
+      if (cari?.telefon) doc.text(`Tel: ${cari.telefon}`, pageW / 2, y + 40);
+      if (cari?.eposta) doc.text(`E-posta: ${cari.eposta}`, pageW / 2, y + 56);
 
-      /* --- ÜRÜN TABLOSU --- */
-      const bodyRows = lines.map((it, i) => {
+      // Ürün tablosu
+      const bodyRows = (lines || []).map((it, i) => {
         const adet = Number(it.adet || 0);
         const fiyat = Number(it.fiyat || 0);
         const tutar = adet * fiyat;
         const kdvSatir = (tutar * Number(it.kdv || 0)) / 100;
-
         return [
           i + 1,
           it.urunAd || "-",
@@ -342,7 +391,6 @@ export default function Teklifler() {
           fontStyle: "bold",
           halign: "center",
         },
-        theme: "grid",
         columnStyles: {
           0: { halign: "center", cellWidth: 28 },
           2: { halign: "right", cellWidth: 60 },
@@ -350,50 +398,70 @@ export default function Teklifler() {
           4: { halign: "right", cellWidth: 100 },
           5: { halign: "right", cellWidth: 110 },
         },
+        theme: "grid",
       });
 
-      /* --- TOPLAM ALANI --- */
-      y = doc.lastAutoTable.finalY + 24;
+      // Toplamlar
+      y = doc.lastAutoTable.finalY + 22;
 
       setFont("bold");
       doc.setFontSize(12);
-      doc.text(`Ara Toplam: ${fmt(araToplam)} ${currency}`, pageW - 40, y, {
-        align: "right",
-      });
-      doc.text(`KDV: ${fmt(kdvTutar)} ${currency}`, pageW - 40, y + 18, {
-        align: "right",
-      });
+      doc.text(`Ara Toplam: ${fmt(araToplam)} ${currency}`, pageW - 40, y, { align: "right" });
+      doc.text(`KDV: ${fmt(kdvTutar)} ${currency}`, pageW - 40, y + 18, { align: "right" });
       doc.text(`Genel Toplam: ${fmt(genelToplam)} ${currency}`, pageW - 40, y + 36, {
         align: "right",
       });
 
-      /* --- GEÇERLİLİK TARİHİ --- */
-      const validUntil = new Date(Date.now() + 7 * 86400000).toLocaleDateString(
-        "tr-TR"
-      );
+      // Geçerlilik
+      const validUntil = new Date(
+        Date.now() + 7 * 24 * 60 * 60 * 1000
+      ).toLocaleDateString("tr-TR");
       setFont("normal");
       doc.setFontSize(10);
       doc.text(`Teklif geçerlilik tarihi: ${validUntil}`, 40, y + 54);
 
-      /* --- KUR NOTU --- */
+      // Kur notu – KISALTTIM (dağılma sorununu çözmek için)
       doc.text(
-        `Fiyatlar ${currency} bazındadır. Faturalandırma TCMB döviz kuru esas alınır.`,
+        `Fiyatlar ${currency} bazındadır. Faturalandırma, fatura tarihindeki TCMB döviz kuru esas alınır.`,
         40,
-        y + 72
+        y + 72,
+        { maxWidth: pageW - 80 }
       );
 
-      /* --- NOTLAR --- */
-      if (not?.trim()) {
+      // Kullanıcının girdiği not
+      if (not && not.trim()) {
+        const notY = y + 100;
         setFont("bold");
         doc.setFontSize(11);
-        doc.text("Not / Şartlar:", 40, y + 100);
-
+        doc.text("Not / Şartlar:", 40, notY);
         setFont("normal");
         doc.setFontSize(10);
-        doc.text(not, 40, y + 118, { maxWidth: pageW - 80 });
+        doc.text(not, 40, notY + 16, { maxWidth: pageW - 80 });
       }
 
-      /* --- PDF OUTPUT --- */
+      // 🔗 Online onay linki
+      if (savedTeklifId) {
+        const origin =
+          typeof window !== "undefined" ? window.location.origin : "https://www.satistakip.online";
+        const onayUrl = `${origin}/teklif/onay/${savedTeklifId}?ok=1`;
+
+        const linkY = pageH - 80;
+        setFont("bold");
+        doc.setFontSize(10);
+        doc.text("Online onay linki:", 40, linkY);
+        setFont("normal");
+        doc.setTextColor(0, 0, 255);
+        doc.text(onayUrl, 40, linkY + 16, { maxWidth: pageW - 80 });
+        doc.setTextColor(0, 0, 0);
+      }
+
+      // Footer
+      setFont("normal");
+      doc.setFontSize(9);
+      doc.text("Kurumsal Tedarikçi • www.tedarikci.org.tr", pageW / 2, pageH - 24, {
+        align: "center",
+      });
+
       const fileName = `Teklif-${offerNumber || "musteri"}.pdf`;
 
       if (downloadOnly) {
@@ -409,12 +477,50 @@ export default function Teklifler() {
       return null;
     }
   };
-  /* ✉️ Mail Gönder — PDF ekli */
+
+  /* ───────── PDF'yi Sunucuya Kaydet ───────── */
+
+  const sunucuyaKaydet = async () => {
+    if (!cariId) return alert("Önce cari seçiniz.");
+
+    const pdf = await pdfOlustur(false);
+    if (!pdf) return;
+
+    try {
+      const res = await fetch("/api/teklif/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pdfBase64: pdf.base64,
+          fileName: pdf.fileName,
+          cariId,
+          offerNumber,
+          currency,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        console.error("Kaydetme hatası:", data);
+        return alert(
+          "❌ PDF sunucuya kaydedilemedi: " + (data?.message || "Sunucu hatası")
+        );
+      }
+
+      alert("✅ PDF sunucuya başarıyla kaydedildi!");
+    } catch (err) {
+      console.error("Sunucuya kaydetme hatası:", err);
+      alert("❌ Sunucuya kaydetme sırasında hata oluştu.");
+    }
+  };
+
+  /* ───────── Mail Gönder ───────── */
+
   const mailGonder = async () => {
     const cari = cariler.find((c) => c._id === cariId);
     if (!cari) return alert("Önce cari seçiniz.");
 
-    const pdf = await pdfOlustur(false); // indir ME, base64 + fileName döner
+    const pdf = await pdfOlustur(false);
     if (!pdf) return;
 
     try {
@@ -425,7 +531,7 @@ export default function Teklifler() {
           toEmail: cari?.eposta || cari?.email || company?.eposta,
           subject: `Teklif - ${offerNumber || ""}`,
           message:
-            "Sayın Yetkili,\n\nEkte teklif detaylarını bilgilerinize sunarız.\nİyi çalışmalar dileriz.\n\nKurumsal Tedarikçi",
+            "Sayın Yetkili, ekte teklif detaylarını bulabilirsiniz.\nİyi çalışmalar dileriz.\nKurumsal Tedarikçi",
           pdfBase64: pdf.base64,
           fileName: pdf.fileName,
           currency,
@@ -445,7 +551,8 @@ export default function Teklifler() {
     }
   };
 
-  /* 📊 Excel Dışa Aktarım */
+  /* ───────── Excel dışa aktarım ───────── */
+
   const exportExcel = () => {
     const wsData = [
       ["Ürün", "Adet", "Birim Fiyat", "KDV", "Tutar"],
@@ -462,11 +569,9 @@ export default function Teklifler() {
       ["Genel Toplam", genelToplam],
       ["Para Birimi", currency],
     ];
-
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     XLSX.utils.book_append_sheet(wb, ws, "Teklif");
-
     const wbout = XLSX.write(wb, { type: "array", bookType: "xlsx" });
     saveAs(
       new Blob([wbout], { type: "application/octet-stream" }),
@@ -474,45 +579,7 @@ export default function Teklifler() {
     );
   };
 
-  /* ☁️ PDF'yi Sunucuya Kaydet + Yeni Sekmede Aç */
-  const sunucuyaKaydet = async () => {
-    if (!cariId) return alert("Önce cari seçiniz.");
-
-    const pdf = await pdfOlustur(false); // base64 + fileName
-    if (!pdf) return;
-
-    try {
-      const res = await fetch("/api/teklif/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          pdfBase64: pdf.base64,
-          fileName: pdf.fileName,
-          cariId,
-          offerNumber,
-          currency,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        console.error("Kaydetme hatası:", data);
-        return alert("❌ PDF sunucuya kaydedilemedi: " + (data?.message || "Sunucu hatası"));
-      }
-
-      alert("✅ PDF sunucuya başarıyla kaydedildi!");
-
-      // ✅ Yeni sekmede aç (patron seçimi 😄)
-      if (data.filePath) {
-        window.open(`/api/teklif/view?name=${pdf.fileName}`, "_blank");
-      }
-    } catch (err) {
-      console.error("Sunucuya kaydetme hatası:", err);
-      alert("❌ Sunucuya kaydetme sırasında hata oluştu.");
-    }
-  };
-
-  /* 💱 Para Birimi Seçimi (Küçük component) */
+  // Para Birimi Seçimi (UI)
   const ParaBirimiSecimi = () => (
     <div className="mt-3">
       <label className="text-sm text-gray-600 mr-2">Para Birimi:</label>
@@ -528,61 +595,22 @@ export default function Teklifler() {
       </select>
     </div>
   );
+
+  /* ───────── RENDER ───────── */
+
   return (
     <RequireAuth>
       <div className="p-6 space-y-6">
-
-        {/* SAYFA BAŞLIĞI */}
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-orange-600">📄 Teklif Oluştur</h1>
-
-          {/* Üst Butonlar */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={kaydet}
-              className="px-4 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700"
-            >
-              💾 Kaydet
-            </button>
-
-            <button
-              onClick={() => pdfOlustur(true)}
-              className="px-4 py-2 rounded bg-slate-700 text-white hover:bg-slate-800"
-            >
-              🧾 PDF Oluştur
-            </button>
-
-            <button
-              onClick={mailGonder}
-              className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
-            >
-              ✉️ Mail Gönder
-            </button>
-
-            <button
-              onClick={exportExcel}
-              className="px-4 py-2 rounded bg-yellow-500 text-white hover:bg-yellow-600"
-            >
-              📊 Excel
-            </button>
-
-            <button
-              onClick={sunucuyaKaydet}
-              className="px-4 py-2 rounded bg-slate-600 text-white hover:bg-slate-700"
-            >
-              ☁️ Sunucuya Kaydet
-            </button>
-          </div>
-        </div>
+        <h1 className="text-2xl font-bold text-orange-600">📄 Teklif Oluştur</h1>
 
         {/* Cari + Para Birimi */}
-        <div className="flex flex-wrap gap-4 items-end">
+        <div className="flex flex-wrap gap-4 items-center">
           <div>
-            <label className="text-sm text-gray-600">Cari Seç</label>
+            <label className="text-sm text-gray-600 mr-2">Cari Seç:</label>
             <select
               value={cariId}
               onChange={(e) => setCariId(e.target.value)}
-              className="block border rounded px-3 py-2 min-w-[260px]"
+              className="border rounded px-3 py-2 min-w-[260px]"
             >
               <option value="">Seçiniz…</option>
               {cariler.map((c) => (
@@ -596,12 +624,17 @@ export default function Teklifler() {
           {ParaBirimiSecimi()}
         </div>
 
-        {/* Logo + Not */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+        {/* Logo ve Not */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="text-sm text-gray-600">Logo</label>
             <div className="flex items-center gap-2">
-              <input type="file" accept="image/*" onChange={handleLogoPick} />
+              <input
+                ref={logoRef}
+                type="file"
+                accept="image/*"
+                onChange={handleLogoPick}
+              />
               {logo && <span className="text-xs text-emerald-600">Seçildi</span>}
             </div>
           </div>
@@ -618,7 +651,7 @@ export default function Teklifler() {
           </div>
         </div>
 
-        {/* Teklif Satırları */}
+        {/* Satırlar */}
         <div className="mt-4">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-lg font-semibold">Teklif Satırları</h2>
@@ -642,7 +675,6 @@ export default function Teklifler() {
                   <th className="px-3 py-2"></th>
                 </tr>
               </thead>
-
               <tbody>
                 {lines.map((l, idx) => {
                   const satir = Number(l.adet || 0) * Number(l.fiyat || 0);
@@ -663,7 +695,6 @@ export default function Teklifler() {
                               </option>
                             ))}
                           </select>
-
                           <input
                             value={l.urunAd || ""}
                             onChange={(e) => updateLine(idx, "urunAd", e.target.value)}
@@ -672,7 +703,6 @@ export default function Teklifler() {
                           />
                         </div>
                       </td>
-
                       <td className="px-3 py-2 text-right">
                         <input
                           type="number"
@@ -683,7 +713,6 @@ export default function Teklifler() {
                           className="w-24 border rounded px-2 py-1 text-right"
                         />
                       </td>
-
                       <td className="px-3 py-2 text-right">
                         <input
                           type="number"
@@ -694,11 +723,10 @@ export default function Teklifler() {
                           className="w-28 border rounded px-2 py-1 text-right"
                         />
                       </td>
-
                       <td className="px-3 py-2 text-right">
                         <select
                           value={l.kdv}
-                          onChange={(e) => updateLine(idx, "kdv", Number(e.target.value))}
+                          onChange={(e) => updateLine(idx, "kdv", e.target.value)}
                           className="border rounded px-2 py-1"
                         >
                           {[0, 1, 8, 10, 20].map((k) => (
@@ -708,11 +736,9 @@ export default function Teklifler() {
                           ))}
                         </select>
                       </td>
-
                       <td className="px-3 py-2 text-right">
                         {fmt(satir + kdv)} {currency}
                       </td>
-
                       <td className="px-3 py-2 text-center">
                         <button
                           onClick={() => removeLine(idx)}
@@ -731,19 +757,52 @@ export default function Teklifler() {
 
         {/* Toplamlar */}
         <div className="text-right font-semibold text-lg">
-          Ara Toplam: {fmt(araToplam)} {currency} &nbsp; • &nbsp;
-          KDV: {fmt(kdvTutar)} {currency} &nbsp; • &nbsp;
+          Ara Toplam: {fmt(araToplam)} {currency} &nbsp;•&nbsp; KDV: {fmt(kdvTutar)}{" "}
+          {currency} &nbsp;•&nbsp;
           <span className="text-orange-600">
             Genel Toplam: {fmt(genelToplam)} {currency}
           </span>
         </div>
 
-        {/* Taslaklar */}
+        {/* İşlem Butonları */}
+        <div className="flex flex-wrap justify-end gap-2 mt-4">
+          <button
+            onClick={kaydet}
+            className="px-4 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700"
+          >
+            💾 Kaydet
+          </button>
+          <button
+            onClick={() => pdfOlustur(true)}
+            className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
+          >
+            🧾 PDF Oluştur
+          </button>
+          <button
+            onClick={sunucuyaKaydet}
+            className="px-4 py-2 rounded bg-slate-600 text-white hover:bg-slate-700"
+          >
+            ☁️ Sunucuya Kaydet
+          </button>
+          <button
+            onClick={mailGonder}
+            className="px-4 py-2 rounded bg-purple-600 text-white hover:bg-purple-700"
+          >
+            ✉️ Mail Gönder
+          </button>
+          <button
+            onClick={exportExcel}
+            className="px-4 py-2 rounded bg-yellow-500 text-white hover:bg-yellow-600"
+          >
+            📊 Excel Dışa Aktar
+          </button>
+        </div>
+
+        {/* Taslaklar / Revize */}
         <div className="bg-white rounded-xl p-4 shadow border border-gray-100 mt-6">
           <div className="font-semibold mb-2">🗂️ Kaydedilmiş Teklifler</div>
-
           {teklifler.length === 0 ? (
-            <div className="text-sm text-gray-500">Henüz kayıt yok.</div>
+            <div className="text-sm text-gray-500">Henüz kayıtlı teklif yok.</div>
           ) : (
             <table className="w-full text-sm">
               <thead className="bg-orange-100">
@@ -754,35 +813,47 @@ export default function Teklifler() {
                   <th className="p-2 text-left">Teklif No</th>
                   <th className="p-2 text-right">Satır</th>
                   <th className="p-2 text-right">Genel Toplam</th>
+                  <th className="p-2 text-right">İşlem</th>
                 </tr>
               </thead>
-
               <tbody>
                 {teklifler.map((t) => {
                   const cc = cariler.find((c) => c._id === t.cariId);
-                  const ara = t.lines.reduce(
+                  const ara = t.lines?.reduce(
                     (sum, l) => sum + Number(l.adet || 0) * Number(l.fiyat || 0),
                     0
-                  );
-                  const kdv = t.lines.reduce(
+                  ) || 0;
+                  const kdv = t.lines?.reduce(
                     (sum, l) =>
-                      sum + ((Number(l.adet || 0) * Number(l.fiyat || 0)) * Number(l.kdv || 0)) / 100,
+                      sum +
+                      ((Number(l.adet || 0) * Number(l.fiyat || 0)) *
+                        Number(l.kdv || 0)) /
+                        100,
                     0
-                  );
-
+                  ) || 0;
                   return (
-                    <tr key={t._id || t.id} className="border-b hover:bg-slate-50">
+                    <tr key={t._id || t.id || t.number} className="border-b hover:bg-slate-50">
                       <td className="p-2">
                         {t.createdAt
                           ? new Date(t.createdAt).toLocaleString("tr-TR")
+                          : t.tarih
+                          ? new Date(t.tarih).toLocaleString("tr-TR")
                           : "-"}
                       </td>
-                      <td className="p-2">{cc?.ad || "-"}</td>
-                      <td className="p-2">{t.status || "Bekliyor"}</td>
-                      <td className="p-2">{t.number || "-"}</td>
-                      <td className="p-2 text-right">{t.lines.length}</td>
+                      <td className="p-2">{cc?.ad || t.cariAd || "-"}</td>
+                      <td className="p-2">{t.status || "Beklemede"}</td>
+                      <td className="p-2">{t.number || t.offerNumber || "-"}</td>
+                      <td className="p-2 text-right">{t.lines?.length || 0}</td>
                       <td className="p-2 text-right">
                         {fmt(ara + kdv)} {t.currency || "TL"}
+                      </td>
+                      <td className="p-2 text-right">
+                        <button
+                          onClick={() => loadTeklifToForm(t)}
+                          className="px-2 py-1 text-xs rounded bg-sky-600 text-white hover:bg-sky-700"
+                        >
+                          🔁 Revize / Yükle
+                        </button>
                       </td>
                     </tr>
                   );
