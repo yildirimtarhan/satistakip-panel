@@ -1,4 +1,14 @@
-/* Cari ekranı için input görünürlüğünü düzeltme */
+/* ==========================
+   TAILWIND KÖK DIREKTIFLERI
+   Bunlar olmadan proje görünmez!
+========================== */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================
+   FORM INPUT TASARIMI
+========================== */
 .input {
   width: 100%;
   padding: 10px 12px;
@@ -7,6 +17,7 @@
   border-radius: 8px;
   font-size: 14px;
   color: #111827;
+  transition: all 0.2s ease;
 }
 
 .input::placeholder {
@@ -20,7 +31,34 @@
   box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.2);
 }
 
-/* Dropdownlar için de görünürlük */
+/* Dropdownlar */
 select.input {
   background-color: #f9fafb;
+}
+
+/* ==========================
+   BUTONLAR
+========================== */
+.btn-primary {
+  background: #f97316;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 8px;
+  transition: 0.2s;
+}
+
+.btn-primary:hover {
+  background: #ea580c;
+}
+
+.btn-gray {
+  background: #e5e7eb;
+  color: #374151;
+  padding: 8px 16px;
+  border-radius: 8px;
+  transition: 0.2s;
+}
+
+.btn-gray:hover {
+  background: #d1d5db;
 }
