@@ -33,7 +33,6 @@ export default async function handler(req, res) {
         .sort({ createdAt: -1 })
         .toArray();
 
-      // Varsayılan alanlar (balance vs.) yoksa 0 ata
       const withDefaults = (list || []).map((c) => ({
         ...c,
         balance: Number(c.balance || 0),
@@ -67,7 +66,17 @@ export default async function handler(req, res) {
         ilce: body.ilce || "",
         postaKodu: body.postaKodu || "",
         profileUrl: body.profileUrl || "",
-        // Bakiye alanları (transactions API güncel tutar ama başlangıç değerleri 0 olsun)
+
+        // 🆕 PAZARYERİ MÜŞTERİ ID’LERİ
+        trendyolCustomerId: body.trendyolCustomerId || "",
+        hbCustomerId: body.hbCustomerId || "",
+        amazonCustomerId: body.amazonCustomerId || "",
+        n11CustomerId: body.n11CustomerId || "",
+        pazaramaCustomerId: body.pazaramaCustomerId || "",
+        pttAvmCustomerId: body.pttAvmCustomerId || "",
+        idefixCustomerId: body.idefixCustomerId || "",
+
+        // Muhasebe alanları
         balance: 0,
         totalSales: 0,
         totalPurchases: 0,
@@ -83,7 +92,6 @@ export default async function handler(req, res) {
 
     // =======================
     // PUT  -> Cari güncelle
-    // /api/cari?cariId=<id>
     // =======================
     if (req.method === "PUT") {
       const { cariId } = req.query;
@@ -97,11 +105,8 @@ export default async function handler(req, res) {
       }
 
       const body = req.body || {};
-      // userId gibi hassas alanların değişmesini engelle
       delete body.userId;
       delete body.createdAt;
-      // Bakiye alanları UI’dan yanlışlıkla sıfırlanmasın diye opsiyonel: istersen yorumu kaldır.
-      // delete body.balance; delete body.totalSales; delete body.totalPurchases;
 
       const updateDoc = {
         ...(body.ad !== undefined && { ad: body.ad }),
@@ -117,9 +122,20 @@ export default async function handler(req, res) {
         ...(body.ilce !== undefined && { ilce: body.ilce }),
         ...(body.postaKodu !== undefined && { postaKodu: body.postaKodu }),
         ...(body.profileUrl !== undefined && { profileUrl: body.profileUrl }),
+
+        // 🆕 Güncellenebilir pazaryeri ID’leri
+        ...(body.trendyolCustomerId !== undefined && { trendyolCustomerId: body.trendyolCustomerId }),
+        ...(body.hbCustomerId !== undefined && { hbCustomerId: body.hbCustomerId }),
+        ...(body.amazonCustomerId !== undefined && { amazonCustomerId: body.amazonCustomerId }),
+        ...(body.n11CustomerId !== undefined && { n11CustomerId: body.n11CustomerId }),
+        ...(body.pazaramaCustomerId !== undefined && { pazaramaCustomerId: body.pazaramaCustomerId }),
+        ...(body.pttAvmCustomerId !== undefined && { pttAvmCustomerId: body.pttAvmCustomerId }),
+        ...(body.idefixCustomerId !== undefined && { idefixCustomerId: body.idefixCustomerId }),
+
         ...(body.balance !== undefined && { balance: Number(body.balance) }),
         ...(body.totalSales !== undefined && { totalSales: Number(body.totalSales) }),
         ...(body.totalPurchases !== undefined && { totalPurchases: Number(body.totalPurchases) }),
+
         updatedAt: new Date(),
       };
 
@@ -137,7 +153,6 @@ export default async function handler(req, res) {
 
     // =======================
     // DELETE -> Cari sil
-    // /api/cari?cariId=<id>
     // =======================
     if (req.method === "DELETE") {
       const { cariId } = req.query;
@@ -158,11 +173,9 @@ export default async function handler(req, res) {
       return res.status(200).json({ message: "✅ Cari silindi" });
     }
 
-    // Desteklenmeyen method
     return res.status(405).json({ message: "Yalnızca GET, POST, PUT, DELETE desteklenir" });
   } catch (err) {
     console.error("🔥 Cari API hatası:", err);
-    // JWT özel hata mesajı
     if (err?.name === "JsonWebTokenError" || err?.name === "TokenExpiredError") {
       return res.status(401).json({ message: "Geçersiz veya süresi dolmuş token" });
     }

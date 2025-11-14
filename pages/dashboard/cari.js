@@ -20,7 +20,7 @@ export default function Cariler() {
     email: "",
     vergiTipi: "TCKN",
     vergiNo: "",
-    vergiDairesi: "",       // 🆕 Vergi Dairesi
+    vergiDairesi: "", // 🆕 Vergi Dairesi
     adres: "",
     il: "",
     ilce: "",
@@ -28,15 +28,16 @@ export default function Cariler() {
     paraBirimi: "TRY",
     trendyolCustomerId: "",
     hbCustomerId: "",
-    n11CustomerId: "",       // 🆕 N11
-    amazonCustomerId: "",    // 🆕 Amazon
-    pttCustomerId: "",       // 🆕 PTT AVM
-    idefixCustomerId: "",    // 🆕 İdefix / D&R
-    ciceksepetiCustomerId: ""// 🆕 ÇiçekSepeti
+    n11CustomerId: "", // 🆕 N11
+    amazonCustomerId: "", // 🆕 Amazon
+    pttCustomerId: "", // 🆕 PTT AVM
+    idefixCustomerId: "", // 🆕 İdefix / D&R
+    ciceksepetiCustomerId: "", // 🆕 ÇiçekSepeti
   };
 
   const [form, setForm] = useState(emptyForm);
 
+  // 🔁 Cari listesi çek
   const fetchCariler = async () => {
     try {
       const res = await fetch("/api/cari", {
@@ -102,7 +103,7 @@ export default function Cariler() {
     }
   };
 
-  // ✅ Excel Export
+  // 📤 Excel Export
   const exportExcel = () => {
     const ws = XLSX.utils.json_to_sheet(cariler);
     const wb = XLSX.utils.book_new();
@@ -111,7 +112,7 @@ export default function Cariler() {
     saveAs(new Blob([excelBuffer]), "cariler.xlsx");
   };
 
-  // ✅ Excel Import
+  // 📥 Excel Import
   const importExcel = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -140,6 +141,7 @@ export default function Cariler() {
     reader.readAsBinaryString(file);
   };
 
+  // ☎ Telefonu normalize et (WhatsApp için)
   const normalizePhone = (tel) => {
     if (!tel) return "";
     const digits = String(tel).replace(/\D/g, "");
@@ -350,7 +352,7 @@ export default function Cariler() {
         </form>
       )}
 
-      {/* ✅ LISTE */}
+      {/* ✅ LİSTE */}
       {activeTab === "liste" && (
         <div className="bg-white rounded-xl shadow overflow-x-auto">
           <table className="w-full text-sm">
@@ -398,9 +400,7 @@ export default function Cariler() {
                     </td>
                     <td className="px-2 py-1">
                       {c.vergiTipi}:{c.vergiNo}
-                      {c.vergiDairesi
-                        ? ` (${c.vergiDairesi})`
-                        : ""}
+                      {c.vergiDairesi ? ` (${c.vergiDairesi})` : ""}
                     </td>
                     <td className="px-2 py-1">
                       {c.trendyolCustomerId || "-"}
@@ -501,43 +501,93 @@ export default function Cariler() {
 
       {/* ✅ Cari Detay Modal */}
       {detail && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-xl w-96 shadow-lg space-y-2">
-            <h2 className="font-bold text-lg">👤 {detail.ad}</h2>
-            <p>Tür: {detail.tur}</p>
-            <p>Tel: {detail.telefon}</p>
-            <p>Email: {detail.email}</p>
-            <p>
-              Vergi: {detail.vergiTipi}:{detail.vergiNo}{" "}
-              {detail.vergiDairesi
-                ? `(${detail.vergiDairesi})`
-                : ""}
-            </p>
-            <p>Adres: {detail.adres}</p>
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-2xl w-[420px] shadow-xl space-y-3 border border-slate-200">
+            {/* Başlık */}
+            <h2 className="font-bold text-xl text-orange-600 text-center">
+              👤 {detail.ad}
+            </h2>
 
-            <div className="mt-2 text-sm text-slate-600 space-y-1">
+            {/* Temel bilgiler */}
+            <div className="space-y-1 text-sm text-slate-700">
               <p>
-                Trendyol ID: {detail.trendyolCustomerId || "-"}
+                <strong>Tür:</strong> {detail.tur}
               </p>
+
               <p>
-                Hepsiburada ID: {detail.hbCustomerId || "-"}
+                <strong>Telefon:</strong> {detail.telefon || "-"}{" "}
+                {normalizePhone(detail.telefon) && (
+                  <a
+                    href={`https://wa.me/90${normalizePhone(
+                      detail.telefon
+                    )}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-green-600 font-semibold ml-1"
+                  >
+                    WhatsApp
+                  </a>
+                )}
               </p>
-              <p>N11 ID: {detail.n11CustomerId || "-"}</p>
-              <p>Amazon ID: {detail.amazonCustomerId || "-"}</p>
-              <p>PTT AVM ID: {detail.pttCustomerId || "-"}</p>
-              <p>İdefix ID: {detail.idefixCustomerId || "-"}</p>
+
               <p>
-                ÇiçekSepeti ID:{" "}
-                {detail.ciceksepetiCustomerId || "-"}
+                <strong>Email:</strong> {detail.email || "-"}
+              </p>
+
+              <p>
+                <strong>Vergi:</strong> {detail.vergiTipi}:{detail.vergiNo}{" "}
+                {detail.vergiDairesi && (
+                  <span className="text-slate-500">
+                    ({detail.vergiDairesi})
+                  </span>
+                )}
+              </p>
+
+              <p>
+                <strong>Adres:</strong> {detail.adres || "-"}
               </p>
             </div>
 
-            <div className="flex gap-2 mt-4">
+            {/* Pazaryeri ID’leri */}
+            <div className="mt-3 border-t pt-3 text-sm text-slate-700 space-y-1">
+              <h3 className="font-semibold text-slate-800">
+                🛒 Pazaryeri ID’leri
+              </h3>
+
+              <p>Trendyol: {detail.trendyolCustomerId || "-"}</p>
+              <p>Hepsiburada: {detail.hbCustomerId || "-"}</p>
+              <p>N11: {detail.n11CustomerId || "-"}</p>
+              <p>Amazon: {detail.amazonCustomerId || "-"}</p>
+              <p>PTT AVM: {detail.pttCustomerId || "-"}</p>
+              <p>İdefix / D&R: {detail.idefixCustomerId || "-"}</p>
+              <p>
+                ÇiçekSepeti: {detail.ciceksepetiCustomerId || "-"}
+              </p>
+            </div>
+
+            {/* Bakiye */}
+            <div className="mt-3 border-t pt-3">
+              <p className="text-sm font-semibold">
+                Bakiye:{" "}
+                <span
+                  className={`font-bold ${
+                    (detail.bakiye || 0) > 0
+                      ? "text-green-600"
+                      : "text-red-600"
+                  }`}
+                >
+                  ₺{(detail.bakiye || 0).toLocaleString("tr-TR")}
+                </span>
+              </p>
+            </div>
+
+            {/* Butonlar */}
+            <div className="flex gap-3 mt-4">
               <Link
                 href={`/dashboard/cari-ekstre?cariId=${detail._id}`}
                 className="btn-primary w-full text-center"
               >
-                📄 Ekstre
+                📄 Ekstre Görüntüle
               </Link>
               <button
                 className="btn-gray w-full"

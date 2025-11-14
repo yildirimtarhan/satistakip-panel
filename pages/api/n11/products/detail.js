@@ -1,63 +1,58 @@
-// 📌 /pages/api/n11/products/detail.js
 import axios from "axios";
 import xml2js from "xml2js";
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ message: "Sadece POST destekleniyor" });
+  if (req.method !== "GET") {
+    return res.status(405).json({ message: "Sadece GET destekleniyor" });
   }
 
+  const { productId } = req.query;
+
+  if (!productId) {
+    return res.status(400).json({ message: "productId eksik" });
+  }
+
+  const { N11_APP_KEY, N11_APP_SECRET } = process.env;
+
+  const xml = `<?xml version="1.0" encoding="utf-8"?>
+  <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:sch="http://www.n11.com/ws/schemas">
+    <soapenv:Header/>
+    <soapenv:Body>
+      <sch:GetProductByProductIdRequest>
+        <auth>
+          <appKey>${N11_APP_KEY}</appKey>
+          <appSecret>${N11_APP_SECRET}</appSecret>
+        </auth>
+        <productId>${productId}</productId>
+      </sch:GetProductByProductIdRequest>
+    </soapenv:Body>
+  </soapenv:Envelope>`;
+
   try {
-    const { sellerCode } = req.body;
-
-    if (!sellerCode) {
-      return res.status(400).json({ success: false, message: "sellerCode gerekli" });
-    }
-
-    const appKey = process.env.N11_API_KEY;
-    const appSecret = process.env.N11_API_SECRET;
-    const baseUrl = process.env.N11_BASE_URL || "https://api.n11.com/ws";
-
-    const xmlBody = `
-      <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-                        xmlns:sch="http://www.n11.com/ws/schemas">
-        <soapenv:Header/>
-        <soapenv:Body>
-          <sch:GetProductBySellerCodeRequest>
-            <auth>
-              <appKey>${appKey}</appKey>
-              <appSecret>${appSecret}</appSecret>
-            </auth>
-            <sellerCode>${sellerCode}</sellerCode>
-          </sch:GetProductBySellerCodeRequest>
-        </soapenv:Body>
-      </soapenv:Envelope>
-    `;
-
-    const response = await axios.post(`${baseUrl}/ProductService.wsdl`, xmlBody, {
-      headers: {
-        "Content-Type": "text/xml;charset=UTF-8",
-        SOAPAction: "GetProductBySellerCodeRequest",
-      },
-    });
+    const { data } = await axios.post(
+      "https://api.n11.com/ws/ProductService.wsdl",
+      xml,
+      { headers: { "Content-Type": "text/xml; charset=utf-8" } }
+    );
 
     const parser = new xml2js.Parser({ explicitArray: false });
-    const result = await parser.parseStringPromise(response.data);
+    const json = await parser.parseStringPromise(data);
 
-    const productData =
-      result?.["soapenv:Envelope"]?.["soapenv:Body"]?.["ns3:GetProductBySellerCodeResponse"]?.product;
+    const detail =
+      json["soapenv:Envelope"]?.["soapenv:Body"]?.["ns3:GetProductByProductIdResponse"]?.product;
 
-    return res.status(200).json({
+    if (!detail) {
+      return res.status(404).json({ message: "Ürün bulunamadı" });
+    }
+
+    res.status(200).json({
       success: true,
-      message: "Ürün başarıyla bulundu",
-      product: productData || null,
+      productId,
+      detail,
     });
-  } catch (error) {
-    console.error("N11 ürün detay hatası:", error.response?.data || error.message);
-    return res.status(500).json({
-      success: false,
-      message: "N11 ürün detay hatası",
-      error: error.response?.data || error.message,
-    });
+  } catch (err) {
+    console.error("N11 detay hatası:", err.message);
+    return res.status(500).json({ message: "N11 ürün detay hatası", error: err.message });
   }
 }
