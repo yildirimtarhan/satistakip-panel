@@ -6,10 +6,10 @@ export default async function handler(req, res) {
     return res.status(405).json({ message: "Sadece GET destekleniyor" });
   }
 
-  const { productId } = req.query;
+  const { sellerProductCode } = req.query;
 
-  if (!productId) {
-    return res.status(400).json({ message: "productId eksik" });
+  if (!sellerProductCode) {
+    return res.status(400).json({ message: "sellerProductCode eksik" });
   }
 
   const { N11_APP_KEY, N11_APP_SECRET } = process.env;
@@ -19,13 +19,13 @@ export default async function handler(req, res) {
     xmlns:sch="http://www.n11.com/ws/schemas">
     <soapenv:Header/>
     <soapenv:Body>
-      <sch:GetProductByProductIdRequest>
+      <sch:GetProductBySellerCodeRequest>
         <auth>
           <appKey>${N11_APP_KEY}</appKey>
           <appSecret>${N11_APP_SECRET}</appSecret>
         </auth>
-        <productId>${productId}</productId>
-      </sch:GetProductByProductIdRequest>
+        <sellerProductCode>${sellerProductCode}</sellerProductCode>
+      </sch:GetProductBySellerCodeRequest>
     </soapenv:Body>
   </soapenv:Envelope>`;
 
@@ -39,20 +39,20 @@ export default async function handler(req, res) {
     const parser = new xml2js.Parser({ explicitArray: false });
     const json = await parser.parseStringPromise(data);
 
-    const detail =
-      json["soapenv:Envelope"]?.["soapenv:Body"]?.["ns3:GetProductByProductIdResponse"]?.product;
+    const product =
+      json["soapenv:Envelope"]?.["soapenv:Body"]?.["ns3:GetProductBySellerCodeResponse"]?.product;
 
-    if (!detail) {
+    if (!product) {
       return res.status(404).json({ message: "Ürün bulunamadı" });
     }
 
     res.status(200).json({
       success: true,
-      productId,
-      detail,
+      sellerProductCode,
+      product,
     });
   } catch (err) {
-    console.error("N11 detay hatası:", err.message);
+    console.error("N11 ürün detay hatası:", err.message);
     return res.status(500).json({ message: "N11 ürün detay hatası", error: err.message });
   }
 }
