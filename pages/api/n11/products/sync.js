@@ -1,0 +1,82 @@
+import axios from "axios";
+import xml2js from "xml2js";
+import dbConnect from "@/lib/mongodb";
+import N11Product from "@/models/N11Product";
+
+export default async function handler(req, res) {
+  if (req.method !== "GET") {
+    return res.status(405).json({ message: "Only GET allowed" });
+  }
+
+  await dbConnect();
+
+  try {
+    const appKey = process.env.N11_APP_KEY;
+    const appSecret = process.env.N11_APP_SECRET;
+
+    const xmlBody = `
+      <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+        xmlns:sch="http://www.n11.com/ws/schemas">
+        <soapenv:Header/>
+        <soapenv:Body>
+          <sch:GetProductListRequest>
+            <auth>
+              <appKey>${appKey}</appKey>
+              <appSecret>${appSecret}</appSecret>
+            </auth>
+            <pagingData>
+              <currentPage>0</currentPage>
+              <pageSize>100</pageSize>
+            </pagingData>
+          </sch:GetProductListRequest>
+        </soapenv:Body>
+      </soapenv:Envelope>
+    `;
+
+    const response = await axios.post(
+      "https://api.n11.com/ws/ProductService.wsdl",
+      xmlBody,
+      { headers: { "Content-Type": "text/xml;charset=UTF-8" } }
+    );
+
+    const parser = new xml2js.Parser({ explicitArray: false });
+    const parsed = await parser.parseStringPromise(response.data);
+
+    const productList =
+      parsed["soapenv:Envelope"]?.["soapenv:Body"]?.["ns3:GetProductListResponse"]
+        ?.products?.product || [];
+
+    let saved = 0;
+
+    for (const p of productList) {
+      await N11Product.findOneAndUpdate(
+        { sellerProductCode: p.sellerStockCode },
+        {
+          sellerProductCode: p.sellerStockCode,
+          productId: p.productId,
+          title: p.title,
+          price: p.displayPrice,
+          stock: p.stockItems?.stockItem?.quantity,
+          approvalStatus: p.approvalStatus,
+          brand: p.brand,
+          categoryFullPath: p.categoryName,
+          imageUrls: p.images?.image?.map((x) => x.url) || [],
+          raw: p,
+        },
+        { upsert: true }
+      );
+
+      saved++;
+    }
+
+    return res.json({
+      success: true,
+      message: "N11 ürünleri başarıyla senkron edildi",
+      count: saved,
+    });
+
+  } catch (error) {
+    console.error("N11 Sync Error:", error.message);
+    res.status(500).json({ success: false, message: "N11 Sync Error", error: error.message });
+  }
+}
