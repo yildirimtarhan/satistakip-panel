@@ -1,44 +1,51 @@
+// 📁 /pages/api/n11/test.js
 import axios from "axios";
 
 export default async function handler(req, res) {
-  const { N11_API_KEY, N11_API_SECRET } = process.env;
-  const url = "https://api.n11.com/ws/AuthenticationService.wsdl";
-
   try {
-    const xmlRequest = `
+    const { N11_APP_KEY, N11_APP_SECRET } = process.env;
+
+    const xml = `
       <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-                        xmlns:sch="http://www.n11.com/ws/schemas">
+        xmlns:sch="http://www.n11.com/ws/schemas">
         <soapenv:Header/>
         <soapenv:Body>
-          <sch:AuthenticationRequest>
-            <appKey>${N11_API_KEY}</appKey>
-            <appSecret>${N11_API_SECRET}</appSecret>
-          </sch:AuthenticationRequest>
+          <sch:GetProductListRequest>
+            <auth>
+              <appKey>${N11_APP_KEY}</appKey>
+              <appSecret>${N11_APP_SECRET}</appSecret>
+            </auth>
+            <pagingData>
+              <currentPage>0</currentPage>
+              <pageSize>1</pageSize>
+            </pagingData>
+          </sch:GetProductListRequest>
         </soapenv:Body>
       </soapenv:Envelope>
     `;
 
-    const { data } = await axios.post(url, xmlRequest, {
-      headers: { "Content-Type": "text/xml;charset=UTF-8" },
+    // ‼️ DÜZELTİLMİŞ URL
+    const url = "https://api.n11.com/ws/ProductService";
+
+    const response = await axios.post(url, xml, {
+      headers: {
+        "Content-Type": "text/xml;charset=UTF-8",
+        SOAPAction: "GetProductListRequest",
+      },
+      timeout: 20000,
     });
 
-    if (data.includes("<status>success</status>")) {
-      return res.status(200).json({
-        success: true,
-        message: "✅ API kimlik doğrulaması başarılı!",
-      });
-    } else {
-      return res.status(401).json({
-        success: false,
-        message: "❌ API kimlik doğrulaması başarısız!",
-        raw: data.slice(0, 300),
-      });
-    }
-  } catch (error) {
+    return res.status(200).json({
+      success: true,
+      message: "Bağlantı OK",
+      raw: response.data,
+    });
+  } catch (err) {
+    console.error("N11 test hatası:", err.message);
     return res.status(500).json({
       success: false,
       message: "Bağlantı hatası",
-      error: error.message,
+      error: err.message,
     });
   }
 }
