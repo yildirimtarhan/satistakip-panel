@@ -74,10 +74,21 @@ export default async function handler(req, res) {
     const parser = new xml2js.Parser({ explicitArray: false });
     const parsed = await parser.parseStringPromise(response.data);
 
-    // XML PATH — DOĞRU YOL
-    const productList =
+    // ============================
+    //   ÜRÜN LİSTESİ OKUMA
+    // ============================
+    let productList =
       parsed["SOAP-ENV:Envelope"]?.["SOAP-ENV:Body"]?.["ns3:GetProductListResponse"]
-        ?.products?.product || [];
+        ?.products?.product;
+
+    if (!productList) {
+      productList = [];
+    }
+
+    // Tek ürün varsa → array'e çevir
+    if (!Array.isArray(productList)) {
+      productList = [productList];
+    }
 
     let saved = 0;
 
@@ -118,6 +129,7 @@ export default async function handler(req, res) {
       message: "N11 ürünleri başarıyla senkron edildi",
       count: saved
     });
+
   } catch (error) {
     console.error("N11 Sync Error:", error.message);
     res.status(500).json({
