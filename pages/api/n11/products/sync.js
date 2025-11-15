@@ -9,10 +9,8 @@ export default async function handler(req, res) {
   }
 
   try {
+    // Mongo bağlantısı
     await connectToDatabase();
-
-    const appKey = process.env.N11_APP_KEY;
-    const appSecret = process.env.N11_APP_SECRET;
 
     const xmlBody = `
       <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
@@ -21,8 +19,8 @@ export default async function handler(req, res) {
         <soapenv:Body>
           <sch:GetProductListRequest>
             <auth>
-              <appKey>${appKey}</appKey>
-              <appSecret>${appSecret}</appSecret>
+              <appKey>${process.env.N11_APP_KEY}</appKey>
+              <appSecret>${process.env.N11_APP_SECRET}</appSecret>
             </auth>
             <pagingData>
               <currentPage>0</currentPage>
@@ -39,35 +37,48 @@ export default async function handler(req, res) {
       { headers: { "Content-Type": "text/xml;charset=UTF-8" } }
     );
 
+    // XML → JSON parser
     const parser = new xml2js.Parser({ explicitArray: false });
     const parsed = await parser.parseStringPromise(response.data);
 
-    // ---- Namespace bağımsız çözüm ----
+    // Body al
     const body = parsed["soapenv:Envelope"]?.["soapenv:Body"];
     if (!body) {
-      return res.json({ success: false, message: "SOAP Body bulunamadı" });
+      return res.json({ success: false, message: "Response Body bulunamadı" });
     }
 
-    // Body içindeki hangi key ürün listesi içeriyorsa onu buluyoruz
-    const responseNode = Object.values(body).find((x) =>
-      x?.products || x?.productList || x?.product
+    // Namespace fark etmeksizin response’u bul
+    const responseKey = Object.keys(body).find((k) =>
+      k.toLowerCase().includes("getproductlistresponse")
     );
 
-    const productList = responseNode?.products?.product || [];
+    if (!responseKey) {
+      return res.json({
+        success: true,
+        count: 0,
+        products: [],
+        message: "N11 ürün response bulunamadı (namespace farkı)",
+      });
+    }
+
+    // Ürün listesi
+    const productList = body[responseKey]?.products?.product || [];
 
     if (!productList || productList.length === 0) {
       return res.json({
         success: true,
         count: 0,
         products: [],
-        message: "N11 ürünü bulunamadı."
+        message: "N11 ürünü bulunamadı.",
       });
     }
 
+    // Eğer tek ürünse array'e çevir
     const list = Array.isArray(productList) ? productList : [productList];
 
     let saved = 0;
 
+    // MongoDB'ye kaydet
     for (const p of list) {
       await N11Product.findOneAndUpdate(
         { sellerProductCode: p.sellerStockCode },
@@ -77,25 +88,27 @@ export default async function handler(req, res) {
           title: p.title,
           price: p.displayPrice,
           stock: p.stockItems?.stockItem?.quantity,
+          approvalStatus: p.approvalStatus,
           brand: p.brand,
-          categoryFullPath: p.categoryName,
-          imageUrls: p.images?.image?.map((img) => img.url) || [],
           raw: p
         },
         { upsert: true }
       );
-
       saved++;
     }
 
     return res.json({
       success: true,
-      message: "N11 ürünleri başarıyla senkron edildi",
+      message: "N11 ürün senkron tamamlandı",
       count: saved
     });
 
-  } catch (error) {
-    console.error("N11 Sync Error:", error.message);
-    return res.status(500).json({ success: false, message: "N11 Sync Error", error: error.message });
+  } catch (err) {
+    console.error("N11 Sync Error:", err.message);
+    return res.status(500).json({
+      success: false,
+      message: "N11 Sync Error",
+      error: err.message,
+    });
   }
 }
