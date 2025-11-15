@@ -48,39 +48,21 @@ export default function Sidebar() {
           Pazaryerleri
         </div>
 
-        {/* ✅ Hepsiburada */}
-        <MenuItem
-          href="/dashboard/hepsiburada/orders"
-          icon="🛍️"
-          label="Hepsiburada Siparişleri"
-        />
+        <MenuItem href="/dashboard/hepsiburada/orders" icon="🛍️" label="Hepsiburada Siparişleri" />
+        <MenuItem href="/dashboard/trendyol/orders" icon="🧾" label="Trendyol Siparişleri" />
+        <MenuItem href="/dashboard/pazaryeri/buybox" icon="📊" label="Trendyol BuyBox" />
+        <MenuItem href="/dashboard/n11/orders" icon="🛒" label="N11 Siparişleri" />
+        <MenuItem href="/dashboard/n11/settings" icon="🔑" label="N11 API Ayarları" />
 
-        {/* ✅ Trendyol Orders */}
-        <MenuItem
-          href="/dashboard/trendyol/orders"
-          icon="🧾"
-          label="Trendyol Siparişleri"
-        />
+        {/* 📄 E-Fatura */}
+        <div className="mt-3 mb-1 px-3 text-xs font-bold text-slate-500 uppercase">
+          E-Belge
+        </div>
 
-        {/* ✅ Trendyol BuyBox */}
         <MenuItem
-          href="/dashboard/pazaryeri/buybox"
-          icon="📊"
-          label="Trendyol BuyBox"
-        />
-
-        {/* ✅ N11 Orders */}
-        <MenuItem
-          href="/dashboard/n11/orders"
-          icon="🛒"
-          label="N11 Siparişleri"
-        />
-
-        {/* ✅ N11 API Settings */}
-        <MenuItem
-          href="/dashboard/n11/settings"
-          icon="🔑"
-          label="N11 API Ayarları"
+          href="/dashboard/efatura"
+          icon="📄"
+          label="E-Fatura Paneli"
         />
 
         {/* Ticari */}
@@ -98,7 +80,7 @@ export default function Sidebar() {
         <MenuItem href="/dashboard/raporlar" icon="📈" label="Genel Raporlar" />
       </nav>
 
-      {/* ✅ Logout Button */}
+      {/* Logout */}
       <button
         onClick={logout}
         className="mt-4 bg-red-500 text-white px-3 py-2 rounded-lg hover:bg-red-600"
