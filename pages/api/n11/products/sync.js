@@ -1,51 +1,27 @@
 import axios from "axios";
 import xml2js from "xml2js";
 import { connectToDatabase } from "@/lib/mongodb";
-import mongoose from "mongoose";
+import N11Product from "@/models/N11Product";
 
-// =====================
-// MODEL
-// =====================
-const N11ProductSchema = new mongoose.Schema(
-  {
-    productId: String,
-    sellerProductCode: String,
-    title: String,
-    price: Number,
-    stock: Number,
-    approvalStatus: String,
-    brand: String,
-    categoryFullPath: String,
-    imageUrls: [String],
-    raw: Object
-  },
-  { timestamps: true }
-);
-
-const N11Product =
-  mongoose.models.N11Product ||
-  mongoose.model("N11Product", N11ProductSchema);
-
-// =====================
-// HANDLER
-// =====================
 export default async function handler(req, res) {
   if (req.method !== "GET") {
     return res.status(405).json({ message: "Only GET allowed" });
   }
 
   try {
-    // MongoDB bağlantısı
-    await connectToDatabase();
+    const { db } = await connectToDatabase();
 
     const appKey = process.env.N11_APP_KEY;
     const appSecret = process.env.N11_APP_SECRET;
 
     if (!appKey || !appSecret) {
-      return res.status(400).json({ message: "N11 API bilgileri eksik" });
+      return res.status(400).json({
+        success: false,
+        message: "N11 API bilgileri eksik (.env dosyasını kontrol et)",
+      });
     }
 
-    // XML REQUEST
+    // --- SOAP XML Body ---
     const xmlBody = `
       <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
         xmlns:sch="http://www.n11.com/ws/schemas">
@@ -74,68 +50,59 @@ export default async function handler(req, res) {
     const parser = new xml2js.Parser({ explicitArray: false });
     const parsed = await parser.parseStringPromise(response.data);
 
-    // ============================
-    //   ÜRÜN LİSTESİ OKUMA
-    // ============================
-    let productList =
-      parsed["SOAP-ENV:Envelope"]?.["SOAP-ENV:Body"]?.["ns3:GetProductListResponse"]
+    const productList =
+      parsed["soapenv:Envelope"]?.["soapenv:Body"]?.["ns3:GetProductListResponse"]
         ?.products?.product;
 
     if (!productList) {
-      productList = [];
+      return res.json({
+        success: true,
+        count: 0,
+        products: [],
+        message: "N11 ürünü bulunamadı.",
+      });
     }
 
-    // Tek ürün varsa → array'e çevir
-    if (!Array.isArray(productList)) {
-      productList = [productList];
-    }
-
+    const list = Array.isArray(productList) ? productList : [productList];
     let saved = 0;
 
-    for (const p of productList) {
-      const sellerCode =
-        p.sellerProductCode ||
-        p.sellerStockCode ||
-        p.stockItems?.stockItem?.sellerStockCode ||
-        null;
-
-      await N11Product.findOneAndUpdate(
-        { sellerProductCode: sellerCode },
+    for (const p of list) {
+      await N11Product.updateOne(
+        { sellerProductCode: p.sellerStockCode },
         {
-          productId: p.productId,
-          sellerProductCode: sellerCode,
-          title: p.title,
-          price: p.displayPrice,
-          stock: p.stockItems?.stockItem?.quantity || 0,
-          approvalStatus: p.approvalStatus,
-          brand: p.brand,
-          categoryFullPath: p.categoryName,
-          imageUrls:
-            p.images?.image
-              ? Array.isArray(p.images.image)
-                ? p.images.image.map((x) => x.url?._ || "")
-                : [p.images.image.url?._ || ""]
-              : [],
-          raw: p
+          $set: {
+            productId: p.productId,
+            sellerProductCode: p.sellerStockCode,
+            title: p.title,
+            price: p.displayPrice,
+            oldPrice: p.oldPrice,
+            currency: p.currencyAmount,
+            approvalStatus: p.approvalStatus,
+            stock: p.stockItems?.stockItem?.quantity || 0,
+            category: p.categoryName,
+            brand: p.brand,
+            imageUrls:
+              p.images?.image?.map((x) => x.url) ||
+              (p.images?.image?.url ? [p.images.image.url] : []),
+            raw: p,
+          },
         },
         { upsert: true }
       );
-
       saved++;
     }
 
     return res.json({
       success: true,
       message: "N11 ürünleri başarıyla senkron edildi",
-      count: saved
+      count: saved,
     });
-
   } catch (error) {
-    console.error("N11 Sync Error:", error.message);
-    res.status(500).json({
+    console.error("N11 Sync Error:", error);
+    return res.status(500).json({
       success: false,
       message: "N11 Sync Error",
-      error: error.message
+      error: error.message,
     });
   }
 }
