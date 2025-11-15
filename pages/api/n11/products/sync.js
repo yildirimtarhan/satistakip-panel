@@ -1,6 +1,6 @@
 import axios from "axios";
 import xml2js from "xml2js";
-import { connectToDatabase } from "@/lib/mongodb";
+import dbConnect from "@/lib/mongodb";
 import N11Product from "@/models/N11Product";
 
 export default async function handler(req, res) {
@@ -8,10 +8,13 @@ export default async function handler(req, res) {
     return res.status(405).json({ message: "Only GET allowed" });
   }
 
-  try {
-    // Mongo bağlantısı
-    await connectToDatabase();
+  await dbConnect();
 
+  try {
+    const appKey = process.env.N11_APP_KEY;
+    const appSecret = process.env.N11_APP_SECRET;
+
+    // === XML REQUEST BODY ===
     const xmlBody = `
       <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
         xmlns:sch="http://www.n11.com/ws/schemas">
@@ -19,8 +22,8 @@ export default async function handler(req, res) {
         <soapenv:Body>
           <sch:GetProductListRequest>
             <auth>
-              <appKey>${process.env.N11_APP_KEY}</appKey>
-              <appSecret>${process.env.N11_APP_SECRET}</appSecret>
+              <appKey>${appKey}</appKey>
+              <appSecret>${appSecret}</appSecret>
             </auth>
             <pagingData>
               <currentPage>0</currentPage>
@@ -31,55 +34,47 @@ export default async function handler(req, res) {
       </soapenv:Envelope>
     `;
 
+    // === SOAP POST ===
     const response = await axios.post(
       "https://api.n11.com/ws/ProductService.wsdl",
       xmlBody,
       { headers: { "Content-Type": "text/xml;charset=UTF-8" } }
     );
 
-    // XML → JSON parser
     const parser = new xml2js.Parser({ explicitArray: false });
     const parsed = await parser.parseStringPromise(response.data);
 
-    // Body al
-    const body = parsed["soapenv:Envelope"]?.["soapenv:Body"];
-    if (!body) {
-      return res.json({ success: false, message: "Response Body bulunamadı" });
+    // === TÜM NAMESPACE İHTİMALLERİNİ KARŞILA ===
+    const body =
+      parsed?.["soapenv:Envelope"]?.["soapenv:Body"] ||
+      parsed?.Envelope?.Body ||
+      parsed;
+
+    const productResponse =
+      body?.["ns3:GetProductListResponse"] ||
+      body?.["sch:GetProductListResponse"] ||
+      body?.["ns2:GetProductListResponse"] ||
+      body?.GetProductListResponse;
+
+    if (!productResponse) {
+      return res.json({ success: false, message: "Response Body bulunamadı." });
     }
 
-    // Namespace fark etmeksizin response’u bul
-    const responseKey = Object.keys(body).find((k) =>
-      k.toLowerCase().includes("getproductlistresponse")
-    );
+    const products =
+      productResponse?.products?.product ||
+      productResponse?.productList?.product ||
+      [];
 
-    if (!responseKey) {
-      return res.json({
-        success: true,
-        count: 0,
-        products: [],
-        message: "N11 ürün response bulunamadı (namespace farkı)",
-      });
+    const arr = Array.isArray(products) ? products : [products];
+
+    if (arr.length === 0) {
+      return res.json({ success: true, count: 0, products: [], message: "N11 ürünü bulunamadı." });
     }
 
-    // Ürün listesi
-    const productList = body[responseKey]?.products?.product || [];
-
-    if (!productList || productList.length === 0) {
-      return res.json({
-        success: true,
-        count: 0,
-        products: [],
-        message: "N11 ürünü bulunamadı.",
-      });
-    }
-
-    // Eğer tek ürünse array'e çevir
-    const list = Array.isArray(productList) ? productList : [productList];
-
+    // === VERITABANINA KAYIT ===
     let saved = 0;
 
-    // MongoDB'ye kaydet
-    for (const p of list) {
+    for (const p of arr) {
       await N11Product.findOneAndUpdate(
         { sellerProductCode: p.sellerStockCode },
         {
@@ -87,10 +82,12 @@ export default async function handler(req, res) {
           productId: p.productId,
           title: p.title,
           price: p.displayPrice,
-          stock: p.stockItems?.stockItem?.quantity,
+          stock: p.stockItems?.stockItem?.quantity ?? 0,
           approvalStatus: p.approvalStatus,
           brand: p.brand,
-          raw: p
+          categoryFullPath: p.categoryName,
+          imageUrls: p.images?.image?.map((x) => x.url) || [],
+          raw: p,
         },
         { upsert: true }
       );
@@ -99,16 +96,15 @@ export default async function handler(req, res) {
 
     return res.json({
       success: true,
-      message: "N11 ürün senkron tamamlandı",
-      count: saved
+      message: "N11 ürünleri başarıyla senkron edildi",
+      count: saved,
     });
 
-  } catch (err) {
-    console.error("N11 Sync Error:", err.message);
+  } catch (error) {
     return res.status(500).json({
       success: false,
       message: "N11 Sync Error",
-      error: err.message,
+      error: error.message,
     });
   }
 }
