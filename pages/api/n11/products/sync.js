@@ -15,6 +15,7 @@ export default async function handler(req, res) {
     const appKey = process.env.N11_APP_KEY;
     const appSecret = process.env.N11_APP_SECRET;
 
+    // === XML BODY ===
     const xmlBody = `
       <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
         xmlns:sch="http://www.n11.com/ws/schemas">
@@ -34,7 +35,7 @@ export default async function handler(req, res) {
       </soapenv:Envelope>
     `;
 
-    // 🚀 DOĞRU ENDPOINT — WSDL DEĞİL!
+    // 🚀 DOĞRU N11 ENDPOINT — SONUNDA .WSDL YOK
     const response = await axios.post(
       "https://api.n11.com/ws/ProductService",
       xmlBody,
@@ -44,19 +45,29 @@ export default async function handler(req, res) {
     const parser = new xml2js.Parser({ explicitArray: false });
     const parsed = await parser.parseStringPromise(response.data);
 
+    // === TÜM MUHTEMEL BODY YAPILARI ===
     const body =
       parsed?.["soapenv:Envelope"]?.["soapenv:Body"] ||
-      parsed?.Envelope?.Body;
+      parsed?.Envelope?.Body ||
+      parsed?.Body;
 
-    const productResponse =
-      body?.["ns3:GetProductListResponse"] ||
-      body?.["sch:GetProductListResponse"] ||
-      body?.GetProductListResponse;
-
-    if (!productResponse) {
-      return res.json({ success: false, message: "Response Body bulunamadı." });
+    if (!body) {
+      return res.json({ success: false, message: "SOAP Body yok" });
     }
 
+    // === TÜM RESPONSE NAMESPACE İHTİMALLERİ ===
+    const productResponse =
+      body["ns3:GetProductListResponse"] ||
+      body["ns2:GetProductListResponse"] ||
+      body["ns4:GetProductListResponse"] ||
+      body["sch:GetProductListResponse"] ||
+      body["GetProductListResponse"];
+
+    if (!productResponse) {
+      return res.json({ success: false, message: "N11 Response bulunamadı" });
+    }
+
+    // === ÜRÜNLERİ AL ===
     const products =
       productResponse?.products?.product ||
       productResponse?.productList?.product ||
@@ -64,15 +75,17 @@ export default async function handler(req, res) {
 
     const arr = Array.isArray(products) ? products : [products];
 
-    if (arr.length === 0) {
+    // === ÜRÜN YOKSA ===
+    if (arr.length === 0 || !arr[0]) {
       return res.json({
         success: true,
         count: 0,
         products: [],
-        message: "N11 ürünü bulunamadı."
+        message: "N11 ürünü bulunamadı"
       });
     }
 
+    // === VERİTABANINA KAYDET ===
     let saved = 0;
 
     for (const p of arr) {
@@ -82,12 +95,16 @@ export default async function handler(req, res) {
           sellerProductCode: p.sellerStockCode,
           productId: p.productId,
           title: p.title,
-          price: p.displayPrice,
+          price: p.displayPrice ?? 0,
           stock: p.stockItems?.stockItem?.quantity ?? 0,
           approvalStatus: p.approvalStatus,
           brand: p.brand,
           categoryFullPath: p.categoryName,
-          imageUrls: p.images?.image?.map((i) => i.url) || [],
+          imageUrls: p.images?.image
+            ? (Array.isArray(p.images.image)
+                ? p.images.image.map((i) => i.url)
+                : [p.images.image.url])
+            : [],
           raw: p,
         },
         { upsert: true }
@@ -103,6 +120,7 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
+    console.error("N11 Sync Error:", error);
     return res.status(500).json({
       success: false,
       message: "N11 Sync Error",
