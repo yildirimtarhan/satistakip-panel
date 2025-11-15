@@ -9,19 +9,11 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { db } = await connectToDatabase();
+    await connectToDatabase();
 
     const appKey = process.env.N11_APP_KEY;
     const appSecret = process.env.N11_APP_SECRET;
 
-    if (!appKey || !appSecret) {
-      return res.status(400).json({
-        success: false,
-        message: "N11 API bilgileri eksik (.env dosyasını kontrol et)",
-      });
-    }
-
-    // --- SOAP XML Body ---
     const xmlBody = `
       <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
         xmlns:sch="http://www.n11.com/ws/schemas">
@@ -50,59 +42,60 @@ export default async function handler(req, res) {
     const parser = new xml2js.Parser({ explicitArray: false });
     const parsed = await parser.parseStringPromise(response.data);
 
-    const productList =
-      parsed["soapenv:Envelope"]?.["soapenv:Body"]?.["ns3:GetProductListResponse"]
-        ?.products?.product;
+    // ---- Namespace bağımsız çözüm ----
+    const body = parsed["soapenv:Envelope"]?.["soapenv:Body"];
+    if (!body) {
+      return res.json({ success: false, message: "SOAP Body bulunamadı" });
+    }
 
-    if (!productList) {
+    // Body içindeki hangi key ürün listesi içeriyorsa onu buluyoruz
+    const responseNode = Object.values(body).find((x) =>
+      x?.products || x?.productList || x?.product
+    );
+
+    const productList = responseNode?.products?.product || [];
+
+    if (!productList || productList.length === 0) {
       return res.json({
         success: true,
         count: 0,
         products: [],
-        message: "N11 ürünü bulunamadı.",
+        message: "N11 ürünü bulunamadı."
       });
     }
 
     const list = Array.isArray(productList) ? productList : [productList];
+
     let saved = 0;
 
     for (const p of list) {
-      await N11Product.updateOne(
+      await N11Product.findOneAndUpdate(
         { sellerProductCode: p.sellerStockCode },
         {
-          $set: {
-            productId: p.productId,
-            sellerProductCode: p.sellerStockCode,
-            title: p.title,
-            price: p.displayPrice,
-            oldPrice: p.oldPrice,
-            currency: p.currencyAmount,
-            approvalStatus: p.approvalStatus,
-            stock: p.stockItems?.stockItem?.quantity || 0,
-            category: p.categoryName,
-            brand: p.brand,
-            imageUrls:
-              p.images?.image?.map((x) => x.url) ||
-              (p.images?.image?.url ? [p.images.image.url] : []),
-            raw: p,
-          },
+          sellerProductCode: p.sellerStockCode,
+          productId: p.productId,
+          title: p.title,
+          price: p.displayPrice,
+          stock: p.stockItems?.stockItem?.quantity,
+          brand: p.brand,
+          categoryFullPath: p.categoryName,
+          imageUrls: p.images?.image?.map((img) => img.url) || [],
+          raw: p
         },
         { upsert: true }
       );
+
       saved++;
     }
 
     return res.json({
       success: true,
       message: "N11 ürünleri başarıyla senkron edildi",
-      count: saved,
+      count: saved
     });
+
   } catch (error) {
-    console.error("N11 Sync Error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "N11 Sync Error",
-      error: error.message,
-    });
+    console.error("N11 Sync Error:", error.message);
+    return res.status(500).json({ success: false, message: "N11 Sync Error", error: error.message });
   }
 }
