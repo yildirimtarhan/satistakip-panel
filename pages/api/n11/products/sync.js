@@ -1,4 +1,3 @@
-// 📁 /pages/api/n11/products/sync.js
 import axios from "axios";
 import xml2js from "xml2js";
 import dbConnect from "@/lib/mongodb";
@@ -15,7 +14,6 @@ export default async function handler(req, res) {
     const appKey = process.env.N11_APP_KEY;
     const appSecret = process.env.N11_APP_SECRET;
 
-    // === XML BODY ===
     const xmlBody = `
       <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
         xmlns:sch="http://www.n11.com/ws/schemas">
@@ -35,9 +33,9 @@ export default async function handler(req, res) {
       </soapenv:Envelope>
     `;
 
-    // 🚀 DOĞRU N11 ENDPOINT — SONUNDA .WSDL YOK
+    // 🚀 Doğru SOAP Endpoint
     const response = await axios.post(
-      "https://api.n11.com/ws/ProductService",
+      "https://api.n11.com/ws/ProductService.wsdl",
       xmlBody,
       { headers: { "Content-Type": "text/xml;charset=UTF-8" } }
     );
@@ -45,71 +43,61 @@ export default async function handler(req, res) {
     const parser = new xml2js.Parser({ explicitArray: false });
     const parsed = await parser.parseStringPromise(response.data);
 
-    // === TÜM MUHTEMEL BODY YAPILARI ===
-    const body =
-      parsed?.["soapenv:Envelope"]?.["soapenv:Body"] ||
-      parsed?.Envelope?.Body ||
-      parsed?.Body;
+    // === Body seçimi (tüm namespace'lere uyumlu) ===
+    const envelope = parsed?.Envelope || parsed?.["soapenv:Envelope"];
+    const body = envelope?.Body || envelope?.["soapenv:Body"];
 
-    if (!body) {
-      return res.json({ success: false, message: "SOAP Body yok" });
+    // === Response mapping ===
+    const resp =
+      body?.GetProductListResponse ||
+      body?.["ns2:GetProductListResponse"] ||
+      body?.["ns3:GetProductListResponse"] ||
+      body?.["sch:GetProductListResponse"] ||
+      null;
+
+    if (!resp) {
+      return res.status(500).json({
+        success: false,
+        message: "N11 yanıtı çözümlenemedi (namespace uyumsuz)"
+      });
     }
 
-    // === TÜM RESPONSE NAMESPACE İHTİMALLERİ ===
-    const productResponse =
-      body["ns3:GetProductListResponse"] ||
-      body["ns2:GetProductListResponse"] ||
-      body["ns4:GetProductListResponse"] ||
-      body["sch:GetProductListResponse"] ||
-      body["GetProductListResponse"];
-
-    if (!productResponse) {
-      return res.json({ success: false, message: "N11 Response bulunamadı" });
-    }
-
-    // === ÜRÜNLERİ AL ===
-    const products =
-      productResponse?.products?.product ||
-      productResponse?.productList?.product ||
+    let products =
+      resp?.products?.product ||
+      resp?.productList?.product ||
       [];
 
-    const arr = Array.isArray(products) ? products : [products];
+    // Tek ürün bile gelse array'e çevir
+    products = Array.isArray(products) ? products : [products];
 
-    // === ÜRÜN YOKSA ===
-    if (arr.length === 0 || !arr[0]) {
+    if (products.length === 0) {
       return res.json({
         success: true,
         count: 0,
         products: [],
-        message: "N11 ürünü bulunamadı"
+        message: "N11 ürün bulunamadı."
       });
     }
 
-    // === VERİTABANINA KAYDET ===
+    // === MongoDB Kaydet ===
     let saved = 0;
-
-    for (const p of arr) {
+    for (const p of products) {
       await N11Product.findOneAndUpdate(
         { sellerProductCode: p.sellerStockCode },
         {
           sellerProductCode: p.sellerStockCode,
-          productId: p.productId,
+          productId: p.id || p.productId,
           title: p.title,
-          price: p.displayPrice ?? 0,
+          price: p.displayPrice,
           stock: p.stockItems?.stockItem?.quantity ?? 0,
           approvalStatus: p.approvalStatus,
           brand: p.brand,
           categoryFullPath: p.categoryName,
-          imageUrls: p.images?.image
-            ? (Array.isArray(p.images.image)
-                ? p.images.image.map((i) => i.url)
-                : [p.images.image.url])
-            : [],
-          raw: p,
+          imageUrls: p.images?.image?.map((i) => i.url) || [],
+          raw: p
         },
         { upsert: true }
       );
-
       saved++;
     }
 
