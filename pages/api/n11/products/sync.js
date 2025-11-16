@@ -33,32 +33,29 @@ export default async function handler(req, res) {
       </soapenv:Envelope>
     `;
 
-    // 🚀 Doğru SOAP Endpoint
-    const response = await axios.post(
-      "https://api.n11.com/ws/ProductService.wsdl",
+    // 🚀 Düzeltildi: WSDL değil gerçek SOAP endpoint
+    const { data } = await axios.post(
+      "https://api.n11.com/ws/ProductService",
       xmlBody,
       { headers: { "Content-Type": "text/xml;charset=UTF-8" } }
     );
 
     const parser = new xml2js.Parser({ explicitArray: false });
-    const parsed = await parser.parseStringPromise(response.data);
+    const parsed = await parser.parseStringPromise(data);
 
-    // === Body seçimi (tüm namespace'lere uyumlu) ===
     const envelope = parsed?.Envelope || parsed?.["soapenv:Envelope"];
     const body = envelope?.Body || envelope?.["soapenv:Body"];
 
-    // === Response mapping ===
     const resp =
       body?.GetProductListResponse ||
       body?.["ns2:GetProductListResponse"] ||
       body?.["ns3:GetProductListResponse"] ||
-      body?.["sch:GetProductListResponse"] ||
-      null;
+      body?.["sch:GetProductListResponse"];
 
     if (!resp) {
       return res.status(500).json({
         success: false,
-        message: "N11 yanıtı çözümlenemedi (namespace uyumsuz)"
+        message: "N11 Response parse edilemedi"
       });
     }
 
@@ -67,7 +64,6 @@ export default async function handler(req, res) {
       resp?.productList?.product ||
       [];
 
-    // Tek ürün bile gelse array'e çevir
     products = Array.isArray(products) ? products : [products];
 
     if (products.length === 0) {
@@ -79,8 +75,8 @@ export default async function handler(req, res) {
       });
     }
 
-    // === MongoDB Kaydet ===
     let saved = 0;
+
     for (const p of products) {
       await N11Product.findOneAndUpdate(
         { sellerProductCode: p.sellerStockCode },
@@ -108,7 +104,7 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error("N11 Sync Error:", error);
+    console.error("N11 Sync Error:", error?.response?.data || error.message);
     return res.status(500).json({
       success: false,
       message: "N11 Sync Error",
