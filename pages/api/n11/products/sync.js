@@ -1,3 +1,4 @@
+// 📁 /pages/api/n11/products/sync.js
 import axios from "axios";
 import xml2js from "xml2js";
 import dbConnect from "@/lib/mongodb";
@@ -11,8 +12,7 @@ export default async function handler(req, res) {
   await dbConnect();
 
   try {
-    const appKey = process.env.N11_APP_KEY;
-    const appSecret = process.env.N11_APP_SECRET;
+    const { N11_APP_KEY, N11_APP_SECRET } = process.env;
 
     const xmlBody = `
       <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
@@ -21,8 +21,8 @@ export default async function handler(req, res) {
         <soapenv:Body>
           <sch:GetProductListRequest>
             <auth>
-              <appKey>${appKey}</appKey>
-              <appSecret>${appSecret}</appSecret>
+              <appKey>${N11_APP_KEY}</appKey>
+              <appSecret>${N11_APP_SECRET}</appSecret>
             </auth>
             <pagingData>
               <currentPage>0</currentPage>
@@ -33,81 +33,40 @@ export default async function handler(req, res) {
       </soapenv:Envelope>
     `;
 
-    // 🚀 Düzeltildi: WSDL değil gerçek SOAP endpoint
     const { data } = await axios.post(
       "https://api.n11.com/ws/ProductService",
       xmlBody,
       { headers: { "Content-Type": "text/xml;charset=UTF-8" } }
     );
 
-    const parser = new xml2js.Parser({ explicitArray: false });
-    const parsed = await parser.parseStringPromise(data);
-
-    const envelope = parsed?.Envelope || parsed?.["soapenv:Envelope"];
-    const body = envelope?.Body || envelope?.["soapenv:Body"];
-
-    const resp =
-      body?.GetProductListResponse ||
-      body?.["ns2:GetProductListResponse"] ||
-      body?.["ns3:GetProductListResponse"] ||
-      body?.["sch:GetProductListResponse"];
-
-    if (!resp) {
-      return res.status(500).json({
-        success: false,
-        message: "N11 Response parse edilemedi"
-      });
+    if (!data) {
+      return res.json({ success: false, message: "N11 Response empty" });
     }
 
-    let products =
-      resp?.products?.product ||
-      resp?.productList?.product ||
-      [];
+    const parser = new xml2js.Parser({ explicitArray: false });
 
-    products = Array.isArray(products) ? products : [products];
-
-    if (products.length === 0) {
+    try {
+      const parsed = await parser.parseStringPromise(data);
       return res.json({
         success: true,
-        count: 0,
-        products: [],
-        message: "N11 ürün bulunamadı."
+        debug: true,
+        message: "Parsed SOAP Response. Partial Output:",
+        keys: Object.keys(parsed),
+        rawSample: data.substring(0, 1500)
+      });
+    } catch (parseError) {
+      return res.json({
+        success: false,
+        message: "N11 Response parse edilemedi ❌",
+        error: parseError.message,
+        rawSample: data.substring(0, 2000)
       });
     }
 
-    let saved = 0;
-
-    for (const p of products) {
-      await N11Product.findOneAndUpdate(
-        { sellerProductCode: p.sellerStockCode },
-        {
-          sellerProductCode: p.sellerStockCode,
-          productId: p.id || p.productId,
-          title: p.title,
-          price: p.displayPrice,
-          stock: p.stockItems?.stockItem?.quantity ?? 0,
-          approvalStatus: p.approvalStatus,
-          brand: p.brand,
-          categoryFullPath: p.categoryName,
-          imageUrls: p.images?.image?.map((i) => i.url) || [],
-          raw: p
-        },
-        { upsert: true }
-      );
-      saved++;
-    }
-
-    return res.json({
-      success: true,
-      message: "N11 ürünleri başarıyla senkron edildi",
-      count: saved
-    });
-
   } catch (error) {
-    console.error("N11 Sync Error:", error?.response?.data || error.message);
-    return res.status(500).json({
+    return res.json({
       success: false,
-      message: "N11 Sync Error",
+      message: "N11 Sync Error ❌",
       error: error.message
     });
   }
