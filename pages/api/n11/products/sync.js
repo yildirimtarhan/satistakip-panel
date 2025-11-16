@@ -12,7 +12,8 @@ export default async function handler(req, res) {
   await dbConnect();
 
   try {
-    const { N11_APP_KEY, N11_APP_SECRET } = process.env;
+    const appKey = process.env.N11_APP_KEY;
+    const appSecret = process.env.N11_APP_SECRET;
 
     const xmlBody = `
       <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
@@ -21,8 +22,8 @@ export default async function handler(req, res) {
         <soapenv:Body>
           <sch:GetProductListRequest>
             <auth>
-              <appKey>${N11_APP_KEY}</appKey>
-              <appSecret>${N11_APP_SECRET}</appSecret>
+              <appKey>${appKey}</appKey>
+              <appSecret>${appSecret}</appSecret>
             </auth>
             <pagingData>
               <currentPage>0</currentPage>
@@ -33,41 +34,70 @@ export default async function handler(req, res) {
       </soapenv:Envelope>
     `;
 
-    const { data } = await axios.post(
+    const response = await axios.post(
       "https://api.n11.com/ws/ProductService",
       xmlBody,
       { headers: { "Content-Type": "text/xml;charset=UTF-8" } }
     );
 
-    if (!data) {
-      return res.json({ success: false, message: "N11 Response empty" });
-    }
-
     const parser = new xml2js.Parser({ explicitArray: false });
+    const parsed = await parser.parseStringPromise(response.data);
 
-    try {
-      const parsed = await parser.parseStringPromise(data);
+    const productResponse =
+      parsed?.["SOAP-ENV:Envelope"]?.["SOAP-ENV:Body"]?.["ns3:GetProductListResponse"];
+
+    if (!productResponse?.products?.product) {
       return res.json({
         success: true,
-        debug: true,
-        message: "Parsed SOAP Response. Partial Output:",
-        keys: Object.keys(parsed),
-        rawSample: data.substring(0, 1500)
-      });
-    } catch (parseError) {
-      return res.json({
-        success: false,
-        message: "N11 Response parse edilemedi ❌",
-        error: parseError.message,
-        rawSample: data.substring(0, 2000)
+        message: "N11 ürünü bulunamadı.",
+        count: 0,
+        products: []
       });
     }
 
-  } catch (error) {
+    const products = Array.isArray(productResponse.products.product)
+      ? productResponse.products.product
+      : [productResponse.products.product];
+
+    // === MongoDB kayıt işlemi ===
+    let saved = 0;
+
+    for (const p of products) {
+      await N11Product.findOneAndUpdate(
+        { sellerProductCode: p.productSellerCode || p.sellerStockCode },
+        {
+          sellerProductCode: p.productSellerCode || p.sellerStockCode,
+          productId: p.id,
+          title: p.title,
+          price: Number(p.displayPrice || p.price || 0),
+          stock: Number(
+            p.stockItems?.stockItem?.quantity ??
+            p.stockItems?.stockItem?.[0]?.quantity ??
+            0
+          ),
+          approvalStatus: p.approvalStatus,
+          brand: p.brand || null,
+          categoryFullPath: p.categoryName || null,
+          imageUrls: [],
+          raw: p
+        },
+        { upsert: true }
+      );
+      saved++;
+    }
+
     return res.json({
+      success: true,
+      message: "N11 ürünleri başarıyla senkron edildi",
+      count: saved,
+      products
+    });
+
+  } catch (error) {
+    return res.status(500).json({
       success: false,
-      message: "N11 Sync Error ❌",
-      error: error.message
+      message: "N11 Response parse edilemedi",
+      error: error.message,
     });
   }
 }
