@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/router";
+import { useRouter } from "next/navigation"; // ✅ Düzeltilen satır
 import Link from "next/link";
 
 export default function LoginPage() {
@@ -34,7 +34,7 @@ export default function LoginPage() {
 
       if (data.token) {
         localStorage.setItem("token", data.token);
-        router.push("/dashboard");
+        router.push("/dashboard"); // 🔥 Artık çalışacak
       }
 
     } catch (err) {
