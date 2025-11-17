@@ -1,8 +1,12 @@
-// 📁 /pages/api/auth/login.js
+// 📄 /pages/api/auth/login.js
 import dbConnect from "@/lib/mongodb";
 import User from "@/models/User";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
+
+export const config = {
+  api: { bodyParser: true },
+};
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -13,21 +17,15 @@ export default async function handler(req, res) {
     await dbConnect();
 
     const { email, password } = req.body;
-
     if (!email || !password) {
       return res.status(400).json({ message: "Email ve şifre gereklidir" });
     }
 
-    const user = await User.findOne({ email }).lean();
-
-    if (!user) {
-      return res.status(401).json({ message: "Kullanıcı bulunamadı" });
-    }
+    const user = await User.findOne({ email });
+    if (!user) return res.status(401).json({ message: "Kullanıcı bulunamadı" });
 
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(401).json({ message: "Şifre hatalı" });
-    }
+    if (!isMatch) return res.status(401).json({ message: "Şifre hatalı" });
 
     const token = jwt.sign(
       { userId: user._id },
@@ -42,14 +40,11 @@ export default async function handler(req, res) {
         id: user._id,
         email: user.email,
         ad: user.ad || "",
-      }
+      },
     });
 
   } catch (err) {
-    console.error("Login error:", err);
-    return res.status(500).json({
-      message: "Sunucu hatası",
-      error: err.message,
-    });
+    console.error("Login API Hatası:", err);
+    return res.status(500).json({ message: "Sunucu hatası", error: err.message });
   }
 }
