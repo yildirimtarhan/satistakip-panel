@@ -1,13 +1,16 @@
 // 📄 /pages/api/cari/index.js
-import clientPromise from "@/lib/mongodb";
+import dbConnect from "@/lib/mongodb";
 import jwt from "jsonwebtoken";
-import { ObjectId } from "mongodb";
+import { Types } from "mongoose";
+import Cari from "@/models/Cari";
 
 export default async function handler(req, res) {
   res.setHeader("Allow", "GET,POST,PUT,DELETE,OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
 
   try {
+    await dbConnect();
+
     // 🔐 Token kontrolü
     const authHeader = req.headers.authorization || "";
     const token = authHeader.startsWith("Bearer ") ? authHeader.split(" ")[1] : null;
@@ -20,18 +23,13 @@ export default async function handler(req, res) {
       return res.status(401).json({ message: "Geçersiz token" });
     }
 
-    const client = await clientPromise;
-    const db = client.db("satistakip");
-    const collection = db.collection("accounts"); // cari kayıtları
-
     // =======================
-    // GET  -> Cari listesi
+    // GET -> Cari listesi
     // =======================
     if (req.method === "GET") {
-      const list = await collection
-        .find({ userId: decoded.userId })
+      const list = await Cari.find({ userId: decoded.userId })
         .sort({ createdAt: -1 })
-        .toArray();
+        .lean();
 
       const withDefaults = (list || []).map((c) => ({
         ...c,
@@ -67,7 +65,7 @@ export default async function handler(req, res) {
         postaKodu: body.postaKodu || "",
         profileUrl: body.profileUrl || "",
 
-        // 🆕 PAZARYERİ MÜŞTERİ ID’LERİ
+        // 🆕 Pazaryeri müşteri ID’leri
         trendyolCustomerId: body.trendyolCustomerId || "",
         hbCustomerId: body.hbCustomerId || "",
         amazonCustomerId: body.amazonCustomerId || "",
@@ -86,12 +84,12 @@ export default async function handler(req, res) {
         updatedAt: new Date(),
       };
 
-      const result = await collection.insertOne(doc);
-      return res.status(201).json({ message: "✅ Cari başarıyla eklendi", _id: result.insertedId });
+      const result = await Cari.create(doc);
+      return res.status(201).json({ message: "✅ Cari başarıyla eklendi", _id: result._id });
     }
 
     // =======================
-    // PUT  -> Cari güncelle
+    // PUT -> Cari güncelle
     // =======================
     if (req.method === "PUT") {
       const { cariId } = req.query;
@@ -99,7 +97,7 @@ export default async function handler(req, res) {
 
       let _id;
       try {
-        _id = new ObjectId(cariId);
+        _id = new Types.ObjectId(cariId);
       } catch {
         return res.status(400).json({ message: "Geçersiz cariId." });
       }
@@ -123,7 +121,6 @@ export default async function handler(req, res) {
         ...(body.postaKodu !== undefined && { postaKodu: body.postaKodu }),
         ...(body.profileUrl !== undefined && { profileUrl: body.profileUrl }),
 
-        // 🆕 Güncellenebilir pazaryeri ID’leri
         ...(body.trendyolCustomerId !== undefined && { trendyolCustomerId: body.trendyolCustomerId }),
         ...(body.hbCustomerId !== undefined && { hbCustomerId: body.hbCustomerId }),
         ...(body.amazonCustomerId !== undefined && { amazonCustomerId: body.amazonCustomerId }),
@@ -139,7 +136,7 @@ export default async function handler(req, res) {
         updatedAt: new Date(),
       };
 
-      const result = await collection.updateOne(
+      const result = await Cari.updateOne(
         { _id, userId: decoded.userId },
         { $set: updateDoc }
       );
@@ -160,12 +157,12 @@ export default async function handler(req, res) {
 
       let _id;
       try {
-        _id = new ObjectId(cariId);
+        _id = new Types.ObjectId(cariId);
       } catch {
         return res.status(400).json({ message: "Geçersiz cariId." });
       }
 
-      const result = await collection.deleteOne({ _id, userId: decoded.userId });
+      const result = await Cari.deleteOne({ _id, userId: decoded.userId });
       if (result.deletedCount === 0) {
         return res.status(404).json({ message: "Cari bulunamadı." });
       }

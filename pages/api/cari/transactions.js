@@ -1,15 +1,14 @@
 // 📁 /pages/api/cari/transactions.js
-import clientPromise from "@/lib/mongodb";
-import { ObjectId } from "mongodb";
+import dbConnect from "@/lib/mongodb";
+import { Types } from "mongoose";
+import Transaction from "@/models/Transaction";
+import Product from "@/models/Product";
+import Cari from "@/models/Cari";
+import StockLog from "@/models/StockLog";
 
 export default async function handler(req, res) {
   try {
-    const client = await clientPromise;
-    const db = client.db("satistakip");
-    const transactions = db.collection("transactions");
-    const products = db.collection("products");
-    const accounts = db.collection("accounts");
-    const stockLogs = db.collection("stock_logs");
+    await dbConnect();
 
     if (req.method === "POST") {
       const { 
@@ -25,15 +24,15 @@ export default async function handler(req, res) {
         return res.status(400).json({ message: "⚠️ Eksik bilgi (accountId/type)" });
       }
 
-      const accountObjectId = new ObjectId(accountId);
-      const productObjectId = productId ? new ObjectId(productId) : null;
+      const accountObjectId = new Types.ObjectId(accountId);
+      const productObjectId = productId ? new Types.ObjectId(productId) : null;
 
-      const account = await accounts.findOne({ _id: accountObjectId });
+      const account = await Cari.findById(accountObjectId);
       if (!account) return res.status(404).json({ message: "Cari bulunamadı" });
 
       let product = null;
       if (productObjectId) {
-        product = await products.findOne({ _id: productObjectId });
+        product = await Product.findById(productObjectId);
         if (!product) return res.status(404).json({ message: "Ürün bulunamadı" });
       }
 
@@ -61,34 +60,33 @@ export default async function handler(req, res) {
         date: new Date(),
       };
 
-      await transactions.insertOne(newTransaction);
+      await Transaction.create(newTransaction);
 
       // ✅ Ürün stok güncelle
       if (productObjectId) {
         const stockChange = type === "sale" ? -safeQuantity : safeQuantity;
 
         // === ✅ VARYANT STOCK ===
-        if (varyant) {
+        if (varyant && product.varyantlar?.length) {
           const variantIndex = product.varyantlar.findIndex(v => v.ad === varyant);
 
           if (variantIndex !== -1) {
             product.varyantlar[variantIndex].stok += stockChange;
 
-            await products.updateOne(
+            await Product.updateOne(
               { _id: productObjectId },
               {
                 $set: {
                   varyantlar: product.varyantlar,
                   updatedAt: new Date(),
                 },
-                $inc: { stok: stockChange }, // toplam stok da değişsin
+                $inc: { stok: stockChange },
               }
             );
           }
         } 
         else {
-          // ✅ varyant yoksa normal stok
-          await products.updateOne(
+          await Product.updateOne(
             { _id: productObjectId },
             {
               $inc: { stok: stockChange },
@@ -97,8 +95,8 @@ export default async function handler(req, res) {
           );
         }
 
-        // ✅ Stok log kaydı
-        await stockLogs.insertOne({
+        // ✅ Stok log
+        await StockLog.create({
           productId: productObjectId,
           accountId: accountObjectId,
           type,
@@ -115,7 +113,7 @@ export default async function handler(req, res) {
 
       // ✅ Alış ise alış fiyatını güncelle
       if (type === "purchase" && productObjectId) {
-        await products.updateOne(
+        await Product.updateOne(
           { _id: productObjectId },
           {
             $set: {
@@ -127,15 +125,16 @@ export default async function handler(req, res) {
         );
       }
 
-      // ✅ Cari bakiye güncelle
+      // =============================
+      // 🔄 Cari bakiye ve toplamlar
+      // =============================
       const balanceChange = type === "sale" ? calculatedTRY : -calculatedTRY;
-      await accounts.updateOne(
+      await Cari.updateOne(
         { _id: accountObjectId },
         { $inc: { balance: balanceChange } }
       );
 
-      // ✅ Cari toplamları yeniden hesapla
-      const allTransactions = await transactions.find({ accountId: accountObjectId }).toArray();
+      const allTransactions = await Transaction.find({ accountId: accountObjectId });
 
       let totalSalesTRY = 0, totalPurchasesTRY = 0;
       for (const t of allTransactions) {
@@ -148,7 +147,7 @@ export default async function handler(req, res) {
 
       const newBalance = Number((totalSalesTRY - totalPurchasesTRY).toFixed(2));
 
-      await accounts.updateOne(
+      await Cari.updateOne(
         { _id: accountObjectId },
         {
           $set: {
@@ -168,10 +167,7 @@ export default async function handler(req, res) {
 
     // 📥 GET
     if (req.method === "GET") {
-      const list = await transactions.aggregate([
-        { $sort: { date: -1 } }
-      ]).toArray();
-
+      const list = await Transaction.find().sort({ date: -1 });
       return res.status(200).json(list);
     }
 

@@ -1,12 +1,11 @@
 // 📁 /pages/api/cari/products.js
-import clientPromise from "@/lib/mongodb";
+import dbConnect from "@/lib/mongodb";
+import Product from "@/models/Product";
 
 export default async function handler(req, res) {
   try {
     // 🔹 MongoDB bağlantısı
-    const client = await clientPromise;
-    const db = client.db("satistakip");
-    const products = db.collection("products");
+    await dbConnect();
 
     if (req.method === "POST") {
       // ✅ Yeni ürün ekleme
@@ -25,16 +24,17 @@ export default async function handler(req, res) {
         createdAt: new Date(),
       };
 
-      const result = await products.insertOne(newProduct);
+      const result = await Product.create(newProduct);
+
       return res.status(201).json({
         message: "✅ Ürün başarıyla eklendi",
-        productId: result.insertedId,
+        productId: result._id,
       });
     }
 
     if (req.method === "GET") {
       // 📦 Ürünleri listele
-      const list = await products.find().sort({ createdAt: -1 }).toArray();
+      const list = await Product.find().sort({ createdAt: -1 }).lean();
       return res.status(200).json(list);
     }
 

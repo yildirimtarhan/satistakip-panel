@@ -1,5 +1,7 @@
-import clientPromise from "@/lib/mongodb";
+import dbConnect from "@/lib/mongodb";
 import jwt from "jsonwebtoken";
+import { Types } from "mongoose";
+import Cari from "@/models/Cari";
 
 export default async function handler(req, res) {
   const { id } = req.query;
@@ -9,23 +11,30 @@ export default async function handler(req, res) {
 
   try {
     jwt.verify(token, process.env.JWT_SECRET);
-    const client = await clientPromise;
-    const db = client.db("satistakip");
-    const collection = db.collection("cari");
+    await dbConnect();
+
+    let cariId;
+    try {
+      cariId = new Types.ObjectId(id);
+    } catch {
+      return res.status(400).json({ error: "Geçersiz cari ID" });
+    }
 
     if (req.method === "PUT") {
       const updateData = req.body;
-      await collection.updateOne({ _id: id }, { $set: updateData });
+      await Cari.updateOne({ _id: cariId }, { $set: updateData });
       return res.status(200).json({ message: "Cari güncellendi ✅" });
     }
 
     if (req.method === "DELETE") {
-      await collection.deleteOne({ _id: id });
+      await Cari.deleteOne({ _id: cariId });
       return res.status(200).json({ message: "Cari silindi ❌" });
     }
 
     res.status(405).json({ error: "Geçersiz istek yöntemi" });
+
   } catch (err) {
-    res.status(401).json({ error: "Token hatalı veya süresi dolmuş" });
+    console.error("🔥 Cari tekil update/delete API hatası:", err);
+    return res.status(401).json({ error: "Token hatalı veya süresi dolmuş" });
   }
 }

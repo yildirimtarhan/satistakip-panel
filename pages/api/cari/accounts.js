@@ -1,12 +1,11 @@
 // 📁 /pages/api/cari/accounts.js
-import clientPromise from "@/lib/mongodb";
+import dbConnect from "@/lib/mongodb";
+import Cari from "@/models/Cari";
 
 export default async function handler(req, res) {
   try {
     // 📌 MongoDB bağlantısı
-    const client = await clientPromise;
-    const db = client.db("satistakip");
-    const accounts = db.collection("accounts");
+    await dbConnect();
 
     if (req.method === "POST") {
       const { name, type } = req.body;
@@ -24,14 +23,15 @@ export default async function handler(req, res) {
         createdAt: new Date(),
       };
 
-      const result = await accounts.insertOne(newAccount);
+      const result = await Cari.create(newAccount);
+
       return res
         .status(201)
-        .json({ message: "✅ Cari hesap eklendi", accountId: result.insertedId });
+        .json({ message: "✅ Cari hesap eklendi", accountId: result._id });
     }
 
     if (req.method === "GET") {
-      const list = await accounts.find().sort({ createdAt: -1 }).toArray();
+      const list = await Cari.find().sort({ createdAt: -1 }).lean();
       return res.status(200).json(list);
     }
 
