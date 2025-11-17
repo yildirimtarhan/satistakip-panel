@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation"; // ✅ Düzeltilen satır
+import { useRouter } from "next/router";
 import Link from "next/link";
 
 export default function LoginPage() {
@@ -17,15 +17,14 @@ export default function LoginPage() {
     setError("");
 
     try {
-      const res = await fetch("/api/auth/login", {
+      const baseURL = process.env.NEXT_PUBLIC_SITE_URL || "";
+      const res = await fetch(`${baseURL}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
 
-      const text = await res.text();
-      let data = {};
-      try { data = JSON.parse(text); } catch {}
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         setError(data.message || "Giriş başarısız");
@@ -34,12 +33,11 @@ export default function LoginPage() {
 
       if (data.token) {
         localStorage.setItem("token", data.token);
-        router.push("/dashboard"); // 🔥 Artık çalışacak
+        router.push("/dashboard");
       }
-
     } catch (err) {
       console.error("Giriş hatası:", err);
-      setError("Bir hata oluştu.");
+      setError("Sunucuya ulaşılamadı.");
     }
   };
 
@@ -50,26 +48,14 @@ export default function LoginPage() {
       <form onSubmit={handleSubmit}>
         <div>
           <label>Email:</label>
-          <input
-            type="email"
-            name="email"
-            value={form.email}
-            onChange={handleChange}
-            required
-            autoComplete="email"
-          />
+          <input type="email" name="email" value={form.email}
+            onChange={handleChange} required />
         </div>
 
         <div style={{ marginTop: "1rem" }}>
           <label>Şifre:</label>
-          <input
-            type="password"
-            name="password"
-            value={form.password}
-            onChange={handleChange}
-            required
-            autoComplete="current-password"
-          />
+          <input type="password" name="password" value={form.password}
+            onChange={handleChange} required />
         </div>
 
         <button type="submit" style={{ marginTop: "1rem" }}>
@@ -80,9 +66,7 @@ export default function LoginPage() {
       </form>
 
       <p style={{ marginTop: "1rem" }}>
-        <Link href="/auth/forgot-password" style={{ color: "blue", textDecoration: "underline" }}>
-          Şifremi unuttum?
-        </Link>
+        <Link href="/auth/forgot-password">Şifremi unuttum?</Link>
       </p>
     </div>
   );
