@@ -1,12 +1,13 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/router";
+import { useRouter } from "next/navigation"; // 🟢 Düzeltilen import
 import Link from "next/link";
 
 export default function LoginPage() {
   const router = useRouter();
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false); // 🆕
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -15,6 +16,7 @@ export default function LoginPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setLoading(true); // 🆕
 
     try {
       const res = await fetch("/api/auth/login", {
@@ -27,10 +29,10 @@ export default function LoginPage() {
 
       if (!res.ok) {
         setError(data.message || "Giriş başarısız");
+        setLoading(false);
         return;
       }
 
-      // ✅ TOKEN'ı localStorage'a yaz
       if (data.token) {
         localStorage.setItem("token", data.token);
       }
@@ -38,7 +40,9 @@ export default function LoginPage() {
       router.push("/dashboard");
     } catch (err) {
       console.error("Giriş hatası:", err);
-      setError("Bir hata oluştu.");
+      setError("Sunucu hatası, lütfen tekrar deneyin.");
+    } finally {
+      setLoading(false); // 🆕
     }
   };
 
@@ -71,8 +75,8 @@ export default function LoginPage() {
           />
         </div>
 
-        <button type="submit" style={{ marginTop: "1rem" }}>
-          Giriş Yap
+        <button type="submit" style={{ marginTop: "1rem" }} disabled={loading}>
+          {loading ? "Giriş yapılıyor..." : "Giriş Yap"}
         </button>
 
         {error && <p style={{ color: "red" }}>{error}</p>}
