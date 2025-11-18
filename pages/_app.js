@@ -33,7 +33,7 @@ export default function App({ Component, pageProps }) {
             expires: 7,
             secure: true,
             sameSite: "lax",
-            path: "/"
+            path: "/",
           });
           console.log("🔄 Cookie token yenilendi");
         }
@@ -49,10 +49,10 @@ export default function App({ Component, pageProps }) {
     return () => clearInterval(interval);
   }, []);
 
-  // ✅ Dashboard sayfalarını sar
+  // Dashboard sayfalarını sar
   if (isDashboard) {
     return (
-      <RequireAuth>
+      <RequireAuth cookieMode={true}> 
         <DashboardLayout>
           <Component {...pageProps} />
         </DashboardLayout>
@@ -60,6 +60,6 @@ export default function App({ Component, pageProps }) {
     );
   }
 
-  // ✅ Public sayfalar
+  // Public sayfalar
   return <Component {...pageProps} />;
 }

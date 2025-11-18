@@ -1,32 +1,34 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import Cookies from "js-cookie";
 
 export default function RequireAuth({ children }) {
-  const router = useRouter();
-  const [authorized, setAuthorized] = useState(false);
+  const [allowed, setAllowed] = useState(false);
 
   useEffect(() => {
-    const token = Cookies.get("token");
+    const token = Cookies.get("token"); // ✔ Artık cookie’den okuyacak
 
     if (!token) {
-      router.replace("/auth/login");
-    } else {
-      setAuthorized(true);
+      window.location.href = "/auth/login";
+      return;
     }
-  }, [router]);
 
-  if (!authorized) {
+    // Token varsa dashboard açılır
+    setAllowed(true);
+  }, []);
+
+  if (!allowed) {
     return (
-      <div style={{
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        height: "100vh",
-        fontSize: "1.5rem",
-        color: "#555"
-      }}>
+      <div
+        style={{
+          height: "100vh",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          fontSize: 20,
+          color: "#555",
+        }}
+      >
         🔐 Giriş doğrulanıyor...
       </div>
     );
