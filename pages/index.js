@@ -1,7 +1,9 @@
+"use client";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/router";
+import { useRouter } from "next/navigation"; // ← yeni router
 import Head from "next/head";
 import Link from "next/link";
+import Cookies from "js-cookie";
 import { jwtDecode } from "jwt-decode";
 
 export default function Home() {
@@ -9,7 +11,7 @@ export default function Home() {
   const [checkingAuth, setCheckingAuth] = useState(true);
 
   useEffect(() => {
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    const token = Cookies.get("token"); // ← Artık Cookies kullanıyoruz
 
     if (!token) {
       setCheckingAuth(false);
@@ -21,18 +23,18 @@ export default function Home() {
       const now = Date.now() / 1000;
 
       if (decoded.exp && decoded.exp > now) {
-        // ✅ Token valid -> dashboard'a gönder
+        // 🔐 Token geçerli → Dashboard’a yönlendir
         router.push("/dashboard");
       } else {
-        localStorage.removeItem("token");
+        Cookies.remove("token");
         setCheckingAuth(false);
       }
     } catch (err) {
       console.error("JWT doğrulama hatası:", err);
-      localStorage.removeItem("token");
+      Cookies.remove("token");
       setCheckingAuth(false);
     }
-  }, []); // ✅ dependencies boş, loop olmaz
+  }, []);
 
   if (checkingAuth) {
     return (
