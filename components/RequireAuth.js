@@ -1,12 +1,11 @@
 "use client";
-
 import { useEffect, useState } from "react";
-import { useRouter } from "next/router"; // pages yapısı için doğru
+import { useRouter } from "next/navigation";
 import Cookies from "js-cookie";
 
 export default function RequireAuth({ children }) {
   const router = useRouter();
-  const [checked, setChecked] = useState(false);
+  const [authorized, setAuthorized] = useState(false);
 
   useEffect(() => {
     const token = Cookies.get("token");
@@ -14,29 +13,24 @@ export default function RequireAuth({ children }) {
     if (!token) {
       router.replace("/auth/login");
     } else {
-      setChecked(true);
+      setAuthorized(true);
     }
-  }, []);
+  }, [router]);
 
-  if (!checked) {
+  if (!authorized) {
     return (
-      <div style={styles.loading}>
-        🔐 Oturum doğrulanıyor...
+      <div style={{
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        height: "100vh",
+        fontSize: "1.5rem",
+        color: "#555"
+      }}>
+        🔐 Giriş doğrulanıyor...
       </div>
     );
   }
 
   return children;
 }
-
-const styles = {
-  loading: {
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    height: "100vh",
-    fontSize: "1.4rem",
-    color: "#f97316",
-    fontFamily: "sans-serif",
-  },
-};
