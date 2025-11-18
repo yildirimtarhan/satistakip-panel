@@ -1,12 +1,6 @@
-// 📄 /pages/api/auth/login.js
-import dbConnect from "@/lib/mongodb";
-import User from "@/models/User";
+import { connectToDatabase } from "@/lib/mongodb";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-
-export const config = {
-  api: { bodyParser: true },
-};
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -14,18 +8,22 @@ export default async function handler(req, res) {
   }
 
   try {
-    await dbConnect();
-
+    const { db } = await connectToDatabase();
     const { email, password } = req.body;
-    if (!email || !password) {
+
+    if (!email || !password)
       return res.status(400).json({ message: "Email ve şifre gereklidir" });
+
+    const user = await db.collection("users").findOne({ email });
+
+    if (!user) {
+      return res.status(401).json({ message: "Kullanıcı bulunamadı" });
     }
 
-    const user = await User.findOne({ email });
-    if (!user) return res.status(401).json({ message: "Kullanıcı bulunamadı" });
-
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(401).json({ message: "Şifre hatalı" });
+    if (!isMatch) {
+      return res.status(401).json({ message: "Şifre hatalı" });
+    }
 
     const token = jwt.sign(
       { userId: user._id },
@@ -38,9 +36,8 @@ export default async function handler(req, res) {
       token,
       user: {
         id: user._id,
-        email: user.email,
-        ad: user.ad || "",
-      },
+        email: user.email
+      }
     });
 
   } catch (err) {
