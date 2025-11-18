@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/router";
+import Cookies from "js-cookie";
 import Link from "next/link";
 
 export default function LoginPage() {
@@ -17,27 +18,35 @@ export default function LoginPage() {
     setError("");
 
     try {
-      const baseURL = process.env.NEXT_PUBLIC_SITE_URL || "";
-      const res = await fetch(`${baseURL}/api/auth/login`, {
+      const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
 
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json();
 
       if (!res.ok) {
         setError(data.message || "Giriş başarısız");
         return;
       }
 
-      if (data.token) {
-        localStorage.setItem("token", data.token);
+      // 🔥 TOKEN COOKIE'YE YAZ — RequireAuth bunu okuyor
+      Cookies.set("token", data.token, {
+        expires: 7,
+        secure: true,
+        sameSite: "lax",
+        path: "/",
+      });
+
+      // 🔥 GECİKME EKLE — Cookie tarayıcıda hazır olsun
+      setTimeout(() => {
         router.push("/dashboard");
-      }
+      }, 200);
+
     } catch (err) {
       console.error("Giriş hatası:", err);
-      setError("Sunucuya ulaşılamadı.");
+      setError("Sunucu hatası");
     }
   };
 
@@ -48,14 +57,24 @@ export default function LoginPage() {
       <form onSubmit={handleSubmit}>
         <div>
           <label>Email:</label>
-          <input type="email" name="email" value={form.email}
-            onChange={handleChange} required />
+          <input
+            type="email"
+            name="email"
+            value={form.email}
+            onChange={handleChange}
+            required
+          />
         </div>
 
         <div style={{ marginTop: "1rem" }}>
           <label>Şifre:</label>
-          <input type="password" name="password" value={form.password}
-            onChange={handleChange} required />
+          <input
+            type="password"
+            name="password"
+            value={form.password}
+            onChange={handleChange}
+            required
+          />
         </div>
 
         <button type="submit" style={{ marginTop: "1rem" }}>
