@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/router";
+import { useRouter } from "next/navigation"; // ← DÜZELTİLDİ!
 import Cookies from "js-cookie";
 import Link from "next/link";
 
@@ -31,7 +31,6 @@ export default function LoginPage() {
         return;
       }
 
-      // 🔥 TOKEN COOKIE'YE YAZ — RequireAuth bunu okuyor
       Cookies.set("token", data.token, {
         expires: 7,
         secure: true,
@@ -39,9 +38,8 @@ export default function LoginPage() {
         path: "/",
       });
 
-      // 🔥 GECİKME EKLE — Cookie tarayıcıda hazır olsun
       setTimeout(() => {
-        router.push("/dashboard");
+        router.push("/dashboard"); // ← Artık çalışacak
       }, 200);
 
     } catch (err) {
