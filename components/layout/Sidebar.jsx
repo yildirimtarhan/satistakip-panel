@@ -1,7 +1,10 @@
 // 📁 /components/layout/Sidebar.jsx
 import Link from "next/link";
 import { useRouter } from "next/router";
+import Cookies from "js-cookie";
+import jwtDecode from "jwt-decode";
 
+// 🔸 Menü item component
 const MenuItem = ({ href, icon, label }) => {
   const router = useRouter();
   const active = router.pathname.startsWith(href);
@@ -9,7 +12,11 @@ const MenuItem = ({ href, icon, label }) => {
     <Link
       href={href}
       className={`flex items-center gap-3 px-3 py-2 rounded-xl transition
-        ${active ? "bg-orange-100 text-orange-700" : "text-slate-700 hover:bg-slate-100"}`}
+        ${
+          active
+            ? "bg-orange-100 text-orange-700"
+            : "text-slate-700 hover:bg-slate-100"
+        }`}
     >
       <span className="text-lg">{icon}</span>
       <span className="font-medium">{label}</span>
@@ -20,8 +27,21 @@ const MenuItem = ({ href, icon, label }) => {
 export default function Sidebar() {
   const router = useRouter();
 
+  // 🔐 Token'dan role bul
+  let role = null;
+  try {
+    const token = Cookies.get("token");
+    if (token) {
+      const decoded = jwtDecode(token);
+      role = decoded.role || "user";
+    }
+  } catch (err) {
+    console.error("Role decode hatası:", err);
+  }
+
   const logout = () => {
     localStorage.removeItem("token");
+    Cookies.remove("token");
     router.replace("/auth/login");
   };
 
@@ -35,6 +55,7 @@ export default function Sidebar() {
 
       {/* Menu */}
       <nav className="flex-1 space-y-1">
+
         <MenuItem href="/dashboard" icon="🏠" label="Anasayfa" />
 
         {/* Firma */}
@@ -59,11 +80,7 @@ export default function Sidebar() {
           E-Belge
         </div>
 
-        <MenuItem
-          href="/dashboard/efatura"
-          icon="📄"
-          label="E-Fatura Paneli"
-        />
+        <MenuItem href="/dashboard/efatura" icon="📄" label="E-Fatura Paneli" />
 
         {/* Ticari */}
         <MenuItem href="/dashboard/cari" icon="👥" label="Cariler" />
@@ -78,6 +95,21 @@ export default function Sidebar() {
         <MenuItem href="/dashboard/stok-hareketleri" icon="🔄" label="Stok Hareketleri" />
         <MenuItem href="/dashboard/teklifler" icon="📄" label="Fiyat Teklifleri" />
         <MenuItem href="/dashboard/raporlar" icon="📈" label="Genel Raporlar" />
+
+        {/* 🔥 ADMIN PANEL — sadece admin görür */}
+        {role === "admin" && (
+          <>
+            <div className="mt-3 mb-1 px-3 text-xs font-bold text-slate-500 uppercase text-red-600">
+              Yönetim
+            </div>
+
+            <MenuItem
+              href="/dashboard/admin/users"
+              icon="🛡️"
+              label="Kullanıcı Yönetimi"
+            />
+          </>
+        )}
       </nav>
 
       {/* Logout */}

@@ -1,11 +1,11 @@
-// 📁 /pages/api/admin/users.js
+// 📁 /pages/api/admin/deleteUser.js
 import dbConnect from "@/lib/mongodb";
 import User from "@/models/User";
 import jwt from "jsonwebtoken";
 
 export default async function handler(req, res) {
-  if (req.method !== "GET") {
-    return res.status(405).json({ message: "Sadece GET destekleniyor" });
+  if (req.method !== "POST") {
+    return res.status(405).json({ message: "Sadece POST destekleniyor" });
   }
 
   try {
@@ -32,12 +32,25 @@ export default async function handler(req, res) {
 
     await dbConnect();
 
-    // 🔍 Tüm kullanıcılar (şifre hariç)
-    const users = await User.find({}, "-password").sort({ createdAt: -1 }).lean();
+    const { id } = req.body || {};
+    if (!id) {
+      return res.status(400).json({ message: "Kullanıcı id zorunlu" });
+    }
 
-    return res.status(200).json({ users });
+    // İstersen: Admin kendi hesabını silmesin
+    if (String(decoded.userId) === String(id)) {
+      return res.status(400).json({ message: "Kendi hesabınızı silemezsiniz" });
+    }
+
+    const deleted = await User.findByIdAndDelete(id).lean();
+
+    if (!deleted) {
+      return res.status(404).json({ message: "Kullanıcı bulunamadı" });
+    }
+
+    return res.status(200).json({ message: "Kullanıcı silindi" });
   } catch (err) {
-    console.error("Admin Users API Hatası:", err);
+    console.error("Admin DeleteUser API Hatası:", err);
     return res.status(500).json({ message: "Sunucu hatası", error: err.message });
   }
 }

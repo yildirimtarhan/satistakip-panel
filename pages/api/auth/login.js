@@ -1,7 +1,8 @@
+// 📁 /pages/api/auth/login.js
 import dbConnect from "@/lib/mongodb";
+import User from "@/models/User";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-import mongoose from "mongoose";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -9,34 +10,48 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 🔥 MongoDB bağlantısı
     await dbConnect();
 
-    // users koleksiyonu
-    const User = mongoose.connection.collection("users");
+    const { emailOrPhone, password } = req.body;
 
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({ message: "Email ve şifre gereklidir" });
+    if (!emailOrPhone || !password) {
+      return res.status(400).json({ message: "Email/Telefon ve şifre gereklidir" });
     }
 
-    // Kullanıcıyı bul
-    const user = await User.findOne({ email });
+    // 📌 Hem email hem telefon ile giriş desteği
+    const query = emailOrPhone.includes("@")
+      ? { email: emailOrPhone }
+      : { phone: emailOrPhone };
+
+    // 🔍 Kullanıcıyı bul
+    const user = await User.findOne(query).lean();
 
     if (!user) {
       return res.status(401).json({ message: "Kullanıcı bulunamadı" });
     }
 
-    // Şifre kontrolü
+    // 🔒 Şifre kontrolü
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ message: "Şifre hatalı" });
     }
 
-    // JWT token oluştur
+    // 🚫 Admin onayı kontrolü
+    if (!user.approved) {
+      return res.status(403).json({
+        message: "Hesabınız henüz admin tarafından onaylanmadı ❌",
+      });
+    }
+
+    // 🎫 JWT Token oluştur
     const token = jwt.sign(
-      { userId: user._id, email: user.email },
+      {
+        userId: user._id,
+        email: user.email,
+        phone: user.phone,
+        role: user.role || "user",
+        approved: user.approved,
+      },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
@@ -47,7 +62,10 @@ export default async function handler(req, res) {
       user: {
         id: user._id,
         email: user.email,
-      }
+        phone: user.phone,
+        role: user.role,
+        approved: user.approved,
+      },
     });
 
   } catch (err) {

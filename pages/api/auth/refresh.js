@@ -1,3 +1,4 @@
+// 📁 /pages/api/auth/refresh.js
 import jwt from "jsonwebtoken";
 
 export default async function handler(req, res) {
@@ -5,16 +6,17 @@ export default async function handler(req, res) {
     return res.status(405).json({ message: "Sadece POST destekleniyor" });
   }
 
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader) {
+    return res.status(401).json({ message: "Token bulunamadı" });
+  }
+
+  const oldToken = authHeader.split(" ")[1];
+
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) {
-      return res.status(401).json({ message: "Token bulunamadı" });
-    }
-
-    const token = authHeader.split(" ")[1];
-
-    // Süresi dolmuş olsa bile decode edelim
-    const decoded = jwt.verify(token, process.env.JWT_SECRET, {
+    // ❗ Süresi geçmiş olsa da decode edelim
+    const decoded = jwt.verify(oldToken, process.env.JWT_SECRET, {
       ignoreExpiration: true,
     });
 
@@ -22,7 +24,7 @@ export default async function handler(req, res) {
       return res.status(401).json({ message: "Geçersiz token" });
     }
 
-    // Yeni token oluştur
+    // ✔ Yeni token üret
     const newToken = jwt.sign(
       {
         userId: decoded.userId,
@@ -33,7 +35,7 @@ export default async function handler(req, res) {
     );
 
     return res.status(200).json({
-      message: "Yeni token oluşturuldu",
+      message: "Yeni token başarıyla oluşturuldu",
       token: newToken,
     });
 

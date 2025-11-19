@@ -1,12 +1,14 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Cookies from "js-cookie";
 import Link from "next/link";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [form, setForm] = useState({ email: "", password: "" });
+  const [form, setForm] = useState({ loginId: "", password: "" });
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -15,6 +17,7 @@ export default function LoginPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setLoading(true);
 
     try {
       const res = await fetch("/api/auth/login", {
@@ -27,57 +30,84 @@ export default function LoginPage() {
 
       if (!res.ok) {
         setError(data.message || "Giriş başarısız");
+        setLoading(false);
         return;
       }
 
-      // 🔥 Token sadece localStorage'a yazıyoruz
-      localStorage.setItem("token", data.token);
+      Cookies.set("token", data.token, {
+        expires: 7,
+        secure: true,
+        sameSite: "lax",
+        path: "/",
+      });
 
-      router.push("/dashboard");
+      setLoading(false);
+
+      setTimeout(() => {
+        router.push("/dashboard");
+      }, 500);
 
     } catch (err) {
       console.error("Giriş hatası:", err);
       setError("Sunucu hatası");
+      setLoading(false);
     }
   };
 
   return (
-    <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
-      <h1>Giriş Yap</h1>
+    <div className="min-h-screen flex items-center justify-center bg-slate-100 p-6">
+      <div className="bg-white shadow-lg rounded-xl p-8 w-full max-w-md">
+        <h1 className="text-2xl font-bold mb-4 text-center text-slate-800">
+          🔐 Giriş Yap
+        </h1>
 
-      <form onSubmit={handleSubmit}>
-        <div>
-          <label>Email:</label>
-          <input
-            type="email"
-            name="email"
-            value={form.email}
-            onChange={handleChange}
-            required
-          />
+        <form onSubmit={handleSubmit} className="space-y-4">
+
+          <div>
+            <label className="block font-medium mb-1">Telefon veya E-mail</label>
+            <input
+              type="text"
+              name="loginId"
+              className="w-full border rounded-lg p-2"
+              placeholder="Telefon: +90 5xx... | Email: mail@example.com"
+              value={form.loginId}
+              onChange={handleChange}
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block font-medium mb-1">Şifre</label>
+            <input
+              type="password"
+              name="password"
+              className="w-full border rounded-lg p-2"
+              value={form.password}
+              onChange={handleChange}
+              required
+            />
+          </div>
+
+          {error && <p className="text-red-600 text-sm">{error}</p>}
+
+          <button
+            type="submit"
+            className="w-full bg-orange-500 text-white py-2 rounded-lg font-medium hover:bg-orange-600 transition"
+            disabled={loading}
+          >
+            {loading ? "Giriş Yapılıyor..." : "Giriş Yap"}
+          </button>
+        </form>
+
+        <div className="flex justify-between text-sm mt-4">
+          <Link href="/auth/forgot-password" className="text-blue-600">
+            Şifremi Unuttum
+          </Link>
+          <Link href="/auth/register" className="text-blue-600">
+            Yeni Hesap Oluştur
+          </Link>
         </div>
-
-        <div style={{ marginTop: "1rem" }}>
-          <label>Şifre:</label>
-          <input
-            type="password"
-            name="password"
-            value={form.password}
-            onChange={handleChange}
-            required
-          />
-        </div>
-
-        <button type="submit" style={{ marginTop: "1rem" }}>
-          Giriş Yap
-        </button>
-
-        {error && <p style={{ color: "red" }}>{error}</p>}
-      </form>
-
-      <p style={{ marginTop: "1rem" }}>
-        <Link href="/auth/forgot-password">Şifremi unuttum?</Link>
-      </p>
+      </div>
     </div>
   );
 }

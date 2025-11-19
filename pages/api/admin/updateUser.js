@@ -1,11 +1,11 @@
-// 📁 /pages/api/admin/users.js
+// 📁 /pages/api/admin/updateUser.js
 import dbConnect from "@/lib/mongodb";
 import User from "@/models/User";
 import jwt from "jsonwebtoken";
 
 export default async function handler(req, res) {
-  if (req.method !== "GET") {
-    return res.status(405).json({ message: "Sadece GET destekleniyor" });
+  if (req.method !== "POST") {
+    return res.status(405).json({ message: "Sadece POST destekleniyor" });
   }
 
   try {
@@ -32,12 +32,32 @@ export default async function handler(req, res) {
 
     await dbConnect();
 
-    // 🔍 Tüm kullanıcılar (şifre hariç)
-    const users = await User.find({}, "-password").sort({ createdAt: -1 }).lean();
+    const { id, role, approved } = req.body || {};
 
-    return res.status(200).json({ users });
+    if (!id) {
+      return res.status(400).json({ message: "Kullanıcı id zorunlu" });
+    }
+
+    const update = {};
+    if (role !== undefined) update.role = role;
+    if (approved !== undefined) update.approved = approved;
+
+    const updatedUser = await User.findByIdAndUpdate(
+      id,
+      { $set: update },
+      { new: true, select: "-password" }
+    ).lean();
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: "Kullanıcı bulunamadı" });
+    }
+
+    return res.status(200).json({
+      message: "Kullanıcı güncellendi",
+      user: updatedUser,
+    });
   } catch (err) {
-    console.error("Admin Users API Hatası:", err);
+    console.error("Admin UpdateUser API Hatası:", err);
     return res.status(500).json({ message: "Sunucu hatası", error: err.message });
   }
 }
