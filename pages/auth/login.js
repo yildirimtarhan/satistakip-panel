@@ -1,7 +1,6 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation"; // ← DÜZELTİLDİ!
-import Cookies from "js-cookie";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 export default function LoginPage() {
@@ -31,16 +30,10 @@ export default function LoginPage() {
         return;
       }
 
-      Cookies.set("token", data.token, {
-        expires: 7,
-        secure: true,
-        sameSite: "lax",
-        path: "/",
-      });
+      // 🔥 Token sadece localStorage'a yazıyoruz
+      localStorage.setItem("token", data.token);
 
-      setTimeout(() => {
-        router.push("/dashboard"); // ← Artık çalışacak
-      }, 200);
+      router.push("/dashboard");
 
     } catch (err) {
       console.error("Giriş hatası:", err);
