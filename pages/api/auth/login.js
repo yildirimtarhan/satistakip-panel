@@ -1,6 +1,7 @@
-import { connectToDatabase } from "@/lib/mongodb";
+import dbConnect from "@/lib/mongodb";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
+import mongoose from "mongoose";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -8,25 +9,34 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { db } = await connectToDatabase();
+    // 🔥 MongoDB bağlantısı
+    await dbConnect();
+
+    // users koleksiyonu
+    const User = mongoose.connection.collection("users");
+
     const { email, password } = req.body;
 
-    if (!email || !password)
+    if (!email || !password) {
       return res.status(400).json({ message: "Email ve şifre gereklidir" });
+    }
 
-    const user = await db.collection("users").findOne({ email });
+    // Kullanıcıyı bul
+    const user = await User.findOne({ email });
 
     if (!user) {
       return res.status(401).json({ message: "Kullanıcı bulunamadı" });
     }
 
+    // Şifre kontrolü
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ message: "Şifre hatalı" });
     }
 
+    // JWT token oluştur
     const token = jwt.sign(
-      { userId: user._id },
+      { userId: user._id, email: user.email },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
@@ -36,12 +46,15 @@ export default async function handler(req, res) {
       token,
       user: {
         id: user._id,
-        email: user.email
+        email: user.email,
       }
     });
 
   } catch (err) {
     console.error("Login API Hatası:", err);
-    return res.status(500).json({ message: "Sunucu hatası", error: err.message });
+    return res.status(500).json({
+      message: "Sunucu hatası",
+      error: err.message,
+    });
   }
 }
