@@ -1,7 +1,6 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Cookies from "js-cookie";
 import Link from "next/link";
 
 export default function LoginPage() {
@@ -34,18 +33,12 @@ export default function LoginPage() {
         return;
       }
 
-      Cookies.set("token", data.token, {
-        expires: 7,
-        secure: true,
-        sameSite: "lax",
-        path: "/",
-      });
+      // 🔥 TOKEN'ı sadece localStorage’a yaz
+      localStorage.setItem("token", data.token);
 
       setLoading(false);
 
-      setTimeout(() => {
-        router.push("/dashboard");
-      }, 500);
+      router.push("/dashboard");
 
     } catch (err) {
       console.error("Giriş hatası:", err);
@@ -62,14 +55,12 @@ export default function LoginPage() {
         </h1>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-
           <div>
             <label className="block font-medium mb-1">Telefon veya E-mail</label>
             <input
               type="text"
               name="loginId"
               className="w-full border rounded-lg p-2"
-              placeholder="Telefon: +90 5xx... | Email: mail@example.com"
               value={form.loginId}
               onChange={handleChange}
               required
@@ -92,7 +83,7 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            className="w-full bg-orange-500 text-white py-2 rounded-lg font-medium hover:bg-orange-600 transition"
+            className="w-full bg-orange-500 text-white py-2 rounded-lg"
             disabled={loading}
           >
             {loading ? "Giriş Yapılıyor..." : "Giriş Yap"}
