@@ -33,11 +33,10 @@ export default function LoginPage() {
         return;
       }
 
-      // 🔥 TOKEN'ı sadece localStorage’a yaz
+      // ✔ COOKIE değil LOCAL STORAGE
       localStorage.setItem("token", data.token);
 
       setLoading(false);
-
       router.push("/dashboard");
 
     } catch (err) {
@@ -55,12 +54,14 @@ export default function LoginPage() {
         </h1>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+
           <div>
             <label className="block font-medium mb-1">Telefon veya E-mail</label>
             <input
               type="text"
               name="loginId"
               className="w-full border rounded-lg p-2"
+              placeholder="Telefon: +90 5xx... | Email: mail@example.com"
               value={form.loginId}
               onChange={handleChange}
               required
@@ -83,7 +84,7 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            className="w-full bg-orange-500 text-white py-2 rounded-lg"
+            className="w-full bg-orange-500 text-white py-2 rounded-lg font-medium hover:bg-orange-600 transition"
             disabled={loading}
           >
             {loading ? "Giriş Yapılıyor..." : "Giriş Yap"}

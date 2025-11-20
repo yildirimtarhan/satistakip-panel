@@ -1,30 +1,48 @@
-// 📁 /components/RequireAuth.js
 "use client";
-
 import { useEffect, useState } from "react";
+import { useRouter } from "next/router";
+import jwt_decode from "jwt-decode";
 
 export default function RequireAuth({ children }) {
+  const router = useRouter();
   const [allowed, setAllowed] = useState(false);
 
   useEffect(() => {
-    // 🔑 Token'ı sadece localStorage’dan kontrol ediyoruz
-    const token = typeof window !== "undefined"
-      ? localStorage.getItem("token")
-      : null;
+    const token = localStorage.getItem("token"); // ✔ Cookie değil LOCALSTORAGE
 
     if (!token) {
-      // Token yoksa login sayfasına at
-      window.location.href = "/auth/login";
+      router.replace("/auth/login");
       return;
     }
 
-    // Token varsa sayfayı göster
-    setAllowed(true);
-  }, []);
+    try {
+      const decoded = jwt_decode(token);
 
-  if (!allowed) {
-    return <div style={{ padding: 20 }}>Yükleniyor...</div>;
-  }
+      // Token süresi dolmuş mu?
+      if (decoded.exp * 1000 < Date.now()) {
+        localStorage.removeItem("token");
+        router.replace("/auth/login");
+        return;
+      }
+
+      // Admin kontrolü
+      if (router.pathname.startsWith("/dashboard/admin")) {
+        if (decoded.role !== "admin") {
+          alert("Bu sayfaya erişim yetkiniz yok ❌");
+          router.replace("/dashboard");
+          return;
+        }
+      }
+
+      setAllowed(true);
+    } catch (err) {
+      console.error("Token çözümleme hatası:", err);
+      localStorage.removeItem("token");
+      router.replace("/auth/login");
+    }
+  }, [router]);
+
+  if (!allowed) return <div style={{ padding: 20 }}>Yükleniyor...</div>;
 
   return children;
 }
