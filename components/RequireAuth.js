@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import jwtDecode from "jwt-decode";
+import { jwtDecode } from "jwt-decode";   // ✔ DOĞRU IMPORT
 
 export default function RequireAuth({ children }) {
   const router = useRouter();
@@ -16,16 +16,16 @@ export default function RequireAuth({ children }) {
     }
 
     try {
-      const decoded = jwtDecode(token);
+      const decoded = jwtDecode(token);  // ✔ Çalışır
 
-      // Token süresi kontrolü
+      // Token süresi kontrol
       if (decoded.exp * 1000 < Date.now()) {
         localStorage.removeItem("token");
         router.replace("/auth/login");
         return;
       }
 
-      // 🔥 Admin sayfasına erişim kontrolü
+      // Admin sayfa kontrolü
       if (router.pathname.startsWith("/dashboard/admin")) {
         if (decoded.role !== "admin") {
           alert("Bu sayfaya erişim yetkiniz yok ❌");
