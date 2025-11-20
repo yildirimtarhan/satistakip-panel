@@ -1,14 +1,16 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/router";
-import { jwtDecode } from "jwt-decode";
+import { useRouter } from "next/navigation";
+import Cookies from "js-cookie";
+import jwtDecode from "jwt-decode";
 
 export default function RequireAuth({ children }) {
   const router = useRouter();
   const [allowed, setAllowed] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
+    // 🔥 TOKEN ARTIK COOKIE’DEN OKUNUYOR
+    const token = Cookies.get("token");
 
     if (!token) {
       router.replace("/auth/login");
@@ -18,14 +20,14 @@ export default function RequireAuth({ children }) {
     try {
       const decoded = jwtDecode(token);
 
-      // Token süresi kontrolü
+      // Token süresi dolmuşsa
       if (decoded.exp * 1000 < Date.now()) {
-        localStorage.removeItem("token");
+        Cookies.remove("token");
         router.replace("/auth/login");
         return;
       }
 
-      // Admin sayfalarına erişim kontrolü
+      // Admin kontrolü
       if (router.pathname.startsWith("/dashboard/admin")) {
         if (decoded.role !== "admin") {
           alert("Bu sayfaya erişim yetkiniz yok ❌");
@@ -37,7 +39,7 @@ export default function RequireAuth({ children }) {
       setAllowed(true);
     } catch (err) {
       console.error("Token hatası:", err);
-      localStorage.removeItem("token");
+      Cookies.remove("token");
       router.replace("/auth/login");
     }
   }, [router]);
