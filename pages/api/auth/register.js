@@ -1,11 +1,10 @@
-// 📁 /pages/api/auth/register.js
 import dbConnect from "@/lib/mongodb";
 import User from "@/models/User";
 import bcrypt from "bcryptjs";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ message: "Sadece POST destekleniyor" });
+    return res.status(405).json({ message: "Sadece POST istekleri desteklenir" });
   }
 
   try {
@@ -13,47 +12,55 @@ export default async function handler(req, res) {
 
     const { email, phone, password, ad, soyad } = req.body;
 
-    // 📌 Zorunlu alan kontrolü
-    if (!password || (!email && !phone)) {
+    // 📌 Gerekli alanlar
+    if (!email || !phone || !password) {
       return res.status(400).json({
-        message: "Email veya telefon ve şifre gereklidir.",
+        message: "Email, telefon ve şifre zorunludur.",
       });
     }
 
-    // 📌 Email veya Telefon zaten var mı?
-    const existingUser = await User.findOne({
-      $or: [{ email }, { phone }],
-    }).lean();
+    // 📌 Email temizle
+    const cleanedEmail = email.toLowerCase();
 
-    if (existingUser) {
+    // 📌 Email zaten var mı?
+    const emailExists = await User.findOne({ email: cleanedEmail });
+    if (emailExists) {
+      return res.status(400).json({ message: "Bu e-posta zaten kayıtlı." });
+    }
+
+    // 📌 Telefon zaten var mı?
+    const phoneExists = await User.findOne({ phone });
+    if (phoneExists) {
       return res.status(400).json({
-        message: "Bu email veya telefon ile zaten hesap oluşturulmuş.",
+        message: "Bu telefon numarası zaten kayıtlı.",
       });
     }
 
-    // 🔒 Şifre hash
+    // 📌 Şifre hashle
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // 📌 Yeni kullanıcı oluştur
-    const createdUser = await User.create({
-      email: email || null,
-      phone: phone || null,
+    const newUser = await User.create({
+      email: cleanedEmail,
+      phone,
       password: hashedPassword,
       ad: ad || "",
       soyad: soyad || "",
       role: "user",
-      approved: false, // 🔥 Admin onayı gerekiyor!
+      approved: false, // ❗ Admin onayı ZORUNLU
       createdAt: new Date(),
     });
 
     return res.status(201).json({
-      message:
-        "Kayıt başarılı! Hesabınız admin tarafından onaylandıktan sonra giriş yapabilirsiniz.",
-      userId: createdUser._id,
+      message: "Kayıt başarılı! Admin onayı sonrası giriş yapabilirsiniz.",
+      userId: newUser._id,
     });
 
   } catch (error) {
     console.error("Register API Hatası:", error);
-    return res.status(500).json({ message: "Sunucu hatası" });
+    return res.status(500).json({
+      message: "Sunucu hatası",
+      error: error.message,
+    });
   }
 }

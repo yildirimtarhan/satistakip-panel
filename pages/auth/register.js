@@ -1,21 +1,20 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/router";
+import { useRouter } from "next/navigation";
 
 export default function RegisterPage() {
   const router = useRouter();
-
   const [form, setForm] = useState({
     ad: "",
     soyad: "",
     email: "",
     phone: "",
     password: "",
-    password2: "",
   });
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -25,16 +24,7 @@ export default function RegisterPage() {
     e.preventDefault();
     setError("");
     setSuccess("");
-
-    if (form.password !== form.password2) {
-      setError("Şifreler uyuşmuyor");
-      return;
-    }
-
-    if (!form.email && !form.phone) {
-      setError("Email veya telefon girmek zorunludur.");
-      return;
-    }
+    setLoading(true);
 
     try {
       const res = await fetch("/api/auth/register", {
@@ -47,114 +37,121 @@ export default function RegisterPage() {
 
       if (!res.ok) {
         setError(data.message || "Kayıt başarısız");
+        setLoading(false);
         return;
       }
 
       setSuccess(
-        "Kayıt başarılı! Hesabınız admin tarafından onaylandıktan sonra giriş yapabilirsiniz."
+        "Kayıt başarılı! 🚀 Hesabınız admin tarafından onaylandıktan sonra giriş yapabilirsiniz."
       );
+      setLoading(false);
 
       setTimeout(() => {
         router.push("/auth/login");
       }, 2000);
+
     } catch (err) {
       console.error("Kayıt hatası:", err);
-      setError("Sunucu hatası oluştu.");
+      setError("Beklenmedik bir hata oluştu.");
+      setLoading(false);
     }
   };
 
   return (
-    <div style={{ maxWidth: "450px", margin: "40px auto", fontFamily: "sans-serif" }}>
-      <h1 style={{ textAlign: "center", marginBottom: "1rem" }}>Yeni Üyelik</h1>
+    <div className="min-h-screen flex items-center justify-center bg-slate-100 p-6">
+      <div className="bg-white shadow-lg rounded-xl p-8 w-full max-w-md">
+        <h1 className="text-2xl font-bold mb-4 text-center text-slate-800">
+          📝 Yeni Hesap Oluştur
+        </h1>
 
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+        <form onSubmit={handleSubmit} className="space-y-4">
 
-        <div>
-          <label>Ad:</label>
-          <input
-            type="text"
-            name="ad"
-            value={form.ad}
-            onChange={handleChange}
-            required
-          />
-        </div>
+          {/* AD */}
+          <div>
+            <label className="block font-medium mb-1">Ad</label>
+            <input
+              type="text"
+              name="ad"
+              className="w-full border rounded-lg p-2"
+              value={form.ad}
+              onChange={handleChange}
+              required
+            />
+          </div>
 
-        <div>
-          <label>Soyad:</label>
-          <input
-            type="text"
-            name="soyad"
-            value={form.soyad}
-            onChange={handleChange}
-            required
-          />
-        </div>
+          {/* SOYAD */}
+          <div>
+            <label className="block font-medium mb-1">Soyad</label>
+            <input
+              type="text"
+              name="soyad"
+              className="w-full border rounded-lg p-2"
+              value={form.soyad}
+              onChange={handleChange}
+              required
+            />
+          </div>
 
-        <div>
-          <label>Email (opsiyonel):</label>
-          <input
-            type="email"
-            name="email"
-            value={form.email}
-            onChange={handleChange}
-          />
-        </div>
+          {/* EMAIL */}
+          <div>
+            <label className="block font-medium mb-1">E-mail</label>
+            <input
+              type="email"
+              name="email"
+              className="w-full border rounded-lg p-2"
+              placeholder="mail@example.com"
+              value={form.email}
+              onChange={handleChange}
+              required
+            />
+          </div>
 
-        <div>
-          <label>Telefon (opsiyonel):</label>
-          <input
-            type="tel"
-            name="phone"
-            value={form.phone}
-            onChange={handleChange}
-            placeholder="05xx xxx xx xx"
-          />
-        </div>
+          {/* TELEFON */}
+          <div>
+            <label className="block font-medium mb-1">Telefon</label>
+            <input
+              type="text"
+              name="phone"
+              className="w-full border rounded-lg p-2"
+              placeholder="+90 5xx xxx xx xx"
+              value={form.phone}
+              onChange={handleChange}
+              required
+            />
+          </div>
 
-        <div>
-          <label>Şifre:</label>
-          <input
-            type="password"
-            name="password"
-            value={form.password}
-            onChange={handleChange}
-            required
-          />
-        </div>
+          {/* ŞİFRE */}
+          <div>
+            <label className="block font-medium mb-1">Şifre</label>
+            <input
+              type="password"
+              name="password"
+              className="w-full border rounded-lg p-2"
+              value={form.password}
+              onChange={handleChange}
+              required
+            />
+          </div>
 
-        <div>
-          <label>Şifre Tekrar:</label>
-          <input
-            type="password"
-            name="password2"
-            value={form.password2}
-            onChange={handleChange}
-            required
-          />
-        </div>
+          {error && <p className="text-red-600 text-sm">{error}</p>}
+          {success && <p className="text-green-600 text-sm">{success}</p>}
 
-        <button
-          type="submit"
-          style={{
-            padding: "10px",
-            backgroundColor: "#0070f3",
-            color: "white",
-            border: "none",
-            borderRadius: "5px",
-            cursor: "pointer",
-          }}
-        >
-          Kayıt Ol
-        </button>
+          <button
+            type="submit"
+            className="w-full bg-orange-500 text-white py-2 rounded-lg font-medium hover:bg-orange-600 transition"
+            disabled={loading}
+          >
+            {loading ? "Kayıt Yapılıyor..." : "Kayıt Ol"}
+          </button>
+        </form>
 
-        {error && <p style={{ color: "red", textAlign: "center" }}>{error}</p>}
-        {success && <p style={{ color: "green", textAlign: "center" }}>{success}</p>}
-      </form>
-
-      <p style={{ marginTop: "1rem", textAlign: "center", color: "#777" }}>
-        Bu sistemde kayıt olduktan sonra hesabınız admin onayı sonrası aktif olur.
-      </p>
+        <p className="text-center text-sm mt-4">
+          Zaten hesabın var mı?{" "}
+          <a href="/auth/login" className="text-blue-600">
+            Giriş Yap
+          </a>
+        </p>
+      </div>
     </div>
   );
 }

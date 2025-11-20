@@ -4,12 +4,16 @@ import bcrypt from "bcryptjs";
 const UserSchema = new mongoose.Schema(
   {
     // Temel Bilgiler
-    email: { type: String, required: true, unique: true },
-    phone: { type: String, required: true, unique: true }, // 📱 Telefon ile giriş desteği
+    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+
+    // Telefon → opsiyonel ama unique
+    phone: { type: String, unique: true, sparse: true }, 
+    // sparse = telefon olmayan kullanıcıları da unique hatası olmadan kaydeder
+
     password: { type: String, required: true },
 
-    ad: { type: String },
-    soyad: { type: String },
+    ad: { type: String, trim: true },
+    soyad: { type: String, trim: true },
 
     // Rolleri: admin, user, operator, bayi, personel
     role: { type: String, default: "user" },
@@ -41,21 +45,21 @@ const UserSchema = new mongoose.Schema(
       appSecret: String,
     },
 
-    // ÇiçekSepeti
+    // ÇiçekSepeti API
     ciceksepetiApi: {
       apiKey: String,
       apiSecret: String,
     },
 
-    // Pazarama
+    // Pazarama API
     pazaramaApi: {
       merchantId: String,
       apiKey: String,
     },
 
-    // E-Fatura Entegrasyon Ayarları (Taxten / Mikro / Paraşüt)
+    // E-Fatura Entegrasyon
     efatura: {
-      provider: { type: String }, // taxten, paraşüt, genel
+      provider: { type: String },
       apiKey: { type: String },
       apiSecret: { type: String },
       vkn: { type: String },
