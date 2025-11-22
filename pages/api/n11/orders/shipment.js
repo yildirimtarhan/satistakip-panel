@@ -36,7 +36,7 @@ export default async function handler(req, res) {
   </soapenv:Envelope>`;
 
   try {
-    const { data } = await axios.post("https://api.n11.com/ws/OrderService.wsdl", xml, {
+    const { data } = await axios.post("https://api.n11.com/ws/OrderService", xml, {
       headers: { "Content-Type": "text/xml; charset=utf-8" },
       timeout: 15000, // 🧭 15 saniye sonra kes
     });

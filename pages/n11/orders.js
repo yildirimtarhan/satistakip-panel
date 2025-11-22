@@ -1,4 +1,6 @@
-// 📁 /pages/n11/orders/n11.js
+// 📁 /pages/dashboard/n11/orders.js
+"use client";
+
 import React, { useState } from "react";
 
 export default function N11Orders() {
@@ -12,11 +14,10 @@ export default function N11Orders() {
       const data = await res.json();
 
       if (data.success) {
-        const orderList =
-          data.data?.Envelope?.Body?.GetOrderListResponse?.orderList?.order || [];
-        setOrders(Array.isArray(orderList) ? orderList : [orderList]);
+        const list = data.orders || [];
+        setOrders(Array.isArray(list) ? list : [list]);
       } else {
-        alert("Sipariş alınamadı!");
+        alert(data.message || "Sipariş alınamadı!");
       }
     } catch (error) {
       console.error("❌ Hata:", error);
@@ -45,7 +46,7 @@ export default function N11Orders() {
         )}
         {orders.map((order, i) => (
           <li key={i} className="border p-3 rounded-lg shadow-sm">
-            <strong>Sipariş No:</strong> {order?.id || "-"} <br />
+            <strong>Sipariş No:</strong> {order?.orderNumber || "-"} <br />
             <strong>Durum:</strong> {order?.status || "-"} <br />
             <strong>Tarih:</strong> {order?.createDate || "-"}
           </li>
