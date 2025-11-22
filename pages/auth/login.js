@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Cookies from "js-cookie";
 import Link from "next/link";
 
 export default function LoginPage() {
@@ -33,12 +34,24 @@ export default function LoginPage() {
         return;
       }
 
-      // ✔ COOKIE değil LOCAL STORAGE
-      localStorage.setItem("token", data.token);
+      // 🔐 Token'ı COOKIE'ye yaz
+      Cookies.set("token", data.token, {
+        expires: 7,
+        secure: true,
+        sameSite: "lax",
+        path: "/",
+      });
+
+      // 🔐 Aynı token'ı localStorage'a da yaz (RequireAuth için garanti)
+      if (typeof window !== "undefined") {
+        localStorage.setItem("token", data.token);
+      }
 
       setLoading(false);
-      router.push("/dashboard");
 
+      setTimeout(() => {
+        router.push("/dashboard");
+      }, 500);
     } catch (err) {
       console.error("Giriş hatası:", err);
       setError("Sunucu hatası");
@@ -54,7 +67,6 @@ export default function LoginPage() {
         </h1>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-
           <div>
             <label className="block font-medium mb-1">Telefon veya E-mail</label>
             <input
