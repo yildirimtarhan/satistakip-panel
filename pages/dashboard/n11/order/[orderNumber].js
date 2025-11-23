@@ -63,6 +63,107 @@ export default function N11OrderDetailPage({ order, linkedCari }) {
   const [cariResults, setCariResults] = useState([]);
   const [selectedCariId, setSelectedCariId] = useState("");
   const [currentCari, setCurrentCari] = useState(linkedCari);
+  {/* YENİ CARI OLUŞTURMA BÖLÜMÜ */}
+<div className="mt-5 border-t pt-4">
+  <h3 className="text-md font-semibold text-orange-600 mb-2">
+    ➕ Yeni Cari Oluştur
+  </h3>
+
+  <label className="block text-sm font-medium">Ad Soyad</label>
+  <input
+    type="text"
+    className="border p-2 rounded w-full mb-2"
+    defaultValue={buyer.fullName || ""}
+    id="newCariAd"
+  />
+
+  <label className="block text-sm font-medium">Telefon</label>
+  <input
+    type="text"
+    className="border p-2 rounded w-full mb-2"
+    defaultValue={buyer.gsm || ""}
+    id="newCariTel"
+  />
+
+  <label className="block text-sm font-medium">E-posta</label>
+  <input
+    type="email"
+    className="border p-2 rounded w-full mb-2"
+    defaultValue={buyer.email || ""}
+    id="newCariEmail"
+  />
+
+  <label className="block text-sm font-medium">İl</label>
+  <input
+    type="text"
+    className="border p-2 rounded w-full mb-2"
+    defaultValue={addr.city || ""}
+    id="newCariIl"
+  />
+
+  <label className="block text-sm font-medium">İlçe</label>
+  <input
+    type="text"
+    className="border p-2 rounded w-full mb-2"
+    defaultValue={addr.district || ""}
+    id="newCariIlce"
+  />
+
+  <label className="block text-sm font-medium">Adres</label>
+  <textarea
+    className="border p-2 rounded w-full mb-3"
+    defaultValue={addr.address || ""}
+    id="newCariAdres"
+  />
+
+  <button
+    onClick={async () => {
+      const ad = document.getElementById("newCariAd").value;
+      const telefon = document.getElementById("newCariTel").value;
+      const email = document.getElementById("newCariEmail").value;
+      const il = document.getElementById("newCariIl").value;
+      const ilce = document.getElementById("newCariIlce").value;
+      const adres = document.getElementById("newCariAdres").value;
+
+      const res = await fetch("/api/cari/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ad,
+          telefon,
+          email,
+          il,
+          ilce,
+          adres,
+          n11Id: order.orderNumber,
+        }),
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        alert(data.message || "Cari oluşturulamadı");
+        return;
+      }
+
+      // ✔ Oluşan cariyi siparişe bağlayalım
+      await fetch("/api/cari/link-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderNumber: order.orderNumber,
+          cariId: data.cari._id,
+        }),
+      });
+
+      alert("Yeni cari oluşturuldu ve siparişle eşleştirildi!");
+      window.location.reload();
+    }}
+    className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg w-full"
+  >
+    💾 Yeni Cari Oluştur ve Bağla
+  </button>
+</div>
+
 
   const hasLinkedCari = !!currentCari;
 
