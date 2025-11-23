@@ -10,68 +10,84 @@ export default async function handler(req, res) {
   }
 
   const { orderNumber, cariId } = req.body || {};
-
-  if (!orderNumber || !cariId) {
-    return res.status(400).json({
-      success: false,
-      message: "orderNumber ve cariId zorunludur",
-    });
-  }
-
   await dbConnect();
 
-  const cari = await Cari.findById(cariId);
-  if (!cari) {
-    return res.status(404).json({
-      success: false,
-      message: "Cari bulunamadı",
-    });
-  }
-
+  // 1️⃣ Siparişi çek
   const order = await N11Order.findOne({ orderNumber });
   if (!order) {
-    return res.status(404).json({
-      success: false,
-      message: "Sipariş bulunamadı",
+    return res.status(404).json({ success: false, message: "Sipariş bulunamadı" });
+  }
+
+  // Eğer manuel cari seçilmişse → direkt eşleştir
+  if (cariId) {
+    const cari = await Cari.findById(cariId);
+    if (!cari) {
+      return res.status(404).json({ success: false, message: "Cari bulunamadı" });
+    }
+
+    order.accountId = cari._id;
+    await order.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Sipariş başarıyla cari ile eşleştirildi (manuel)"
     });
   }
 
-  // 🔗 Siparişe cari bağla
+  // 2️⃣ OTOMATİK CARİ OLUŞTURMA
+  const buyer = order.buyer || {};
+  const addr = order.shippingAddress || {};
+
+  // Aynı email veya aynı ad-soyad varsa → mevcut cariyi bul
+  let cari = await Cari.findOne({
+    $or: [
+      { email: buyer.email || "" },
+      { ad: buyer.fullName || "" }
+    ]
+  });
+
+  // Yoksa yeni cari oluştur
+  if (!cari) {
+    cari = await Cari.create({
+      ad: buyer.fullName || "N11 Müşteri",
+      tur: "Müşteri",
+      telefon: buyer.gsm || "",
+      email: buyer.email || "",
+      vergiTipi: "TCKN",
+      vergiNo: buyer.tckn || "",
+      adres: addr.fullAddress?.address || "",
+      il: addr.city || "",
+      ilce: addr.fullAddress?.district || "",
+      n11CustomerId: buyer.id || "",
+      bakiye: 0
+    });
+  }
+
+  // 3️⃣ Sipariş → Cari bağlantısı
   order.accountId = cari._id;
   await order.save();
 
-  // 💰 Cari hareketi kaydı (basit N11 satış hareketi)
+  // 4️⃣ Cari hareketi (N11 satışı)
   const total =
     Number(order.totalPrice) ||
     Number(order.raw?.totalAmount?.value || 0) ||
     0;
 
-  const date = order.raw?.createDate
-    ? new Date(order.raw.createDate)
-    : new Date();
-
   await Transaction.create({
     accountId: cari._id,
-    productId: null,
     type: "n11_sale",
     quantity: 1,
     unitPrice: total,
     total: total,
     currency: "TRY",
-    fxRate: 1,
     totalTRY: total,
-    varyant: "N11 siparişi",
-    date,
+    date: new Date(),
+    varyant: "N11 Siparişi"
   });
 
   return res.status(200).json({
     success: true,
-    message: "Sipariş başarıyla cari ile eşleştirildi",
-    cari: {
-      _id: cari._id.toString(),
-      ad: cari.ad,
-      telefon: cari.telefon,
-      email: cari.email,
-    },
+    message: "Sipariş cari ile otomatik eşleştirildi",
+    cariId: cari._id
   });
 }
