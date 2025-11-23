@@ -1,172 +1,164 @@
-// 📁 /pages/api/n11/orders/index.js
-import axios from "axios";
-import xml2js from "xml2js";
+// 📄 /pages/api/cari/index.js
 import dbConnect from "@/lib/mongodb";
-import N11Order from "@/models/N11Order";
+import jwt from "jsonwebtoken";
+import { Types } from "mongoose";
 import Cari from "@/models/Cari";
 
-// 🔧 Sipariş içindeki ürünleri normalize eden yardımcı fonksiyon
-function extractItemsFromOrder(o = {}) {
-  const list =
-    o.itemList ||
-    o.items ||
-    o.orderItemList ||
-    o.orderItemListResponse ||
-    {};
-
-  let rawItems =
-    list.item || list.items || list.orderItem || list.orderItems || [];
-
-  if (Array.isArray(rawItems)) return rawItems;
-  if (rawItems) return [rawItems];
-  return [];
-}
-
 export default async function handler(req, res) {
-  if (req.method !== "GET") {
-    return res.status(405).json({ message: "Only GET supported" });
-  }
-
-  const appKey = process.env.N11_APP_KEY;
-  const appSecret = process.env.N11_APP_SECRET;
-
-  if (!appKey || !appSecret) {
-    return res.status(500).json({
-      success: false,
-      message: "N11_APP_KEY veya N11_APP_SECRET eksik",
-    });
-  }
+  res.setHeader("Allow", "GET,POST,PUT,DELETE,OPTIONS");
+  if (req.method === "OPTIONS") return res.status(200).end();
 
   try {
     await dbConnect();
 
-    const xmlBody = `<?xml version="1.0" encoding="utf-8"?>
-    <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-      xmlns:sch="http://www.n11.com/ws/schemas">
-      <soapenv:Header/>
-      <soapenv:Body>
-        <sch:DetailedOrderListRequest>
-          <auth>
-            <appKey>${appKey}</appKey>
-            <appSecret>${appSecret}</appSecret>
-          </auth>
-          <pagingData>
-            <currentPage>0</currentPage>
-            <pageSize>50</pageSize>
-          </pagingData>
-        </sch:DetailedOrderListRequest>
-      </soapenv:Body>
-    </soapenv:Envelope>`;
+    // 🔐 TOKEN KONTROLÜ
+    const authHeader = req.headers.authorization || "";
+    const token = authHeader.startsWith("Bearer ")
+      ? authHeader.split(" ")[1]
+      : null;
 
-    // 🔄 API çağrısı
-    const { data } = await axios.post(
-      "https://api.n11.com/ws/OrderService",
-      xmlBody,
-      { headers: { "Content-Type": "text/xml;charset=UTF-8" }, timeout: 20000 }
-    );
+    if (!token) return res.status(401).json({ message: "Token eksik" });
 
-    const parser = new xml2js.Parser({ explicitArray: false });
-    const parsed = await parser.parseStringPromise(data);
-
-    // 🧩 XML parsing
-    const envelope =
-      parsed["SOAP-ENV:Envelope"] ||
-      parsed["soapenv:Envelope"] ||
-      parsed.Envelope;
-
-    const body =
-      envelope?.["SOAP-ENV:Body"] ||
-      envelope?.["soapenv:Body"] ||
-      envelope?.Body;
-
-    const responseNode =
-      body?.["ns3:DetailedOrderListResponse"] ||
-      body?.["ns2:DetailedOrderListResponse"] ||
-      body?.["ns1:DetailedOrderListResponse"] ||
-      body?.DetailedOrderListResponse;
-
-    const ordersRaw = responseNode?.orderList?.order || [];
-    const orders = Array.isArray(ordersRaw) ? ordersRaw : [ordersRaw];
-
-    // ========================================================================
-    // 🚀 AŞAMA 2 — OTOMATİK CARİ OLUŞTURMA & EŞLEŞTİRME
-    // ========================================================================
-    for (const o of orders) {
-      const buyer = o.buyer || {};
-      const addr = o.shippingAddress || {};
-      const items = extractItemsFromOrder(o);
-
-      // 🔍 1) CARİ ARA
-      let cari = await Cari.findOne({
-        $or: [
-          { n11CustomerId: buyer.id },
-          { email: buyer.email },
-          { ad: buyer.fullName }
-        ]
-      });
-
-      // 🆕 2) CARİ BULUNAMADI → OTOMATİK OLUŞTUR
-      if (!cari) {
-        cari = await Cari.create({
-          ad: buyer.fullName || "N11 Müşteri",
-          tur: "Müşteri",
-
-          n11CustomerId: buyer.id || "",
-          email: buyer.email || "",
-          telefon: addr.gsm || addr.phone || "",
-
-          vergiTipi: "TCKN",
-          vergiNo: buyer.tcId || "",
-          vergiDairesi: "",
-
-          adres: addr.address || "",
-          il: addr.city || "",
-          ilce: addr.district || "",
-          postaKodu: addr.postalCode || "",
-
-          paraBirimi: "TRY",
-
-          userId: null, // Çoklu kullanıcı varsa sende değiştiririz
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
-
-        console.log("🆕 Yeni cari oluşturuldu:", cari.ad);
-      }
-
-      // 📌 Siparişi kaydet + cariId ekle
-      const totalPrice =
-        Number(o.totalAmount?.value ?? 0) ||
-        Number(o.amount?.value ?? 0) ||
-        0;
-
-      await N11Order.findOneAndUpdate(
-        { orderNumber: o.orderNumber },
-        {
-          orderNumber: o.orderNumber,
-          buyer: o.buyer || {},
-          shippingAddress: addr,
-          items,
-          totalPrice,
-          status: o.status,
-          accountId: cari._id,  // 🔥 CARİ BAĞLANDI
-          raw: o,
-        },
-        { upsert: true, new: true }
-      );
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({ message: "Geçersiz token" });
     }
 
-    return res.status(200).json({
-      success: true,
-      message: "Siparişler + cari eşleştirme başarılı",
-      count: orders.length,
-    });
-  } catch (error) {
-    console.error("❌ N11 OrderService hata:", error.message);
-    return res.status(500).json({
-      success: false,
-      message: "Sipariş çekme hatası",
-      error: error.message,
-    });
+    const userId = decoded.userId;
+
+    // ============================================================
+    // 📌 GET → Cari Listesi
+    // ============================================================
+    if (req.method === "GET") {
+      const cariler = await Cari.find({ userId }).sort({ createdAt: -1 }).lean();
+
+      // Liste düzgün dönsün diye default değerler ekliyoruz
+      const fixed = cariler.map((c) => ({
+        ...c,
+        bakiye: Number(c.bakiye || 0),
+        totalSales: Number(c.totalSales || 0),
+        totalPurchases: Number(c.totalPurchases || 0),
+      }));
+
+      return res.status(200).json(fixed);
+    }
+
+    // ============================================================
+    // 📌 POST → Yeni Cari Ekle
+    // ============================================================
+    if (req.method === "POST") {
+      const b = req.body || {};
+
+      if (!b.ad) {
+        return res.status(400).json({ message: "Lütfen 'ad' alanını doldurun." });
+      }
+
+      const doc = {
+        ad: b.ad,
+        tur: b.tur || "Müşteri",
+        telefon: b.telefon || "",
+        email: b.email || "",
+        vergiTipi: b.vergiTipi || "TCKN",
+        vergiNo: b.vergiNo || "",
+        vergiDairesi: b.vergiDairesi || "",
+        adres: b.adres || "",
+        il: b.il || "",
+        ilce: b.ilce || "",
+        postaKodu: b.postaKodu || "",
+        paraBirimi: b.paraBirimi || "TRY",
+
+        // 🎯 Pazaryeri müşteri ID'leri — Frontend ile birebir
+        trendyolCustomerId: b.trendyolCustomerId || "",
+        hbCustomerId: b.hbCustomerId || "",
+        n11CustomerId: b.n11CustomerId || "",
+        amazonCustomerId: b.amazonCustomerId || "",
+        pttCustomerId: b.pttCustomerId || "",
+        idefixCustomerId: b.idefixCustomerId || "",
+        ciceksepetiCustomerId: b.ciceksepetiCustomerId || "",
+
+        bakiye: 0,
+        totalSales: 0,
+        totalPurchases: 0,
+
+        userId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const yeni = await Cari.create(doc);
+
+      return res.status(201).json({
+        message: "Cari başarıyla eklendi",
+        _id: yeni._id,
+      });
+    }
+
+    // ============================================================
+    // 📌 PUT → Cari Güncelle
+    // ============================================================
+    if (req.method === "PUT") {
+      const { cariId } = req.query;
+
+      if (!cariId) return res.status(400).json({ message: "cariId zorunludur." });
+
+      const _id = new Types.ObjectId(cariId);
+      const b = req.body || {};
+
+      const updateDoc = {
+        ...(b.ad !== undefined && { ad: b.ad }),
+        ...(b.tur !== undefined && { tur: b.tur }),
+        ...(b.telefon !== undefined && { telefon: b.telefon }),
+        ...(b.email !== undefined && { email: b.email }),
+        ...(b.vergiTipi !== undefined && { vergiTipi: b.vergiTipi }),
+        ...(b.vergiNo !== undefined && { vergiNo: b.vergiNo }),
+        ...(b.vergiDairesi !== undefined && { vergiDairesi: b.vergiDairesi }),
+        ...(b.adres !== undefined && { adres: b.adres }),
+        ...(b.il !== undefined && { il: b.il }),
+        ...(b.ilce !== undefined && { ilce: b.ilce }),
+        ...(b.postaKodu !== undefined && { postaKodu: b.postaKodu }),
+        ...(b.paraBirimi !== undefined && { paraBirimi: b.paraBirimi }),
+
+        // Pazaryeri ID’leri
+        ...(b.trendyolCustomerId !== undefined && {
+          trendyolCustomerId: b.trendyolCustomerId,
+        }),
+        ...(b.hbCustomerId !== undefined && { hbCustomerId: b.hbCustomerId }),
+        ...(b.n11CustomerId !== undefined && { n11CustomerId: b.n11CustomerId }),
+        ...(b.amazonCustomerId !== undefined && { amazonCustomerId: b.amazonCustomerId }),
+        ...(b.pttCustomerId !== undefined && { pttCustomerId: b.pttCustomerId }),
+        ...(b.idefixCustomerId !== undefined && { idefixCustomerId: b.idefixCustomerId }),
+        ...(b.ciceksepetiCustomerId !== undefined && { ciceksepetiCustomerId: b.ciceksepetiCustomerId }),
+
+        updatedAt: new Date(),
+      };
+
+      await Cari.updateOne({ _id, userId }, { $set: updateDoc });
+
+      return res.status(200).json({ message: "Cari güncellendi" });
+    }
+
+    // ============================================================
+    // 📌 DELETE → Cari Sil
+    // ============================================================
+    if (req.method === "DELETE") {
+      const { cariId } = req.query;
+
+      if (!cariId)
+        return res.status(400).json({ message: "cariId zorunludur." });
+
+      await Cari.deleteOne({
+        _id: new Types.ObjectId(cariId),
+        userId,
+      });
+
+      return res.status(200).json({ message: "Cari silindi" });
+    }
+
+    return res.status(405).json({ message: "Method not allowed" });
+  } catch (err) {
+    console.error("🔥 Cari API hatası:", err);
+    return res.status(500).json({ message: "Sunucu hatası" });
   }
 }

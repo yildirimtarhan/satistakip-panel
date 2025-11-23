@@ -1,39 +1,42 @@
-// 📁 /models/Cari.js
 import mongoose from "mongoose";
 
 const CariSchema = new mongoose.Schema({
-  ad: { type: String, required: true },
-  tur: { type: String, default: "Müşteri" },
-
+  ad: String,
+  tur: String,
   telefon: String,
   email: String,
 
-  vergiTipi: { type: String, default: "TCKN" },
+  vergiTipi: String,
   vergiNo: String,
   vergiDairesi: String,
+
+  paraBirimi: String,
+  kdvOrani: { type: Number, default: 20 },
 
   adres: String,
   il: String,
   ilce: String,
   postaKodu: String,
 
-  paraBirimi: { type: String, default: "TRY" },
+  profileUrl: String,
 
-  // 🛒 Pazaryeri müşteri ID'leri – FRONTEND ile birebir uyumlu
+  // Pazaryeri müşteri ID'leri (FRONTEND İLE BİREBİR)
   trendyolCustomerId: String,
   hbCustomerId: String,
-  n11CustomerId: String,      // ❗ DOĞRU ALAN
+  n11CustomerId: String,
   amazonCustomerId: String,
   pttCustomerId: String,
   idefixCustomerId: String,
   ciceksepetiCustomerId: String,
 
-  // Muhasebe alanları
+  // Finansal alanlar
   bakiye: { type: Number, default: 0 },
   totalSales: { type: Number, default: 0 },
   totalPurchases: { type: Number, default: 0 },
 
+  // Kullanıcı ID
   userId: String,
+
   createdAt: Date,
   updatedAt: Date,
 });
