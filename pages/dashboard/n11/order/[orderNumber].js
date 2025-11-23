@@ -129,14 +129,14 @@ export default function N11OrderDetailPage({ order, linkedCari }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ad,
-          telefon,
-          email,
-          il,
-          ilce,
-          adres,
-          n11Id: order.orderNumber,
-        }),
+  ad,
+  telefon,
+  email,
+  il,
+  ilce,
+  adres,
+  n11CustomerId: order.orderNumber, // ✅ DOĞRU FIELD
+}),
       });
 
       const data = await res.json();
