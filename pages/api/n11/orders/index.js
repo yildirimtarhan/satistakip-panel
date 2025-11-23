@@ -4,6 +4,31 @@ import xml2js from "xml2js";
 import dbConnect from "@/lib/mongodb";
 import N11Order from "@/models/N11Order";
 
+// 🔧 Sipariş içindeki ürünleri, N11'in farklı XML formatlarından normalize eden yardımcı fonksiyon
+function extractItemsFromOrder(o = {}) {
+  // N11 bazı siparişlerde itemList, bazılarında items, bazılarında orderItemList kullanabiliyor
+  const list =
+    o.itemList ||
+    o.items ||
+    o.orderItemList ||
+    o.orderItemListResponse ||
+    {};
+
+  // Bazı XML'lerde item yerine items.item, orderItem vs. gelebiliyor
+  let rawItems =
+    list.item || list.items || list.orderItem || list.orderItems || [];
+
+  if (Array.isArray(rawItems)) {
+    return rawItems;
+  }
+
+  if (rawItems) {
+    return [rawItems];
+  }
+
+  return [];
+}
+
 export default async function handler(req, res) {
   if (req.method !== "GET") {
     return res.status(405).json({ message: "Only GET supported" });
@@ -19,7 +44,7 @@ export default async function handler(req, res) {
     });
   }
 
-  // İsteğe bağlı: status query param (1 = yeni siparişler)
+  // İsteğe bağlı: status, page, pageSize query parametreleri
   const { status = "1", page = "0", pageSize = "20" } = req.query;
 
   // 🌐 SOAP XML (DetailedOrderListRequest)
@@ -59,6 +84,7 @@ export default async function handler(req, res) {
     const parser = new xml2js.Parser({ explicitArray: false });
     const parsed = await parser.parseStringPromise(data);
 
+    // Farklı namespace ihtimallerini karşıla
     const envelope =
       parsed["SOAP-ENV:Envelope"] ||
       parsed["soapenv:Envelope"] ||
@@ -76,29 +102,31 @@ export default async function handler(req, res) {
       body?.DetailedOrderListResponse;
 
     const ordersRaw = responseNode?.orderList?.order || [];
-    const orders = Array.isArray(ordersRaw) ? ordersRaw : [ordersRaw].filter(Boolean);
+    const orders = Array.isArray(ordersRaw)
+      ? ordersRaw
+      : [ordersRaw].filter(Boolean);
 
-    // 🔄 MongoDB'ye kaydet (upsert)
+    // 🔄 MongoDB'ye kaydet (upsert + item normalize)
     for (const o of orders) {
-      const items =
-        o.itemList?.item && Array.isArray(o.itemList.item)
-          ? o.itemList.item
-          : o.itemList?.item
-          ? [o.itemList.item]
-          : [];
+      const items = extractItemsFromOrder(o);
+
+      const totalPrice =
+        Number(o.totalAmount?.value ?? 0) ||
+        Number(o.amount?.value ?? 0) ||
+        0;
 
       await N11Order.findOneAndUpdate(
         { orderNumber: o.orderNumber },
         {
           orderNumber: o.orderNumber,
           buyer: o.buyer || {},
-          shippingAddress: o.shippingAddress || {},
+          shippingAddress: o.shippingAddress || o.shippingAddressDetail || {},
           items,
-          totalPrice: Number(o.totalAmount?.value ?? 0),
+          totalPrice,
           status: o.status,
           raw: o,
         },
-        { upsert: true }
+        { upsert: true, new: true }
       );
     }
 
