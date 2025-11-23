@@ -13,7 +13,10 @@ export default async function handler(req, res) {
 
     // 🔐 Token kontrolü
     const authHeader = req.headers.authorization || "";
-    const token = authHeader.startsWith("Bearer ") ? authHeader.split(" ")[1] : null;
+    const token = authHeader.startsWith("Bearer ")
+      ? authHeader.split(" ")[1]
+      : null;
+
     if (!token) return res.status(401).json({ message: "Token eksik" });
 
     let decoded;
@@ -24,58 +27,52 @@ export default async function handler(req, res) {
     }
 
     // =======================
-    // GET -> Cari listesi
+    // GET → Cari listesi
     // =======================
     if (req.method === "GET") {
       const list = await Cari.find({ userId: decoded.userId })
         .sort({ createdAt: -1 })
         .lean();
 
-      const withDefaults = (list || []).map((c) => ({
-        ...c,
-        balance: Number(c.balance || 0),
-        totalSales: Number(c.totalSales || 0),
-        totalPurchases: Number(c.totalPurchases || 0),
-      }));
-
-      return res.status(200).json(withDefaults);
+      return res.status(200).json(list || []);
     }
 
     // =======================
-    // POST -> Yeni cari ekle
+    // POST → Cari ekle
     // =======================
     if (req.method === "POST") {
-      const body = req.body || {};
-      if (!body.ad) {
-        return res.status(400).json({ message: "Lütfen 'ad' alanını doldurun." });
+      const b = req.body || {};
+
+      if (!b.ad) {
+        return res
+          .status(400)
+          .json({ message: "Lütfen 'ad' alanını doldurun." });
       }
 
       const doc = {
-        ad: body.ad,
-        tur: body.tur || "Müşteri",
-        telefon: body.telefon || "",
-        email: body.email || "",
-        vergiTipi: body.vergiTipi || "TCKN",
-        vergiNo: body.vergiNo || "",
-        paraBirimi: body.paraBirimi || "TRY",
-        kdvOrani: Number(body.kdvOrani ?? 20),
-        adres: body.adres || "",
-        il: body.il || "",
-        ilce: body.ilce || "",
-        postaKodu: body.postaKodu || "",
-        profileUrl: body.profileUrl || "",
+        ad: b.ad,
+        tur: b.tur || "Müşteri",
+        telefon: b.telefon || "",
+        email: b.email || "",
+        vergiTipi: b.vergiTipi || "TCKN",
+        vergiNo: b.vergiNo || "",
+        vergiDairesi: b.vergiDairesi || "",
+        adres: b.adres || "",
+        il: b.il || "",
+        ilce: b.ilce || "",
+        postaKodu: b.postaKodu || "",
+        paraBirimi: b.paraBirimi || "TRY",
 
-        // 🆕 Pazaryeri müşteri ID’leri
-        trendyolCustomerId: body.trendyolCustomerId || "",
-        hbCustomerId: body.hbCustomerId || "",
-        amazonCustomerId: body.amazonCustomerId || "",
-        n11CustomerId: body.n11CustomerId || "",
-        pazaramaCustomerId: body.pazaramaCustomerId || "",
-        pttAvmCustomerId: body.pttAvmCustomerId || "",
-        idefixCustomerId: body.idefixCustomerId || "",
+        // 🎯 PAZARYERİ MÜŞTERİ ID'LERİ (FRONTEND İLE BİREBİR)
+        trendyolCustomerId: b.trendyolCustomerId || "",
+        hbCustomerId: b.hbCustomerId || "",
+        n11CustomerId: b.n11CustomerId || "",
+        amazonCustomerId: b.amazonCustomerId || "",
+        pttCustomerId: b.pttCustomerId || "",
+        idefixCustomerId: b.idefixCustomerId || "",
+        ciceksepetiCustomerId: b.ciceksepetiCustomerId || "",
 
-        // Muhasebe alanları
-        balance: 0,
+        bakiye: 0,
         totalSales: 0,
         totalPurchases: 0,
 
@@ -84,98 +81,87 @@ export default async function handler(req, res) {
         updatedAt: new Date(),
       };
 
-      const result = await Cari.create(doc);
-      return res.status(201).json({ message: "✅ Cari başarıyla eklendi", _id: result._id });
+      const r = await Cari.create(doc);
+      return res.status(201).json({ message: "Cari eklendi", _id: r._id });
     }
 
     // =======================
-    // PUT -> Cari güncelle
+    // PUT → Cari güncelle
     // =======================
     if (req.method === "PUT") {
       const { cariId } = req.query;
-      if (!cariId) return res.status(400).json({ message: "cariId zorunludur." });
+
+      if (!cariId)
+        return res.status(400).json({ message: "cariId zorunludur." });
 
       let _id;
       try {
         _id = new Types.ObjectId(cariId);
       } catch {
-        return res.status(400).json({ message: "Geçersiz cariId." });
+        return res.status(400).json({ message: "Geçersiz ID." });
       }
 
-      const body = req.body || {};
-      delete body.userId;
-      delete body.createdAt;
+      const b = req.body || {};
 
       const updateDoc = {
-        ...(body.ad !== undefined && { ad: body.ad }),
-        ...(body.tur !== undefined && { tur: body.tur }),
-        ...(body.telefon !== undefined && { telefon: body.telefon }),
-        ...(body.email !== undefined && { email: body.email }),
-        ...(body.vergiTipi !== undefined && { vergiTipi: body.vergiTipi }),
-        ...(body.vergiNo !== undefined && { vergiNo: body.vergiNo }),
-        ...(body.paraBirimi !== undefined && { paraBirimi: body.paraBirimi }),
-        ...(body.kdvOrani !== undefined && { kdvOrani: Number(body.kdvOrani) }),
-        ...(body.adres !== undefined && { adres: body.adres }),
-        ...(body.il !== undefined && { il: body.il }),
-        ...(body.ilce !== undefined && { ilce: body.ilce }),
-        ...(body.postaKodu !== undefined && { postaKodu: body.postaKodu }),
-        ...(body.profileUrl !== undefined && { profileUrl: body.profileUrl }),
+        ...(b.ad !== undefined && { ad: b.ad }),
+        ...(b.tur !== undefined && { tur: b.tur }),
+        ...(b.telefon !== undefined && { telefon: b.telefon }),
+        ...(b.email !== undefined && { email: b.email }),
+        ...(b.vergiTipi !== undefined && { vergiTipi: b.vergiTipi }),
+        ...(b.vergiNo !== undefined && { vergiNo: b.vergiNo }),
+        ...(b.vergiDairesi !== undefined && { vergiDairesi: b.vergiDairesi }),
+        ...(b.adres !== undefined && { adres: b.adres }),
+        ...(b.il !== undefined && { il: b.il }),
+        ...(b.ilce !== undefined && { ilce: b.ilce }),
+        ...(b.postaKodu !== undefined && { postaKodu: b.postaKodu }),
+        ...(b.paraBirimi !== undefined && { paraBirimi: b.paraBirimi }),
 
-        ...(body.trendyolCustomerId !== undefined && { trendyolCustomerId: body.trendyolCustomerId }),
-        ...(body.hbCustomerId !== undefined && { hbCustomerId: body.hbCustomerId }),
-        ...(body.amazonCustomerId !== undefined && { amazonCustomerId: body.amazonCustomerId }),
-        ...(body.n11CustomerId !== undefined && { n11CustomerId: body.n11CustomerId }),
-        ...(body.pazaramaCustomerId !== undefined && { pazaramaCustomerId: body.pazaramaCustomerId }),
-        ...(body.pttAvmCustomerId !== undefined && { pttAvmCustomerId: body.pttAvmCustomerId }),
-        ...(body.idefixCustomerId !== undefined && { idefixCustomerId: body.idefixCustomerId }),
-
-        ...(body.balance !== undefined && { balance: Number(body.balance) }),
-        ...(body.totalSales !== undefined && { totalSales: Number(body.totalSales) }),
-        ...(body.totalPurchases !== undefined && { totalPurchases: Number(body.totalPurchases) }),
+        // 🎯 FRONTEND İLE AYNI ALANLAR
+        ...(b.trendyolCustomerId !== undefined && {
+          trendyolCustomerId: b.trendyolCustomerId,
+        }),
+        ...(b.hbCustomerId !== undefined && { hbCustomerId: b.hbCustomerId }),
+        ...(b.n11CustomerId !== undefined && { n11CustomerId: b.n11CustomerId }),
+        ...(b.amazonCustomerId !== undefined && {
+          amazonCustomerId: b.amazonCustomerId,
+        }),
+        ...(b.pttCustomerId !== undefined && { pttCustomerId: b.pttCustomerId }),
+        ...(b.idefixCustomerId !== undefined && {
+          idefixCustomerId: b.idefixCustomerId,
+        }),
+        ...(b.ciceksepetiCustomerId !== undefined && {
+          ciceksepetiCustomerId: b.ciceksepetiCustomerId,
+        }),
 
         updatedAt: new Date(),
       };
 
-      const result = await Cari.updateOne(
-        { _id, userId: decoded.userId },
-        { $set: updateDoc }
-      );
+      await Cari.updateOne({ _id, userId: decoded.userId }, updateDoc);
 
-      if (result.matchedCount === 0) {
-        return res.status(404).json({ message: "Cari bulunamadı." });
-      }
-
-      return res.status(200).json({ message: "✅ Cari güncellendi" });
+      return res.status(200).json({ message: "Cari güncellendi" });
     }
 
     // =======================
-    // DELETE -> Cari sil
+    // DELETE → Cari sil
     // =======================
     if (req.method === "DELETE") {
       const { cariId } = req.query;
-      if (!cariId) return res.status(400).json({ message: "cariId zorunludur." });
 
-      let _id;
-      try {
-        _id = new Types.ObjectId(cariId);
-      } catch {
-        return res.status(400).json({ message: "Geçersiz cariId." });
-      }
+      if (!cariId)
+        return res.status(400).json({ message: "cariId zorunludur." });
 
-      const result = await Cari.deleteOne({ _id, userId: decoded.userId });
-      if (result.deletedCount === 0) {
-        return res.status(404).json({ message: "Cari bulunamadı." });
-      }
+      await Cari.deleteOne({
+        _id: new Types.ObjectId(cariId),
+        userId: decoded.userId,
+      });
 
-      return res.status(200).json({ message: "✅ Cari silindi" });
+      return res.status(200).json({ message: "Cari silindi" });
     }
 
-    return res.status(405).json({ message: "Yalnızca GET, POST, PUT, DELETE desteklenir" });
+    return res.status(405).json({ message: "Method not allowed" });
   } catch (err) {
-    console.error("🔥 Cari API hatası:", err);
-    if (err?.name === "JsonWebTokenError" || err?.name === "TokenExpiredError") {
-      return res.status(401).json({ message: "Geçersiz veya süresi dolmuş token" });
-    }
+    console.error("Cari API hatası:", err);
     return res.status(500).json({ message: "Sunucu hatası" });
   }
 }
