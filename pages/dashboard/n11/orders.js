@@ -26,6 +26,11 @@ export default function N11Orders() {
     setLoading(false);
   };
 
+  const goToDetail = (orderNumber) => {
+    if (!orderNumber) return;
+    window.location.href = `/dashboard/n11/order/${orderNumber}`;
+  };
+
   return (
     <div className="p-6">
       <h1 className="text-2xl font-bold mb-4 text-orange-600">
@@ -44,11 +49,20 @@ export default function N11Orders() {
         {orders.length === 0 && !loading && (
           <p className="text-gray-500 mt-3">Henüz sipariş bulunamadı.</p>
         )}
+
         {orders.map((order, i) => (
-          <li key={i} className="border p-3 rounded-lg shadow-sm">
+          <li
+            key={i}
+            className="border p-3 rounded-lg shadow-sm cursor-pointer hover:bg-gray-50 transition"
+            onClick={() => goToDetail(order?.orderNumber)}
+          >
             <strong>Sipariş No:</strong> {order?.orderNumber || "-"} <br />
             <strong>Durum:</strong> {order?.status || "-"} <br />
-            <strong>Tarih:</strong> {order?.createDate || "-"}
+            <strong>Tarih:</strong> {order?.createDate || "-"} <br />
+
+            <span className="text-blue-600 text-sm underline mt-2 inline-block">
+              ➜ Detayları Gör
+            </span>
           </li>
         ))}
       </ul>
