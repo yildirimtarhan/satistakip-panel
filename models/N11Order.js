@@ -8,6 +8,8 @@ const N11OrderSchema = new mongoose.Schema(
     items: [],
     totalPrice: Number,
     status: String,
+    // 📌 Bu sipariş hangi Cari’ye bağlı?
+    cariId: { type: mongoose.Schema.Types.ObjectId, ref: "Cari" },
     raw: {}
   },
   { timestamps: true }

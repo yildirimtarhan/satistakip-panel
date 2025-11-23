@@ -41,6 +41,10 @@ export default function N11OrderDetailPage({ order }) {
   const [trackingNumber, setTrackingNumber] = useState("");
   const [isSending, setIsSending] = useState(false);
 
+  // 🔗 CARI EŞLEŞTİRME STATES
+  const [isLinkingCari, setIsLinkingCari] = useState(false);
+  const [linkedCariName, setLinkedCariName] = useState(null);
+
   const sendShipment = async () => {
     if (!shipmentCompany || !trackingNumber) {
       alert("Kargo firması ve takip numarası zorunludur!");
@@ -67,10 +71,35 @@ export default function N11OrderDetailPage({ order }) {
       setShipmentCompany("");
       setTrackingNumber("");
     } catch (err) {
+      console.error("Shipment error", err);
       alert("Kargo bildirimi gönderilemedi!");
+    } finally {
+      setIsSending(false);
     }
+  };
 
-    setIsSending(false);
+  const handleLinkCari = async () => {
+    if (isLinkingCari) return;
+    setIsLinkingCari(true);
+    try {
+      const res = await fetch("/api/n11/orders/link-cari", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderNumber: order.orderNumber }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(data.message || "Cari eşleştirme başarısız");
+      } else {
+        setLinkedCariName(data.cari?.ad || null);
+        alert(data.message || "Cari başarıyla eşleştirildi");
+      }
+    } catch (err) {
+      console.error("Cari link error", err);
+      alert("Cari eşleştirme sırasında hata oluştu");
+    } finally {
+      setIsLinkingCari(false);
+    }
   };
 
   return (
@@ -132,11 +161,17 @@ export default function N11OrderDetailPage({ order }) {
           <h2 className="font-semibold mb-2 text-gray-800">Teslimat Adresi</h2>
           <div className="text-sm space-y-1">
             <p><span className="font-medium">Alıcı:</span> {addr.fullName || "-"}</p>
-            <p><span className="font-medium">İl / İlçe:</span> {addr.city} / {addr.district}</p>
-            <p className="break-words">
-              <span className="font-medium">Adres:</span> {addr.address}
+            <p>
+              <span className="font-medium">İl / İlçe:</span>{" "}
+              {(addr.city || "").toString()} / {(addr.district || "").toString()}
             </p>
-            <p><span className="font-medium">Posta Kodu:</span> {addr.postalCode}</p>
+            <p className="break-words">
+              <span className="font-medium">Adres:</span>{" "}
+              {(addr.address || addr.fullAddress?.address || "").toString()}
+            </p>
+            {addr.postalCode && (
+              <p><span className="font-medium">Posta Kodu:</span> {addr.postaKodu || addr.postalCode}</p>
+            )}
           </div>
         </div>
       </div>
@@ -144,46 +179,56 @@ export default function N11OrderDetailPage({ order }) {
       {/* ÜRÜNLER */}
       <div className="bg-white border rounded-lg p-4 shadow-sm mb-6">
         <h2 className="font-semibold mb-3 text-gray-800">Sipariş Ürünleri</h2>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead className="bg-gray-100 text-xs uppercase text-gray-600">
-              <tr>
-                <th className="px-3 py-2 text-left">Ürün Adı</th>
-                <th className="px-3 py-2 text-left">SKU</th>
-                <th className="px-3 py-2 text-right">Adet</th>
-                <th className="px-3 py-2 text-right">Fiyat</th>
-                <th className="px-3 py-2 text-right">Tutar</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((it, idx) => {
-                const q = Number(it.quantity || 1);
-                const unitPrice = Number(it.price || 0);
-                const total = q * unitPrice;
+        {items.length === 0 ? (
+          <p className="text-sm text-gray-500">Bu siparişte ürün bulunamadı.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-100 text-xs uppercase text-gray-600">
+                <tr>
+                  <th className="px-3 py-2 text-left">Ürün Adı</th>
+                  <th className="px-3 py-2 text-left">SKU</th>
+                  <th className="px-3 py-2 text-right">Adet</th>
+                  <th className="px-3 py-2 text-right">Fiyat</th>
+                  <th className="px-3 py-2 text-right">Tutar</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((it, idx) => {
+                  const q = Number(it.quantity || it.amount || 1);
+                  const unitPrice =
+                    Number(it.price || it.priceWithTax || 0) ||
+                    Number(it.sellerInvoiceAmount?.value || 0);
+                  const total = q * unitPrice;
 
-                return (
-                  <tr key={idx} className="border-t hover:bg-gray-50">
-                    <td className="px-3 py-2">{it.productName}</td>
-                    <td className="px-3 py-2">{it.sellerProductCode || "-"}</td>
-                    <td className="px-3 py-2 text-right">{q}</td>
-                    <td className="px-3 py-2 text-right">{unitPrice.toFixed(2)} ₺</td>
-                    <td className="px-3 py-2 text-right">{total.toFixed(2)} ₺</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                  return (
+                    <tr key={idx} className="border-t hover:bg-gray-50">
+                      <td className="px-3 py-2">{it.productName || it.title || "-"}</td>
+                      <td className="px-3 py-2">{it.sellerProductCode || it.stockCode || "-"}</td>
+                      <td className="px-3 py-2 text-right">{q}</td>
+                      <td className="px-3 py-2 text-right">
+                        {unitPrice ? `${unitPrice.toFixed(2)} ₺` : "-"}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {total ? `${total.toFixed(2)} ₺` : "-"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      {/* İŞLEMLER */}
+      {/* İŞLEMLER + RAW JSON */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Sol kart */}
+        {/* İşlemler */}
         <div className="bg-white border rounded-lg p-4 shadow-sm">
           <h2 className="font-semibold mb-3 text-gray-800">İşlemler</h2>
 
-          <div className="flex flex-wrap gap-2">
-            {/* 📦 KARGOYU AKTİF ETTİK */}
+          <div className="flex flex-wrap gap-2 items-center">
+            {/* 📦 KARGO */}
             <button
               onClick={() => setShowShipmentModal(true)}
               className="px-3 py-2 text-sm rounded-md bg-orange-500 text-white hover:bg-orange-600"
@@ -191,12 +236,20 @@ export default function N11OrderDetailPage({ order }) {
               📦 Kargoya Ver
             </button>
 
+            {/* 🔗 CARI EŞLEŞTİR */}
             <button
-              className="px-3 py-2 text-sm rounded-md bg-blue-500 text-white opacity-60"
-              disabled
+              onClick={handleLinkCari}
+              disabled={isLinkingCari}
+              className="px-3 py-2 text-sm rounded-md bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-60"
             >
-              🔗 Cari Eşleştir (yakında)
+              {isLinkingCari ? "Cari eşleştiriliyor..." : "🔗 Cari ile Eşleştir"}
             </button>
+
+            {linkedCariName && (
+              <span className="text-xs text-green-700 ml-1">
+                Eşleştirilen cari: <strong>{linkedCariName}</strong>
+              </span>
+            )}
           </div>
         </div>
 
@@ -205,6 +258,9 @@ export default function N11OrderDetailPage({ order }) {
           <h2 className="font-semibold mb-2 text-gray-800 text-sm">
             Teknik Detay (Raw JSON)
           </h2>
+          <p className="text-xs text-gray-500 mb-2">
+            Sadece geliştirici amaçlıdır. N11&apos;den gelen ham veriyi gösterir.
+          </p>
           <pre className="text-[11px] max-h-64 overflow-auto bg-gray-50 border rounded-md p-2">
             {JSON.stringify(raw, null, 2)}
           </pre>
