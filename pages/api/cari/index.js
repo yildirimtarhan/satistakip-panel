@@ -1,167 +1,172 @@
-// 📄 /pages/api/cari/index.js
+// 📁 /pages/api/n11/orders/index.js
+import axios from "axios";
+import xml2js from "xml2js";
 import dbConnect from "@/lib/mongodb";
-import jwt from "jsonwebtoken";
-import { Types } from "mongoose";
+import N11Order from "@/models/N11Order";
 import Cari from "@/models/Cari";
 
+// 🔧 Sipariş içindeki ürünleri normalize eden yardımcı fonksiyon
+function extractItemsFromOrder(o = {}) {
+  const list =
+    o.itemList ||
+    o.items ||
+    o.orderItemList ||
+    o.orderItemListResponse ||
+    {};
+
+  let rawItems =
+    list.item || list.items || list.orderItem || list.orderItems || [];
+
+  if (Array.isArray(rawItems)) return rawItems;
+  if (rawItems) return [rawItems];
+  return [];
+}
+
 export default async function handler(req, res) {
-  res.setHeader("Allow", "GET,POST,PUT,DELETE,OPTIONS");
-  if (req.method === "OPTIONS") return res.status(200).end();
+  if (req.method !== "GET") {
+    return res.status(405).json({ message: "Only GET supported" });
+  }
+
+  const appKey = process.env.N11_APP_KEY;
+  const appSecret = process.env.N11_APP_SECRET;
+
+  if (!appKey || !appSecret) {
+    return res.status(500).json({
+      success: false,
+      message: "N11_APP_KEY veya N11_APP_SECRET eksik",
+    });
+  }
 
   try {
     await dbConnect();
 
-    // 🔐 Token kontrolü
-    const authHeader = req.headers.authorization || "";
-    const token = authHeader.startsWith("Bearer ")
-      ? authHeader.split(" ")[1]
-      : null;
+    const xmlBody = `<?xml version="1.0" encoding="utf-8"?>
+    <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+      xmlns:sch="http://www.n11.com/ws/schemas">
+      <soapenv:Header/>
+      <soapenv:Body>
+        <sch:DetailedOrderListRequest>
+          <auth>
+            <appKey>${appKey}</appKey>
+            <appSecret>${appSecret}</appSecret>
+          </auth>
+          <pagingData>
+            <currentPage>0</currentPage>
+            <pageSize>50</pageSize>
+          </pagingData>
+        </sch:DetailedOrderListRequest>
+      </soapenv:Body>
+    </soapenv:Envelope>`;
 
-    if (!token) return res.status(401).json({ message: "Token eksik" });
+    // 🔄 API çağrısı
+    const { data } = await axios.post(
+      "https://api.n11.com/ws/OrderService",
+      xmlBody,
+      { headers: { "Content-Type": "text/xml;charset=UTF-8" }, timeout: 20000 }
+    );
 
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (e) {
-      return res.status(401).json({ message: "Geçersiz token" });
-    }
+    const parser = new xml2js.Parser({ explicitArray: false });
+    const parsed = await parser.parseStringPromise(data);
 
-    // =======================
-    // GET → Cari listesi
-    // =======================
-    if (req.method === "GET") {
-      const list = await Cari.find({ userId: decoded.userId })
-        .sort({ createdAt: -1 })
-        .lean();
+    // 🧩 XML parsing
+    const envelope =
+      parsed["SOAP-ENV:Envelope"] ||
+      parsed["soapenv:Envelope"] ||
+      parsed.Envelope;
 
-      return res.status(200).json(list || []);
-    }
+    const body =
+      envelope?.["SOAP-ENV:Body"] ||
+      envelope?.["soapenv:Body"] ||
+      envelope?.Body;
 
-    // =======================
-    // POST → Cari ekle
-    // =======================
-    if (req.method === "POST") {
-      const b = req.body || {};
+    const responseNode =
+      body?.["ns3:DetailedOrderListResponse"] ||
+      body?.["ns2:DetailedOrderListResponse"] ||
+      body?.["ns1:DetailedOrderListResponse"] ||
+      body?.DetailedOrderListResponse;
 
-      if (!b.ad) {
-        return res
-          .status(400)
-          .json({ message: "Lütfen 'ad' alanını doldurun." });
-      }
+    const ordersRaw = responseNode?.orderList?.order || [];
+    const orders = Array.isArray(ordersRaw) ? ordersRaw : [ordersRaw];
 
-      const doc = {
-        ad: b.ad,
-        tur: b.tur || "Müşteri",
-        telefon: b.telefon || "",
-        email: b.email || "",
-        vergiTipi: b.vergiTipi || "TCKN",
-        vergiNo: b.vergiNo || "",
-        vergiDairesi: b.vergiDairesi || "",
-        adres: b.adres || "",
-        il: b.il || "",
-        ilce: b.ilce || "",
-        postaKodu: b.postaKodu || "",
-        paraBirimi: b.paraBirimi || "TRY",
+    // ========================================================================
+    // 🚀 AŞAMA 2 — OTOMATİK CARİ OLUŞTURMA & EŞLEŞTİRME
+    // ========================================================================
+    for (const o of orders) {
+      const buyer = o.buyer || {};
+      const addr = o.shippingAddress || {};
+      const items = extractItemsFromOrder(o);
 
-        // 🎯 PAZARYERİ MÜŞTERİ ID'LERİ (FRONTEND İLE BİREBİR)
-        trendyolCustomerId: b.trendyolCustomerId || "",
-        hbCustomerId: b.hbCustomerId || "",
-        n11CustomerId: b.n11CustomerId || "",
-        amazonCustomerId: b.amazonCustomerId || "",
-        pttCustomerId: b.pttCustomerId || "",
-        idefixCustomerId: b.idefixCustomerId || "",
-        ciceksepetiCustomerId: b.ciceksepetiCustomerId || "",
-
-        bakiye: 0,
-        totalSales: 0,
-        totalPurchases: 0,
-
-        userId: decoded.userId,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-
-      const r = await Cari.create(doc);
-      return res.status(201).json({ message: "Cari eklendi", _id: r._id });
-    }
-
-    // =======================
-    // PUT → Cari güncelle
-    // =======================
-    if (req.method === "PUT") {
-      const { cariId } = req.query;
-
-      if (!cariId)
-        return res.status(400).json({ message: "cariId zorunludur." });
-
-      let _id;
-      try {
-        _id = new Types.ObjectId(cariId);
-      } catch {
-        return res.status(400).json({ message: "Geçersiz ID." });
-      }
-
-      const b = req.body || {};
-
-      const updateDoc = {
-        ...(b.ad !== undefined && { ad: b.ad }),
-        ...(b.tur !== undefined && { tur: b.tur }),
-        ...(b.telefon !== undefined && { telefon: b.telefon }),
-        ...(b.email !== undefined && { email: b.email }),
-        ...(b.vergiTipi !== undefined && { vergiTipi: b.vergiTipi }),
-        ...(b.vergiNo !== undefined && { vergiNo: b.vergiNo }),
-        ...(b.vergiDairesi !== undefined && { vergiDairesi: b.vergiDairesi }),
-        ...(b.adres !== undefined && { adres: b.adres }),
-        ...(b.il !== undefined && { il: b.il }),
-        ...(b.ilce !== undefined && { ilce: b.ilce }),
-        ...(b.postaKodu !== undefined && { postaKodu: b.postaKodu }),
-        ...(b.paraBirimi !== undefined && { paraBirimi: b.paraBirimi }),
-
-        // 🎯 FRONTEND İLE AYNI ALANLAR
-        ...(b.trendyolCustomerId !== undefined && {
-          trendyolCustomerId: b.trendyolCustomerId,
-        }),
-        ...(b.hbCustomerId !== undefined && { hbCustomerId: b.hbCustomerId }),
-        ...(b.n11CustomerId !== undefined && { n11CustomerId: b.n11CustomerId }),
-        ...(b.amazonCustomerId !== undefined && {
-          amazonCustomerId: b.amazonCustomerId,
-        }),
-        ...(b.pttCustomerId !== undefined && { pttCustomerId: b.pttCustomerId }),
-        ...(b.idefixCustomerId !== undefined && {
-          idefixCustomerId: b.idefixCustomerId,
-        }),
-        ...(b.ciceksepetiCustomerId !== undefined && {
-          ciceksepetiCustomerId: b.ciceksepetiCustomerId,
-        }),
-
-        updatedAt: new Date(),
-      };
-
-      await Cari.updateOne({ _id, userId: decoded.userId }, updateDoc);
-
-      return res.status(200).json({ message: "Cari güncellendi" });
-    }
-
-    // =======================
-    // DELETE → Cari sil
-    // =======================
-    if (req.method === "DELETE") {
-      const { cariId } = req.query;
-
-      if (!cariId)
-        return res.status(400).json({ message: "cariId zorunludur." });
-
-      await Cari.deleteOne({
-        _id: new Types.ObjectId(cariId),
-        userId: decoded.userId,
+      // 🔍 1) CARİ ARA
+      let cari = await Cari.findOne({
+        $or: [
+          { n11CustomerId: buyer.id },
+          { email: buyer.email },
+          { ad: buyer.fullName }
+        ]
       });
 
-      return res.status(200).json({ message: "Cari silindi" });
+      // 🆕 2) CARİ BULUNAMADI → OTOMATİK OLUŞTUR
+      if (!cari) {
+        cari = await Cari.create({
+          ad: buyer.fullName || "N11 Müşteri",
+          tur: "Müşteri",
+
+          n11CustomerId: buyer.id || "",
+          email: buyer.email || "",
+          telefon: addr.gsm || addr.phone || "",
+
+          vergiTipi: "TCKN",
+          vergiNo: buyer.tcId || "",
+          vergiDairesi: "",
+
+          adres: addr.address || "",
+          il: addr.city || "",
+          ilce: addr.district || "",
+          postaKodu: addr.postalCode || "",
+
+          paraBirimi: "TRY",
+
+          userId: null, // Çoklu kullanıcı varsa sende değiştiririz
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+
+        console.log("🆕 Yeni cari oluşturuldu:", cari.ad);
+      }
+
+      // 📌 Siparişi kaydet + cariId ekle
+      const totalPrice =
+        Number(o.totalAmount?.value ?? 0) ||
+        Number(o.amount?.value ?? 0) ||
+        0;
+
+      await N11Order.findOneAndUpdate(
+        { orderNumber: o.orderNumber },
+        {
+          orderNumber: o.orderNumber,
+          buyer: o.buyer || {},
+          shippingAddress: addr,
+          items,
+          totalPrice,
+          status: o.status,
+          accountId: cari._id,  // 🔥 CARİ BAĞLANDI
+          raw: o,
+        },
+        { upsert: true, new: true }
+      );
     }
 
-    return res.status(405).json({ message: "Method not allowed" });
-  } catch (err) {
-    console.error("Cari API hatası:", err);
-    return res.status(500).json({ message: "Sunucu hatası" });
+    return res.status(200).json({
+      success: true,
+      message: "Siparişler + cari eşleştirme başarılı",
+      count: orders.length,
+    });
+  } catch (error) {
+    console.error("❌ N11 OrderService hata:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Sipariş çekme hatası",
+      error: error.message,
+    });
   }
 }
