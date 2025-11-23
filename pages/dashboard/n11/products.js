@@ -8,52 +8,29 @@ export default function N11ProductsPage() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [selected, setSelected] = useState(null); // 🧾 Detay modal verisi
 
-  // Veritabanından N11 ürünlerini çek
+  // 🔁 Veritabanındaki N11 ürünlerini çek
   const fetchLocalProducts = async () => {
+    setLoading(true);
+    setError("");
     try {
-      setLoading(true);
-      setError("");
-
       const res = await fetch("/api/n11/products/local");
       const data = await res.json();
 
       if (!res.ok || !data.success) {
         setError(data.message || "N11 ürünleri alınamadı");
         setProducts([]);
-        return;
+      } else {
+        setProducts(Array.isArray(data.products) ? data.products : []);
       }
-
-      setProducts(data.products || []);
     } catch (err) {
-      console.error("N11 ürün listesi hata:", err);
-      setError("Sunucu hatası oluştu");
+      console.error("N11 ürün liste hata:", err);
+      setError("Sunucuya bağlanırken hata oluştu");
+      setProducts([]);
     } finally {
       setLoading(false);
-    }
-  };
-
-  // N11'den tekrar sync et
-  const handleSync = async () => {
-    try {
-      setSyncing(true);
-      setError("");
-
-      const res = await fetch("/api/n11/products/sync");
-      const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        setError(data.message || "N11 senkron hatası");
-      }
-
-      // Senkron sonrası local listeyi yenile
-      await fetchLocalProducts();
-    } catch (err) {
-      console.error("N11 sync hata:", err);
-      setError("Senkron sırasında hata oluştu");
-    } finally {
-      setSyncing(false);
     }
   };
 
@@ -61,182 +38,264 @@ export default function N11ProductsPage() {
     fetchLocalProducts();
   }, []);
 
-  // Arama filtresi (title, sellerProductCode, brand)
-  const filteredProducts = products.filter((p) => {
-    const q = search.toLowerCase();
-    return (
-      (p.title || "").toLowerCase().includes(q) ||
-      (p.sellerProductCode || "").toLowerCase().includes(q) ||
-      (p.brand || "").toLowerCase().includes(q)
-    );
-  });
+  // 🔄 N11'den yeniden ürün senkronu
+  const handleSync = async () => {
+    if (!confirm("N11'den ürünleri tekrar çekmek istiyor musun?")) return;
+
+    setSyncing(true);
+    setError("");
+    try {
+      const res = await fetch("/api/n11/products/sync");
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        alert(data.message || "Senkronizasyon başarısız");
+      } else {
+        alert(`✅ N11 ürünleri senkron edildi. Kayıt sayısı: ${data.count}`);
+      }
+
+      // Senkron sonrası listeyi yenile
+      await fetchLocalProducts();
+    } catch (err) {
+      console.error("N11 sync hata:", err);
+      alert("N11 ile bağlantı kurulamadı");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  // 🔍 Ürün detayı (N11 API'den) – sellerProductCode ile
+  const handleShowDetail = async (p) => {
+    if (!p?.sellerProductCode && !p?.productSellerCode) {
+      alert("Bu ürün için sellerProductCode bulunamadı.");
+      return;
+    }
+
+    const code = p.sellerProductCode || p.productSellerCode;
+
+    setDetailLoading(true);
+    setSelected(null);
+    try {
+      const res = await fetch(
+        `/api/n11/products/detail?sellerProductCode=${encodeURIComponent(
+          code
+        )}`
+      );
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        alert(data.message || "Ürün detay alınamadı");
+        return;
+      }
+
+      setSelected({
+        sellerProductCode: data.sellerProductCode,
+        product: data.product,
+        local: p,
+      });
+    } catch (err) {
+      console.error("N11 ürün detay hata:", err);
+      alert("Ürün detayı alınırken hata oluştu");
+    } finally {
+      setDetailLoading(false);
+    }
+  };
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+    <div className="p-4 md:p-6 space-y-4">
+      {/* Başlık + üst bar */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">N11 Ürünleri</h1>
-          <p className="text-sm text-gray-500">
-            N11 mağazandaki ürünler burada listelenir. Senkron için aşağıdaki butonu kullanabilirsin.
+          <h1 className="text-2xl font-bold text-orange-600">
+            📦 N11 Ürünleri
+          </h1>
+          <p className="text-sm text-slate-500">
+            N11&apos;den senkron edilen ürünleri görüntüleyebilir, detaylarını
+            inceleyebilirsin.
           </p>
         </div>
 
-        <div className="flex flex-col md:flex-row gap-2">
-          <input
-            type="text"
-            placeholder="Ürün adı / SKU / Marka ara..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="border rounded-md px-3 py-2 text-sm w-full md:w-64"
-          />
-
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={fetchLocalProducts}
+            disabled={loading}
+            className="px-3 py-2 rounded-xl border text-sm hover:bg-slate-50"
+          >
+            ↻ Listeyi Yenile
+          </button>
           <button
             onClick={handleSync}
             disabled={syncing}
-            className="bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-md"
+            className="px-4 py-2 rounded-xl bg-orange-500 text-white text-sm hover:bg-orange-600 disabled:opacity-60"
           >
-            {syncing ? "Senkron yapılıyor..." : "🔄 N11'den Yenile (Sync)"}
+            {syncing ? "N11 ile Senkronize Ediliyor..." : "🔄 N11'den Senkron Et"}
           </button>
         </div>
       </div>
 
+      {/* Hata mesajı */}
       {error && (
-        <div className="mb-4 text-sm text-red-600 border border-red-300 bg-red-50 px-3 py-2 rounded-md">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">
           {error}
         </div>
       )}
 
-      {loading ? (
-        <div className="text-gray-600 text-sm">Yükleniyor...</div>
-      ) : filteredProducts.length === 0 ? (
-        <div className="text-gray-600 text-sm">
-          Hiç N11 ürünü bulunamadı.{" "}
-          <button
-            onClick={handleSync}
-            className="text-orange-600 underline"
-          >
-            N11&apos;den ürün çek
-          </button>
-        </div>
-      ) : (
-        <div className="overflow-x-auto border rounded-lg bg-white">
-          <table className="min-w-full text-sm">
-            <thead className="bg-gray-100 text-xs uppercase text-gray-600">
-              <tr>
-                <th className="px-3 py-2 text-left">Resim</th>
-                <th className="px-3 py-2 text-left">Ürün Adı</th>
-                <th className="px-3 py-2 text-left">SKU</th>
-                <th className="px-3 py-2 text-left">N11 ID</th>
-                <th className="px-3 py-2 text-right">Fiyat</th>
-                <th className="px-3 py-2 text-right">Stok</th>
-                <th className="px-3 py-2 text-left">Durum</th>
-                <th className="px-3 py-2 text-left">Marka</th>
-                <th className="px-3 py-2 text-left">Kategori</th>
-                <th className="px-3 py-2 text-center">İşlemler</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredProducts.map((p) => {
-                const img =
-                  (p.imageUrls && p.imageUrls[0]) ||
-                  p.raw?.images?.image?.[0] ||
-                  null;
+      {/* Liste alanı */}
+      <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
+        {loading ? (
+          <div className="p-6 text-center text-slate-500 text-sm">
+            N11 ürünleri yükleniyor...
+          </div>
+        ) : products.length === 0 ? (
+          <div className="p-6 text-center text-slate-500 text-sm">
+            Henüz N11 ürün kaydı bulunamadı.
+            <br />
+            <span className="text-xs">
+              Üstteki &quot;N11&apos;den Senkron Et&quot; butonu ile ürünleri
+              çekebilirsin.
+            </span>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-100 text-xs uppercase text-slate-600">
+                <tr>
+                  <th className="px-3 py-2 text-left">Ürün</th>
+                  <th className="px-3 py-2 text-left">SKU</th>
+                  <th className="px-3 py-2 text-right">Fiyat</th>
+                  <th className="px-3 py-2 text-right">Stok</th>
+                  <th className="px-3 py-2 text-left">Onay</th>
+                  <th className="px-3 py-2 text-left">Marka</th>
+                  <th className="px-3 py-2 text-left">Kategori</th>
+                  <th className="px-3 py-2 text-right">İşlemler</th>
+                </tr>
+              </thead>
+              <tbody>
+                {products.map((p) => {
+                  const price = Number(p.price || 0);
+                  const stock = Number(p.stock || 0);
+                  const approval = p.approvalStatus || p.status || "-";
 
-                return (
-                  <tr key={p._id} className="border-t hover:bg-gray-50">
-                    <td className="px-3 py-2">
-                      {img ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={img}
-                          alt={p.title || "Ürün görseli"}
-                          className="w-12 h-12 object-cover rounded-md border"
-                        />
-                      ) : (
-                        <div className="w-12 h-12 flex items-center justify-center text-xs text-gray-400 border rounded-md">
-                          Yok
+                  return (
+                    <tr
+                      key={p._id || p.productId || p.sellerProductCode}
+                      className="border-t hover:bg-slate-50"
+                    >
+                      <td className="px-3 py-2 max-w-xs">
+                        <div className="font-medium text-slate-900 truncate">
+                          {p.title || p.productName || "-"}
                         </div>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 max-w-xs">
-                      <div className="font-medium text-gray-900 truncate">
-                        {p.title || "-"}
-                      </div>
-                      <div className="text-xs text-gray-500 truncate">
-                        {p.raw?.subtitle || ""}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-xs text-gray-700">
-                      {p.sellerProductCode || "-"}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-gray-700">
-                      {p.productId || p.raw?.id || "-"}
-                    </td>
-                    <td className="px-3 py-2 text-right whitespace-nowrap">
-                      {p.price != null ? (
-                        <span className="font-medium">
-                          {Number(p.price).toFixed(2)} ₺
+                        <div className="text-xs text-slate-500 truncate">
+                          N11 ID: {p.productId || "-"}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-xs text-slate-700">
+                        {p.sellerProductCode || p.productSellerCode || "-"}
+                      </td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">
+                        {price ? `${price.toFixed(2)} ₺` : "-"}
+                      </td>
+                      <td className="px-3 py-2 text-right">{stock}</td>
+                      <td className="px-3 py-2 text-xs">
+                        <span
+                          className={`inline-flex px-2 py-1 rounded-full border ${
+                            String(approval).toLowerCase().includes("onay")
+                              ? "bg-green-50 border-green-200 text-green-700"
+                              : "bg-slate-50 border-slate-200 text-slate-700"
+                          }`}
+                        >
+                          {approval}
                         </span>
-                      ) : (
-                        "-"
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      {p.stock != null ? p.stock : "-"}
-                    </td>
-                    <td className="px-3 py-2">
-                      <span
-                        className={
-                          "inline-flex px-2 py-1 rounded-full text-xs " +
-                          (p.approvalStatus === "1"
-                            ? "bg-green-100 text-green-700"
-                            : p.approvalStatus === "2"
-                            ? "bg-yellow-100 text-yellow-700"
-                            : "bg-gray-100 text-gray-600")
-                        }
-                      >
-                        {p.approvalStatus === "1"
-                          ? "Onaylı"
-                          : p.approvalStatus === "2"
-                          ? "Beklemede"
-                          : p.approvalStatus || "Bilinmiyor"}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-xs text-gray-700">
-                      {p.brand || "-"}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-gray-700 max-w-xs truncate">
-                      {p.categoryFullPath || "-"}
-                    </td>
-                    <td className="px-3 py-2 text-center">
-                      <div className="flex flex-col gap-1">
-                        <button
-                          className="text-xs bg-blue-500 text-white px-2 py-1 rounded-md disabled:opacity-60"
-                          disabled
-                        >
-                          ERP&apos;ye Aktar (yakında)
-                        </button>
-                        <button
-                          className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-md"
-                          onClick={() =>
-                            alert(
-                              `Geçici detay:\n\n${JSON.stringify(
-                                p.raw || p,
-                                null,
-                                2
-                              ).slice(0, 1000)}...`
-                            )
-                          }
-                        >
-                          Detay
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      </td>
+                      <td className="px-3 py-2 text-xs text-slate-700">
+                        {p.brand || "-"}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-slate-700">
+                          {p.categoryFullPath || p.categoryName || "-"}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            className="px-2 py-1 text-xs rounded-lg border text-slate-700 hover:bg-slate-100"
+                            onClick={() => handleShowDetail(p)}
+                            disabled={detailLoading}
+                          >
+                            🔍 Detay
+                          </button>
+                          <button
+                            className="px-2 py-1 text-xs rounded-lg border border-dashed text-slate-400 cursor-not-allowed"
+                            title="ERP ürünleri ile eşleştirme yakında"
+                            disabled
+                          >
+                            🔗 ERP ile Eşleştir
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* 🔍 Detay Modalı */}
+      {selected && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-xl border border-slate-200 max-h-[80vh] flex flex-col">
+            <div className="px-4 py-3 border-b flex items-center justify-between">
+              <div>
+                <h2 className="font-bold text-orange-600">
+                  N11 Ürün Detayı
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Seller SKU: {selected.sellerProductCode}
+                </p>
+              </div>
+              <button
+                className="text-slate-500 text-sm hover:text-slate-800"
+                onClick={() => setSelected(null)}
+              >
+                ✖ Kapat
+              </button>
+            </div>
+
+            <div className="p-4 overflow-auto text-xs space-y-3">
+              {selected.local && (
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                  <h3 className="font-semibold text-slate-800 mb-1">
+                    ERP&apos;de Saklanan Özet
+                  </h3>
+                  <p>
+                    <strong>Başlık:</strong>{" "}
+                    {selected.local.title || selected.local.productName || "-"}
+                  </p>
+                  <p>
+                    <strong>N11 ID:</strong> {selected.local.productId || "-"}
+                  </p>
+                  <p>
+                    <strong>Fiyat:</strong>{" "}
+                    {selected.local.price
+                      ? `${Number(selected.local.price).toFixed(2)} ₺`
+                      : "-"}
+                  </p>
+                  <p>
+                    <strong>Stok:</strong> {selected.local.stock}
+                  </p>
+                </div>
+              )}
+
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                <h3 className="font-semibold text-slate-800 mb-1">
+                  N11&apos;den Gelen Ham Veri
+                </h3>
+                <pre className="whitespace-pre-wrap break-all">
+                  {JSON.stringify(selected.product, null, 2)}
+                </pre>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

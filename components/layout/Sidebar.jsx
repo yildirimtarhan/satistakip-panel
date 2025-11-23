@@ -54,22 +54,45 @@ export default function Sidebar() {
         <MenuItem href="/dashboard/ayarlar/firma" icon="🏢" label="Firma Ayarları" />
         <MenuItem href="/dashboard/api-settings" icon="⚙️" label="API Ayarları" />
 
+        {/* 🔶 Pazaryerleri Bölümü */}
         <div className="mt-3 mb-1 px-3 text-xs font-bold text-slate-500 uppercase">
           Pazaryerleri
         </div>
 
+        {/* 🟦 Hepsiburada */}
         <MenuItem href="/dashboard/hepsiburada/orders" icon="🛍️" label="Hepsiburada Siparişleri" />
+        <MenuItem href="/dashboard/hepsiburada/products" icon="📦" label="Hepsiburada Ürünleri" />
+        <MenuItem href="/dashboard/hepsiburada/settings" icon="🔑" label="Hepsiburada API Ayarları" />
+
+        {/* 🟨 Trendyol */}
         <MenuItem href="/dashboard/trendyol/orders" icon="🧾" label="Trendyol Siparişleri" />
+        <MenuItem href="/dashboard/trendyol/products" icon="📦" label="Trendyol Ürünleri" />
+        <MenuItem href="/dashboard/trendyol/settings" icon="🔑" label="Trendyol API Ayarları" />
+
+        {/* 🟣 Trendyol BuyBox */}
         <MenuItem href="/dashboard/pazaryeri/buybox" icon="📊" label="Trendyol BuyBox" />
+
+        {/* 🔴 N11 Sipariş Yönetimi */}
         <MenuItem href="/dashboard/n11/orders" icon="🛒" label="N11 Siparişleri" />
         <MenuItem href="/dashboard/n11/settings" icon="🔑" label="N11 API Ayarları" />
 
+        {/* 🔥 N11 Ürün Yönetimi */}
+        <div className="mt-3 mb-1 px-3 text-xs font-bold text-slate-500 uppercase">
+          N11 Ürün Yönetimi
+        </div>
+
+        <MenuItem href="/dashboard/n11/products" icon="📦" label="N11 Ürünleri" />
+        <MenuItem href="/dashboard/n11/products-sync" icon="🔄" label="Ürün Senkronize" />
+        <MenuItem href="/dashboard/n11/add-product" icon="➕" label="N11 Ürün Gönder" />
+
+        {/* 📁 E-Belge */}
         <div className="mt-3 mb-1 px-3 text-xs font-bold text-slate-500 uppercase">
           E-Belge
         </div>
 
         <MenuItem href="/dashboard/efatura" icon="📄" label="E-Fatura Paneli" />
 
+        {/* 📊 ERP Yönetimi */}
         <MenuItem href="/dashboard/cari" icon="👥" label="Cariler" />
         <MenuItem href="/dashboard/urunler" icon="📦" label="Ürünler" />
         <MenuItem href="/dashboard/urun-satis" icon="🛒" label="Ürün Satış" />
@@ -82,7 +105,7 @@ export default function Sidebar() {
         <MenuItem href="/dashboard/teklifler" icon="📄" label="Fiyat Teklifleri" />
         <MenuItem href="/dashboard/raporlar" icon="📈" label="Genel Raporlar" />
 
-        {/* 🔥 Sadece Admin görecek */}
+        {/* 🔥 Sadece Admin */}
         {role === "admin" && (
           <>
             <div className="mt-3 mb-1 px-3 text-xs font-bold text-slate-500 uppercase">
