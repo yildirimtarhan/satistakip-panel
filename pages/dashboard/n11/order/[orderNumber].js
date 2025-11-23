@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import dbConnect from "@/lib/mongodb";
 import N11Order from "@/models/N11Order";
+import Cari from "@/models/Cari";
 
 export async function getServerSideProps(context) {
   const { orderNumber } = context.params;
@@ -12,24 +13,39 @@ export async function getServerSideProps(context) {
   const doc = await N11Order.findOne({ orderNumber }).lean();
 
   if (!doc) {
-    return {
-      notFound: true,
-    };
+    return { notFound: true };
+  }
+
+  let linkedCari = null;
+  if (doc.accountId) {
+    const c = await Cari.findById(doc.accountId).lean();
+    if (c) {
+      linkedCari = {
+        _id: c._id.toString(),
+        ad: c.ad,
+        telefon: c.telefon,
+        email: c.email,
+      };
+    }
   }
 
   const order = {
     ...doc,
     _id: doc._id.toString(),
+    accountId: doc.accountId ? doc.accountId.toString() : null,
     createdAt: doc.createdAt ? doc.createdAt.toISOString() : null,
     updatedAt: doc.updatedAt ? doc.updatedAt.toISOString() : null,
   };
 
   return {
-    props: { order },
+    props: {
+      order,
+      linkedCari: linkedCari || null,
+    },
   };
 }
 
-export default function N11OrderDetailPage({ order }) {
+export default function N11OrderDetailPage({ order, linkedCari }) {
   const buyer = order.buyer || {};
   const addr = order.shippingAddress || {};
   const items = order.items || [];
@@ -39,11 +55,16 @@ export default function N11OrderDetailPage({ order }) {
   const [showShipmentModal, setShowShipmentModal] = useState(false);
   const [shipmentCompany, setShipmentCompany] = useState("");
   const [trackingNumber, setTrackingNumber] = useState("");
-  const [isSending, setIsSending] = useState(false);
+  const [isSendingShipment, setIsSendingShipment] = useState(false);
 
-  // 🔗 CARI EŞLEŞTİRME STATES
-  const [isLinkingCari, setIsLinkingCari] = useState(false);
-  const [linkedCariName, setLinkedCariName] = useState(null);
+  // 🔗 CARİ POPUP STATES
+  const [showCariModal, setShowCariModal] = useState(false);
+  const [cariLoading, setCariLoading] = useState(false);
+  const [cariResults, setCariResults] = useState([]);
+  const [selectedCariId, setSelectedCariId] = useState("");
+  const [currentCari, setCurrentCari] = useState(linkedCari);
+
+  const hasLinkedCari = !!currentCari;
 
   const sendShipment = async () => {
     if (!shipmentCompany || !trackingNumber) {
@@ -51,7 +72,7 @@ export default function N11OrderDetailPage({ order }) {
       return;
     }
 
-    setIsSending(true);
+    setIsSendingShipment(true);
 
     try {
       const res = await fetch("/api/n11/orders/shipment", {
@@ -71,35 +92,79 @@ export default function N11OrderDetailPage({ order }) {
       setShipmentCompany("");
       setTrackingNumber("");
     } catch (err) {
-      console.error("Shipment error", err);
       alert("Kargo bildirimi gönderilemedi!");
-    } finally {
-      setIsSending(false);
     }
+
+    setIsSendingShipment(false);
   };
 
-  const handleLinkCari = async () => {
-    if (isLinkingCari) return;
-    setIsLinkingCari(true);
+  // 🔍 Cari arama
+  const searchCari = async () => {
+    setCariLoading(true);
     try {
-      const res = await fetch("/api/n11/orders/link-cari", {
+      const res = await fetch("/api/cari/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderNumber: order.orderNumber }),
+        body: JSON.stringify({
+          email: buyer.email || "",
+          phone: buyer.gsm || "",
+          fullName: buyer.fullName || "",
+        }),
       });
+
       const data = await res.json();
-      if (!res.ok || !data.success) {
-        alert(data.message || "Cari eşleştirme başarısız");
+      if (!data.success) {
+        alert(data.message || "Cari arama başarısız");
+        setCariResults([]);
       } else {
-        setLinkedCariName(data.cari?.ad || null);
-        alert(data.message || "Cari başarıyla eşleştirildi");
+        setCariResults(data.results || []);
+        if (data.results && data.results.length === 1) {
+          setSelectedCariId(data.results[0]._id);
+        }
       }
     } catch (err) {
-      console.error("Cari link error", err);
-      alert("Cari eşleştirme sırasında hata oluştu");
-    } finally {
-      setIsLinkingCari(false);
+      console.error("Cari arama hatası:", err);
+      alert("Cari arama sırasında hata oluştu");
     }
+    setCariLoading(false);
+  };
+
+  const openCariModal = () => {
+    setShowCariModal(true);
+    searchCari();
+  };
+
+  // 🔗 Siparişi cariye bağla
+  const linkOrderToCari = async () => {
+    if (!selectedCariId) {
+      alert("Lütfen listeden bir cari seçin.");
+      return;
+    }
+
+    setCariLoading(true);
+    try {
+      const res = await fetch("/api/cari/link-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderNumber: order.orderNumber,
+          cariId: selectedCariId,
+        }),
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        alert(data.message || "Eşleştirme başarısız");
+      } else {
+        alert(data.message || "Cari ile eşleştirildi");
+        setCurrentCari(data.cari || null);
+        setShowCariModal(false);
+      }
+    } catch (err) {
+      console.error("Cari eşleştirme hatası:", err);
+      alert("Cari eşleştirme sırasında hata oluştu");
+    }
+    setCariLoading(false);
   };
 
   return (
@@ -111,8 +176,16 @@ export default function N11OrderDetailPage({ order }) {
             N11 Sipariş Detayı
           </h1>
           <p className="text-sm text-gray-500">
-            Sipariş No: <span className="font-semibold">{order.orderNumber}</span>
+            Sipariş No:{" "}
+            <span className="font-semibold">{order.orderNumber}</span>
           </p>
+          {hasLinkedCari && (
+            <p className="text-xs text-green-700 mt-1">
+              🔗 Bağlı Cari:{" "}
+              <span className="font-semibold">{currentCari.ad}</span> (
+              {currentCari.telefon || currentCari.email || "-"})
+            </p>
+          )}
         </div>
 
         <button
@@ -129,14 +202,20 @@ export default function N11OrderDetailPage({ order }) {
         <div className="bg-white border rounded-lg p-4 shadow-sm">
           <h2 className="font-semibold mb-2 text-gray-800">Sipariş Özeti</h2>
           <div className="text-sm space-y-1">
-            <p><span className="font-medium">Sipariş No:</span> {order.orderNumber}</p>
+            <p>
+              <span className="font-medium">Sipariş No:</span>{" "}
+              {order.orderNumber}
+            </p>
             <p>
               <span className="font-medium">Durum:</span>{" "}
               <span className="inline-flex px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-700">
                 {order.status || raw.status || "-"}
               </span>
             </p>
-            <p><span className="font-medium">Sipariş Tarihi:</span> {raw.createDate || "-"}</p>
+            <p>
+              <span className="font-medium">Sipariş Tarihi:</span>{" "}
+              {raw.createDate || "-"}
+            </p>
             <p>
               <span className="font-medium">Toplam Tutar:</span>{" "}
               {order.totalPrice != null
@@ -148,30 +227,46 @@ export default function N11OrderDetailPage({ order }) {
 
         {/* MÜŞTERİ */}
         <div className="bg-white border rounded-lg p-4 shadow-sm">
-          <h2 className="font-semibold mb-2 text-gray-800">Müşteri Bilgileri</h2>
+          <h2 className="font-semibold mb-2 text-gray-800">
+            Müşteri Bilgileri
+          </h2>
           <div className="text-sm space-y-1">
-            <p><span className="font-medium">Ad Soyad:</span> {buyer.fullName || "-"}</p>
-            <p><span className="font-medium">Telefon:</span> {buyer.gsm || "-"}</p>
-            <p><span className="font-medium">E-posta:</span> {buyer.email || "-"}</p>
+            <p>
+              <span className="font-medium">Ad Soyad:</span>{" "}
+              {buyer.fullName || "-"}
+            </p>
+            <p>
+              <span className="font-medium">Telefon:</span>{" "}
+              {buyer.gsm || "-"}
+            </p>
+            <p>
+              <span className="font-medium">E-posta:</span>{" "}
+              {buyer.email || "-"}
+            </p>
           </div>
         </div>
 
         {/* ADRES */}
         <div className="bg-white border rounded-lg p-4 shadow-sm">
-          <h2 className="font-semibold mb-2 text-gray-800">Teslimat Adresi</h2>
+          <h2 className="font-semibold mb-2 text-gray-800">
+            Teslimat Adresi
+          </h2>
           <div className="text-sm space-y-1">
-            <p><span className="font-medium">Alıcı:</span> {addr.fullName || "-"}</p>
+            <p>
+              <span className="font-medium">Alıcı:</span>{" "}
+              {addr.fullName || "-"}
+            </p>
             <p>
               <span className="font-medium">İl / İlçe:</span>{" "}
-              {(addr.city || "").toString()} / {(addr.district || "").toString()}
+              {addr.city} / {addr.district}
             </p>
             <p className="break-words">
-              <span className="font-medium">Adres:</span>{" "}
-              {(addr.address || addr.fullAddress?.address || "").toString()}
+              <span className="font-medium">Adres:</span> {addr.address}
             </p>
-            {addr.postalCode && (
-              <p><span className="font-medium">Posta Kodu:</span> {addr.postaKodu || addr.postalCode}</p>
-            )}
+            <p>
+              <span className="font-medium">Posta Kodu:</span>{" "}
+              {addr.postalCode}
+            </p>
           </div>
         </div>
       </div>
@@ -179,56 +274,50 @@ export default function N11OrderDetailPage({ order }) {
       {/* ÜRÜNLER */}
       <div className="bg-white border rounded-lg p-4 shadow-sm mb-6">
         <h2 className="font-semibold mb-3 text-gray-800">Sipariş Ürünleri</h2>
-        {items.length === 0 ? (
-          <p className="text-sm text-gray-500">Bu siparişte ürün bulunamadı.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-100 text-xs uppercase text-gray-600">
-                <tr>
-                  <th className="px-3 py-2 text-left">Ürün Adı</th>
-                  <th className="px-3 py-2 text-left">SKU</th>
-                  <th className="px-3 py-2 text-right">Adet</th>
-                  <th className="px-3 py-2 text-right">Fiyat</th>
-                  <th className="px-3 py-2 text-right">Tutar</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((it, idx) => {
-                  const q = Number(it.quantity || it.amount || 1);
-                  const unitPrice =
-                    Number(it.price || it.priceWithTax || 0) ||
-                    Number(it.sellerInvoiceAmount?.value || 0);
-                  const total = q * unitPrice;
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead className="bg-gray-100 text-xs uppercase text-gray-600">
+              <tr>
+                <th className="px-3 py-2 text-left">Ürün Adı</th>
+                <th className="px-3 py-2 text-left">SKU</th>
+                <th className="px-3 py-2 text-right">Adet</th>
+                <th className="px-3 py-2 text-right">Fiyat</th>
+                <th className="px-3 py-2 text-right">Tutar</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((it, idx) => {
+                const q = Number(it.quantity || 1);
+                const unitPrice = Number(it.price || 0);
+                const total = q * unitPrice;
 
-                  return (
-                    <tr key={idx} className="border-t hover:bg-gray-50">
-                      <td className="px-3 py-2">{it.productName || it.title || "-"}</td>
-                      <td className="px-3 py-2">{it.sellerProductCode || it.stockCode || "-"}</td>
-                      <td className="px-3 py-2 text-right">{q}</td>
-                      <td className="px-3 py-2 text-right">
-                        {unitPrice ? `${unitPrice.toFixed(2)} ₺` : "-"}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {total ? `${total.toFixed(2)} ₺` : "-"}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+                return (
+                  <tr key={idx} className="border-t hover:bg-gray-50">
+                    <td className="px-3 py-2">{it.productName}</td>
+                    <td className="px-3 py-2">
+                      {it.sellerProductCode || "-"}
+                    </td>
+                    <td className="px-3 py-2 text-right">{q}</td>
+                    <td className="px-3 py-2 text-right">
+                      {unitPrice.toFixed(2)} ₺
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {total.toFixed(2)} ₺
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* İŞLEMLER + RAW JSON */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* İşlemler */}
+        {/* İŞLEMLER */}
         <div className="bg-white border rounded-lg p-4 shadow-sm">
           <h2 className="font-semibold mb-3 text-gray-800">İşlemler</h2>
-
-          <div className="flex flex-wrap gap-2 items-center">
-            {/* 📦 KARGO */}
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setShowShipmentModal(true)}
               className="px-3 py-2 text-sm rounded-md bg-orange-500 text-white hover:bg-orange-600"
@@ -236,20 +325,12 @@ export default function N11OrderDetailPage({ order }) {
               📦 Kargoya Ver
             </button>
 
-            {/* 🔗 CARI EŞLEŞTİR */}
             <button
-              onClick={handleLinkCari}
-              disabled={isLinkingCari}
-              className="px-3 py-2 text-sm rounded-md bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-60"
+              onClick={openCariModal}
+              className="px-3 py-2 text-sm rounded-md bg-blue-500 text-white hover:bg-blue-600"
             >
-              {isLinkingCari ? "Cari eşleştiriliyor..." : "🔗 Cari ile Eşleştir"}
+              🔗 Cari ile Eşleştir
             </button>
-
-            {linkedCariName && (
-              <span className="text-xs text-green-700 ml-1">
-                Eşleştirilen cari: <strong>{linkedCariName}</strong>
-              </span>
-            )}
           </div>
         </div>
 
@@ -258,20 +339,19 @@ export default function N11OrderDetailPage({ order }) {
           <h2 className="font-semibold mb-2 text-gray-800 text-sm">
             Teknik Detay (Raw JSON)
           </h2>
-          <p className="text-xs text-gray-500 mb-2">
-            Sadece geliştirici amaçlıdır. N11&apos;den gelen ham veriyi gösterir.
-          </p>
           <pre className="text-[11px] max-h-64 overflow-auto bg-gray-50 border rounded-md p-2">
             {JSON.stringify(raw, null, 2)}
           </pre>
         </div>
       </div>
 
-      {/* 📦 KARGO POPUP MODAL */}
+      {/* 📦 KARGO MODAL */}
       {showShipmentModal && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-lg p-6 w-[400px]">
-            <h2 className="text-xl font-bold mb-4 text-orange-600">📦 Kargoya Ver</h2>
+            <h2 className="text-xl font-bold mb-4 text-orange-600">
+              📦 Kargoya Ver
+            </h2>
 
             <label className="block font-semibold mb-1">Kargo Firması</label>
             <select
@@ -305,11 +385,104 @@ export default function N11OrderDetailPage({ order }) {
               </button>
 
               <button
-                disabled={isSending}
+                disabled={isSendingShipment}
                 onClick={sendShipment}
                 className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg"
               >
-                {isSending ? "Gönderiliyor..." : "Gönder"}
+                {isSendingShipment ? "Gönderiliyor..." : "Gönder"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🔗 CARİ MODAL */}
+      {showCariModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-lg p-6 w-[520px] max-h-[80vh] overflow-auto">
+            <h2 className="text-xl font-bold mb-4 text-blue-600">
+              🔗 Cari ile Eşleştir
+            </h2>
+
+            <div className="mb-3 text-sm bg-gray-50 border rounded p-3">
+              <p className="font-semibold mb-1">N11 Müşteri Bilgisi</p>
+              <p>Ad Soyad: {buyer.fullName || "-"}</p>
+              <p>Telefon: {buyer.gsm || "-"}</p>
+              <p>E-posta: {buyer.email || "-"}</p>
+            </div>
+
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm text-gray-700">
+                Aşağıda ERP&apos;de bulunan olası cari kayıtları listelenir.
+              </p>
+              <button
+                onClick={searchCari}
+                className="text-xs px-3 py-1 rounded-md border bg-gray-50 hover:bg-gray-100"
+              >
+                {cariLoading ? "Yenileniyor..." : "Tekrar Ara"}
+              </button>
+            </div>
+
+            <div className="border rounded-md max-h-56 overflow-auto mb-4">
+              {cariLoading && (
+                <p className="text-sm text-center py-3 text-gray-500">
+                  Aranıyor...
+                </p>
+              )}
+
+              {!cariLoading && cariResults.length === 0 && (
+                <p className="text-sm text-center py-3 text-gray-500">
+                  Eşleşen cari bulunamadı. (İleride &quot;Yeni Cari
+                  Oluştur&quot; eklenecek)
+                </p>
+              )}
+
+              {!cariLoading &&
+                cariResults.map((c) => (
+                  <label
+                    key={c._id}
+                    className="flex items-start gap-2 px-3 py-2 border-b last:border-b-0 cursor-pointer hover:bg-gray-50 text-sm"
+                  >
+                    <input
+                      type="radio"
+                      name="cari"
+                      className="mt-1"
+                      checked={selectedCariId === c._id}
+                      onChange={() => setSelectedCariId(c._id)}
+                    />
+                    <div>
+                      <p className="font-semibold">
+                        {c.ad}{" "}
+                        {c.score > 0 && (
+                          <span className="text-xs text-green-700 ml-1">
+                            (puan: {c.score})
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-xs text-gray-600">
+                        Tel: {c.telefon || "-"} | E-posta: {c.email || "-"}
+                      </p>
+                      <p className="text-[11px] text-gray-500">
+                        {c.il || "-"} / {c.ilce || "-"}
+                      </p>
+                    </div>
+                  </label>
+                ))}
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowCariModal(false)}
+                className="px-4 py-2 border rounded-lg text-sm"
+              >
+                Kapat
+              </button>
+              <button
+                disabled={cariLoading}
+                onClick={linkOrderToCari}
+                className="px-4 py-2 rounded-lg text-sm bg-blue-600 text-white hover:bg-blue-700"
+              >
+                {cariLoading ? "Kaydediliyor..." : "Seçilen Cari ile Bağla"}
               </button>
             </div>
           </div>

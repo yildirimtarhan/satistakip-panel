@@ -8,11 +8,14 @@ const N11OrderSchema = new mongoose.Schema(
     items: [],
     totalPrice: Number,
     status: String,
-    // 📌 Bu sipariş hangi Cari’ye bağlı?
-    cariId: { type: mongoose.Schema.Types.ObjectId, ref: "Cari" },
-    raw: {}
+
+    // 🔗 ERP Cari bağlantısı
+    accountId: { type: mongoose.Types.ObjectId, ref: "Cari" },
+
+    raw: {},
   },
   { timestamps: true }
 );
 
-export default mongoose.models.N11Order || mongoose.model("N11Order", N11OrderSchema);
+export default mongoose.models.N11Order ||
+  mongoose.model("N11Order", N11OrderSchema);
