@@ -24,6 +24,82 @@ export default function UrunlerPanel() {
   };
   const [form, setForm] = useState(emptyForm);
 
+  // 🔐 Ortak helper: Token ile POST isteği
+  const postWithToken = async (url, body, okMessage) => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    if (!token) {
+      alert("❌ Oturum bulunamadı. Lütfen tekrar giriş yapın.");
+      return;
+    }
+
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body || {}),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || data.success === false) {
+        console.error("Pazaryeri hata:", data);
+        alert("❌ İşlem başarısız: " + (data.message || data.error || "Bilinmeyen hata"));
+        return;
+      }
+
+      if (okMessage) {
+        alert(okMessage);
+      } else {
+        alert("✅ İşlem başarılı");
+      }
+
+      // Ürünlerde bir değişiklik olduysa listeyi tazele
+      fetchUrunler();
+    } catch (err) {
+      console.error("Pazaryeri istek hatası:", err);
+      alert("❌ Sunucuya bağlanırken hata oluştu.");
+    }
+  };
+
+  // 🛒 N11’e gönder
+  const sendToN11 = async (u) => {
+    if (!confirm(`Bu ürünü N11'de listelemek istiyor musunuz?\n\n${u.ad}`)) return;
+    await postWithToken(
+      "/api/n11/products/saveProduct",
+      { productId: u._id },
+      "✅ Ürün N11'e gönderildi."
+    );
+  };
+
+  // 🛍 Trendyol’a gönder (şimdilik placeholder)
+  const sendToTrendyol = async (u) => {
+    alert("🛍 Trendyol entegrasyonu hazırlanıyor. Bu buton şimdilik bilgi amaçlı.\n\nÜrün: " + u.ad);
+    // Hazır olduğunda:
+    // await postWithToken("/api/trendyol/products/add", { productId: u._id }, "✅ Ürün Trendyol'a gönderildi.");
+  };
+
+  // 🧾 Hepsiburada’ya gönder (şimdilik placeholder)
+  const sendToHepsiburada = async (u) => {
+    alert("🧾 Hepsiburada ürün gönderimi modülü hazırlanıyor.\n\nÜrün: " + u.ad);
+    // Hazır olduğunda:
+    // await postWithToken("/api/hepsiburada-api/products/create", { productId: u._id }, "✅ Ürün Hepsiburada'ya gönderildi.");
+  };
+
+  // 📦 Amazon’a gönder (şimdilik placeholder)
+  const sendToAmazon = async (u) => {
+    alert("📦 Amazon ürün entegrasyonu daha sonra aktif edilecek.\n\nÜrün: " + u.ad);
+    // await postWithToken("/api/amazon/products/add", { productId: u._id }, "✅ Ürün Amazon'a gönderildi.");
+  };
+
+  // 🛍 Pazarama / PTT AVM’ye gönder (şimdilik placeholder)
+  const sendToPazarama = async (u) => {
+    alert("🛍 Pazarama / PTT AVM entegrasyonu planlandı. Şimdilik bilgi amaçlı.\n\nÜrün: " + u.ad);
+    // await postWithToken("/api/pazarama/products/add", { productId: u._id }, "✅ Ürün Pazarama'ya gönderildi.");
+  };
+
   // ⬇️ Excel helpers
   const downloadBlob = (blob, filename) => {
     const a = document.createElement("a");
@@ -286,6 +362,47 @@ export default function UrunlerPanel() {
               <td className="space-x-2">
                 <button className="text-blue-600" onClick={()=>handleEdit(u)}>✏️</button>
                 <button className="text-red-600" onClick={()=>handleDelete(u._id)}>🗑️</button>
+
+                {/* Pazaryeri butonları */}
+                <button
+                  className="text-orange-600"
+                  title="N11'e Gönder"
+                  onClick={()=>sendToN11(u)}
+                >
+                  🛒
+                </button>
+
+                <button
+                  className="text-purple-600"
+                  title="Trendyol'a Gönder"
+                  onClick={()=>sendToTrendyol(u)}
+                >
+                  🛍️
+                </button>
+
+                <button
+                  className="text-yellow-600"
+                  title="Hepsiburada'ya Gönder"
+                  onClick={()=>sendToHepsiburada(u)}
+                >
+                  🧾
+                </button>
+
+                <button
+                  className="text-blue-500"
+                  title="Amazon'a Gönder"
+                  onClick={()=>sendToAmazon(u)}
+                >
+                  📦
+                </button>
+
+                <button
+                  className="text-green-600"
+                  title="Pazarama / PTT AVM'ye Gönder"
+                  onClick={()=>sendToPazarama(u)}
+                >
+                  🛍
+                </button>
               </td>
             </tr>
           ))}
