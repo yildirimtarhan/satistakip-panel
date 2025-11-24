@@ -1,3 +1,4 @@
+// 📁 /pages/api/n11/products/sync.js
 import axios from "axios";
 import xml2js from "xml2js";
 import dbConnect from "@/lib/mongodb";
@@ -34,35 +35,37 @@ export default async function handler(req, res) {
     `;
 
     const response = await axios.post(
-      "https://api.n11.com/ws/ProductService.svc",
+      "https://api.n11.com/ws/ProductService",
       xmlBody,
       {
         headers: {
           "Content-Type": "text/xml;charset=UTF-8",
-          "SOAPAction": "http://www.n11.com/ws/GetProductList"
-        }
+          "SOAPAction":
+            "http://www.n11.com/ws/schemas/ProductServicePort/GetProductList",
+        },
       }
     );
 
     const parser = new xml2js.Parser({ explicitArray: false });
     const parsed = await parser.parseStringPromise(response.data);
 
-    const productResponse =
-      parsed?.Envelope?.Body?.GetProductListResponse ||
-      parsed?.["SOAP-ENV:Envelope"]?.["SOAP-ENV:Body"]?.["ns3:GetProductListResponse"];
+    const resp =
+      parsed?.["SOAP-ENV:Envelope"]?.["SOAP-ENV:Body"]?.[
+        "ns3:GetProductListResponse"
+      ];
 
-    if (!productResponse?.products?.product) {
+    if (!resp?.products?.product) {
       return res.json({
         success: true,
         message: "N11 ürünü bulunamadı",
         count: 0,
-        products: []
+        products: [],
       });
     }
 
-    const products = Array.isArray(productResponse.products.product)
-      ? productResponse.products.product
-      : [productResponse.products.product];
+    const products = Array.isArray(resp.products.product)
+      ? resp.products.product
+      : [resp.products.product];
 
     let saved = 0;
 
@@ -75,15 +78,14 @@ export default async function handler(req, res) {
           title: p.title,
           price: Number(p.displayPrice || p.price || 0),
           stock: Number(
-            p.stockItems?.stockItem?.quantity ??
-            p.stockItems?.stockItem?.[0]?.quantity ??
-            0
+            p?.stockItems?.stockItem?.quantity ??
+              p?.stockItems?.stockItem?.[0]?.quantity ??
+              0
           ),
           approvalStatus: p.approvalStatus,
           brand: p.brand,
           categoryFullPath: p.categoryName,
-          imageUrls: [],
-          raw: p
+          raw: p,
         },
         { upsert: true }
       );
@@ -94,15 +96,14 @@ export default async function handler(req, res) {
       success: true,
       message: "N11 ürünleri başarıyla senkron edildi",
       count: saved,
-      products
+      products,
     });
-
   } catch (error) {
     console.error("N11 sync error:", error);
     return res.status(500).json({
       success: false,
       message: "N11 ürünleri alınamadı",
-      error: error.message
+      error: error.message,
     });
   }
 }
