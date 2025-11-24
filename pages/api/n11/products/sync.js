@@ -1,4 +1,3 @@
-// 📁 /pages/api/n11/products/sync.js
 import axios from "axios";
 import xml2js from "xml2js";
 import dbConnect from "@/lib/mongodb";
@@ -17,7 +16,7 @@ export default async function handler(req, res) {
 
     const xmlBody = `
       <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-        xmlns:sch="http://www.n11.com/ws/schemas">
+          xmlns:sch="http://www.n11.com/ws/schemas">
         <soapenv:Header/>
         <soapenv:Body>
           <sch:GetProductListRequest>
@@ -35,21 +34,27 @@ export default async function handler(req, res) {
     `;
 
     const response = await axios.post(
-      "https://api.n11.com/ws/ProductService",
+      "https://api.n11.com/ws/ProductService.svc",
       xmlBody,
-      { headers: { "Content-Type": "text/xml;charset=UTF-8" } }
+      {
+        headers: {
+          "Content-Type": "text/xml;charset=UTF-8",
+          "SOAPAction": "http://www.n11.com/ws/GetProductList"
+        }
+      }
     );
 
     const parser = new xml2js.Parser({ explicitArray: false });
     const parsed = await parser.parseStringPromise(response.data);
 
     const productResponse =
+      parsed?.Envelope?.Body?.GetProductListResponse ||
       parsed?.["SOAP-ENV:Envelope"]?.["SOAP-ENV:Body"]?.["ns3:GetProductListResponse"];
 
     if (!productResponse?.products?.product) {
       return res.json({
         success: true,
-        message: "N11 ürünü bulunamadı.",
+        message: "N11 ürünü bulunamadı",
         count: 0,
         products: []
       });
@@ -59,7 +64,6 @@ export default async function handler(req, res) {
       ? productResponse.products.product
       : [productResponse.products.product];
 
-    // === MongoDB kayıt işlemi ===
     let saved = 0;
 
     for (const p of products) {
@@ -76,8 +80,8 @@ export default async function handler(req, res) {
             0
           ),
           approvalStatus: p.approvalStatus,
-          brand: p.brand || null,
-          categoryFullPath: p.categoryName || null,
+          brand: p.brand,
+          categoryFullPath: p.categoryName,
           imageUrls: [],
           raw: p
         },
@@ -94,10 +98,11 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
+    console.error("N11 sync error:", error);
     return res.status(500).json({
       success: false,
-      message: "N11 Response parse edilemedi",
-      error: error.message,
+      message: "N11 ürünleri alınamadı",
+      error: error.message
     });
   }
 }
