@@ -1,0 +1,44 @@
+// 📁 /pages/dashboard/n11/products-sync.js
+"use client";
+import { useState } from "react";
+
+export default function ProductsSync() {
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const syncProducts = async () => {
+    setLoading(true);
+    setResult(null);
+
+    const token = localStorage.getItem("token");
+    const res = await fetch("/api/n11/products/sync", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    const data = await res.json();
+    setResult(data);
+    setLoading(false);
+  };
+
+  return (
+    <div className="p-6">
+      <h1 className="text-2xl font-bold text-orange-600 mb-4">🔄 Ürün Senkronizasyonu</h1>
+
+      <button
+        onClick={syncProducts}
+        disabled={loading}
+        className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+      >
+        {loading ? "Senkronize ediliyor..." : "N11 → ERP Ürün Senkronize Et"}
+      </button>
+
+      {result && (
+        <div className="mt-4 p-4 bg-white rounded-xl shadow">
+          <h2 className="font-bold mb-2">Sonuç:</h2>
+          <pre className="text-sm">{JSON.stringify(result, null, 2)}</pre>
+        </div>
+      )}
+    </div>
+  );
+}
