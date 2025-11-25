@@ -23,12 +23,21 @@ function buildN11SaveProductXML(doc, n11CategoryId, appKey, appSecret) {
             <productSellerCode>${barkod}</productSellerCode>
             <title>${(doc.ad || "").replace(/&/g, "&amp;")}</title>
             <description><![CDATA[${doc.aciklama || doc.ad || ""}]]></description>
-            <category id="${n11CategoryId}"></category>
-            <price>${doc.satisFiyati.toString().replace(",", ".")}</price>
-            <currencyType>${doc.paraBirimi === "USD" ? "USD" : doc.paraBirimi === "EUR" ? "EUR" : "TL"}</currencyType>
+
+            ${n11CategoryId ? `<category id="${n11CategoryId}"></category>` : ""}
+
+            <price>${Number(doc.satisFiyati || 0)}</price>
+            <currencyType>${
+              doc.paraBirimi === "USD"
+                ? "USD"
+                : doc.paraBirimi === "EUR"
+                ? "EUR"
+                : "TL"
+            }</currencyType>
+
             <stockItems>
               <stockItem>
-                <quantity>${doc.stok}</quantity>
+                <quantity>${Number(doc.stok || 0)}</quantity>
                 <sellerStockCode>${barkod}</sellerStockCode>
               </stockItem>
             </stockItems>
@@ -41,38 +50,53 @@ function buildN11SaveProductXML(doc, n11CategoryId, appKey, appSecret) {
 
 export default async function handler(req, res) {
   res.setHeader("Allow", "GET, POST, PUT, DELETE, OPTIONS");
-
   if (req.method === "OPTIONS") return res.status(200).end();
 
   try {
-    // ✅ Auth
+    // -----------------------------------------
+    // 🔐 Token doğrulama
+    // -----------------------------------------
     const auth = req.headers.authorization;
     if (!auth) return res.status(401).json({ message: "Token eksik" });
 
     const token = auth.split(" ")[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
+    // Token içinden userId doğru çıkarılsın
+    const userId = decoded.id || decoded.userId;
+    if (!userId) return res.status(401).json({ message: "Geçersiz token" });
+
+    // -----------------------------------------
+    // 🔌 MongoDB
+    // -----------------------------------------
     const client = await clientPromise;
     const db = client.db("satistakip");
     const products = db.collection("products");
 
-    // ✅ GET - Ürün Listele
+    // -----------------------------------------
+    // 📌 GET → Ürün Listele
+    // -----------------------------------------
     if (req.method === "GET") {
       const list = await products
-        .find({ userId: decoded.userId })
+        .find({ userId })
         .sort({ createdAt: -1 })
         .toArray();
 
       return res.status(200).json(list);
     }
 
-    // ✅ POST - Ürün Ekle (+ N11'e gönder)
+    // -----------------------------------------
+    // 📌 POST → Ürün Ekle + (opsiyonel N11 gönder)
+    // -----------------------------------------
     if (req.method === "POST") {
       const b = req.body || {};
 
       if (!b.ad || !b.satisFiyati)
-        return res.status(400).json({ message: "Ürün adı ve satış fiyatı zorunlu" });
+        return res
+          .status(400)
+          .json({ message: "Ürün adı ve satış fiyatı zorunlu" });
 
+      // 📌 ERP ürünü oluştur
       const doc = {
         ad: b.ad.trim(),
         barkod: b.barkod || "",
@@ -86,30 +110,30 @@ export default async function handler(req, res) {
         varyantlar: b.varyantlar || [],
 
         alisFiyati: Number(b.alisFiyati || 0),
-        satisFiyati: Number(b.satisFiyati),
+        satisFiyati: Number(b.satisFiyati || 0),
         stok: Number(b.stok || 0),
         stokUyari: Number(b.stokUyari || 0),
 
         paraBirimi: b.paraBirimi || "TRY",
         kdvOrani: Number(b.kdvOrani ?? 20),
 
-        // 🔹 İleride N11 / Trendyol / HB alanları için alt objeleri burada genişletebiliriz
         n11: null,
-
-        userId: decoded.userId,
+        userId,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
 
-      // 🔸 Önce ERP'de ürünü kaydediyoruz
+      // 📌 Kaydet
       const result = await products.insertOne(doc);
 
-      let n11Result = null;
-
-      // 🔹 N11 entegrasyonu isteğe bağlı (env + kategori varsa çalışsın)
+      // ---------------------------------------------------
+      // 🔥 Opsiyonel N11 SaveProduct Gönderimi
+      // ---------------------------------------------------
       const appKey = process.env.N11_APP_KEY;
       const appSecret = process.env.N11_APP_SECRET;
-      const n11CategoryId = b.n11CategoryId; // frontend'den gelecek
+      const n11CategoryId = b.n11CategoryId;
+
+      let n11Result = null;
 
       if (appKey && appSecret && n11CategoryId) {
         try {
@@ -133,54 +157,41 @@ export default async function handler(req, res) {
           const parsed = await parser.parseStringPromise(data);
 
           const body =
-            parsed?.["SOAP-ENV:Envelope"]?.["SOAP-ENV:Body"] ||
             parsed?.["soapenv:Envelope"]?.["soapenv:Body"] ||
             parsed?.Envelope?.Body ||
             parsed;
 
-          const saveResp =
+          const resp =
             body?.["ns3:SaveProductResponse"] ||
             body?.SaveProductResponse ||
-            body?.["sch:SaveProductResponse"] ||
-            body?.["ns2:SaveProductResponse"];
+            {};
 
-          const resultNode = saveResp?.result;
-          const status = resultNode?.status || resultNode?.resultStatus || "";
-          const errorMessage = resultNode?.errorMessage || resultNode?.message || "";
+          const resultNode = resp.result || {};
+          const status = resultNode.status || resultNode.resultStatus || "";
+          const errorMessage =
+            resultNode.errorMessage || resultNode.message || "";
 
-          if (status && status.toLowerCase() !== "success") {
+          // ❌ Başarısız ise
+          if (status.toLowerCase() !== "success") {
             n11Result = {
               success: false,
               status,
-              message: errorMessage || "N11 SaveProduct başarısız döndü",
+              message: errorMessage || "N11 SaveProduct başarısız",
             };
           } else {
-            const product = saveResp?.product || saveResp?.savedProduct || null;
+            const product = resp.product || {};
+            const productId = product.id || null;
 
-            const productId =
-              product?.id || product?.productId || null;
-
-            const stockItem =
-              product?.stockItems?.stockItem || null;
-
-            const stockItemId =
-              stockItem?.id || stockItem?.stockItemId || null;
-
-            const approvalStatus =
-              product?.approvalStatus || product?.status || "";
-
-            // 🔸 Ürünü N11 bilgileri ile güncelle
+            // 🔄 ERP ürününü N11 bilgiler ile güncelle
             await products.updateOne(
               { _id: result.insertedId },
               {
                 $set: {
                   n11: {
                     productId,
-                    stockItemId,
-                    status: approvalStatus,
+                    status: product.approvalStatus || "",
                     categoryId: n11CategoryId,
                   },
-                  updatedAt: new Date(),
                 },
               }
             );
@@ -188,35 +199,32 @@ export default async function handler(req, res) {
             n11Result = {
               success: true,
               productId,
-              stockItemId,
-              status: approvalStatus,
             };
           }
         } catch (n11Err) {
-          console.error("N11 SaveProduct Hatası:", n11Err?.message || n11Err);
           n11Result = {
             success: false,
-            message: "N11 SaveProduct çağrısı sırasında hata oluştu",
-            error: n11Err?.message || String(n11Err),
+            message: "N11 SaveProduct hatası",
+            error: n11Err.message,
           };
-          // ❗ Burada ERP ürünü silmiyoruz, sadece N11 kısmı hatalı kalır.
         }
       }
 
       return res.status(201).json({
-        message: "✅ Ürün eklendi",
+        message: "Ürün eklendi",
         _id: result.insertedId,
         n11: n11Result,
       });
     }
 
-    // ✅ PUT - Ürün Güncelle (şimdilik sadece ERP tarafı)
-    // (Bir sonraki adımda burada N11 stok/fiyat güncellemesini de ekleyeceğiz)
+    // -----------------------------------------
+    // 📌 PUT → Ürün güncelle
+    // -----------------------------------------
     if (req.method === "PUT") {
       const { id } = req.query;
       if (!id) return res.status(400).json({ message: "Ürün ID eksik" });
 
-      const b = req.body;
+      const b = req.body || {};
 
       const update = {
         ad: b.ad,
@@ -228,38 +236,36 @@ export default async function handler(req, res) {
         birim: b.birim || "Adet",
         resimUrl: b.resimUrl || "",
         varyantlar: b.varyantlar || [],
-
         alisFiyati: Number(b.alisFiyati || 0),
-        satisFiyati: Number(b.satisFiyati),
-        stok: Number(b.stok),
+        satisFiyati: Number(b.satisFiyati || 0),
+        stok: Number(b.stok || 0),
         stokUyari: Number(b.stokUyari || 0),
         paraBirimi: b.paraBirimi,
         kdvOrani: Number(b.kdvOrani),
-
         updatedAt: new Date(),
       };
 
       await products.updateOne(
-        { _id: new ObjectId(id), userId: decoded.userId },
+        { _id: new ObjectId(id), userId },
         { $set: update }
       );
 
-      // 🔜 Buraya N11 stok/fiyat update geleceğiz (sonraki adım)
-      return res.status(200).json({ message: "✅ Ürün güncellendi" });
+      return res.status(200).json({ message: "Ürün güncellendi" });
     }
 
-    // ✅ DELETE - Ürün Sil
+    // -----------------------------------------
+    // 📌 DELETE → Ürün sil
+    // -----------------------------------------
     if (req.method === "DELETE") {
       const { id } = req.query;
       if (!id) return res.status(400).json({ message: "ID eksik" });
 
-      await products.deleteOne({ _id: new ObjectId(id), userId: decoded.userId });
+      await products.deleteOne({ _id: new ObjectId(id), userId });
 
-      return res.status(200).json({ message: "🗑️ Ürün silindi" });
+      return res.status(200).json({ message: "Ürün silindi" });
     }
 
     return res.status(405).json({ message: "Method not allowed" });
-
   } catch (err) {
     console.error("🔥 Ürün API Hatası:", err);
     return res.status(500).json({ message: "Sunucu hatası", error: err.message });
