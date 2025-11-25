@@ -19,10 +19,12 @@ export default function UrunlerPanel() {
     stokUyari: "",
     paraBirimi: "TRY",
     kdvOrani: 20,
-    resimUrl: "",
-    varyantlar: [], // { ad, stok }
-    n11CategoryId: "", // 🔹 Seçilen N11 kategori ID
+    resimUrl: "",        // kapak foto
+    resimUrls: [],       // maksimum 4 foto
+    varyantlar: [],      // { ad, stok }
+    n11CategoryId: "",   // seçilen N11 kategori ID
   };
+
   const [form, setForm] = useState(emptyForm);
 
   const emptyPazaryeriSecim = {
@@ -66,7 +68,7 @@ export default function UrunlerPanel() {
         console.error("Pazaryeri hata:", data);
         alert(
           "❌ İşlem başarısız: " +
-            (data.message || data.error || "Bilinmeyen hata")
+            (data.message || data.error || `HTTP ${res.status}`)
         );
         return;
       }
@@ -104,42 +106,36 @@ export default function UrunlerPanel() {
     );
   };
 
-  // 🛍 Trendyol’a gönder (şimdilik placeholder)
+  // 🛍 Trendyol’a gönder (placeholder)
   const sendToTrendyol = async (u) => {
     alert(
       "🛍 Trendyol entegrasyonu hazırlanıyor. Bu buton şimdilik bilgi amaçlı.\n\nÜrün: " +
         (u.ad || "")
     );
-    // Hazır olduğunda:
-    // await postWithToken("/api/trendyol/products/add", { productId: u._id }, "✅ Ürün Trendyol'a gönderildi.");
   };
 
-  // 🧾 Hepsiburada’ya gönder (şimdilik placeholder)
+  // 🧾 Hepsiburada’ya gönder (placeholder)
   const sendToHepsiburada = async (u) => {
     alert(
       "🧾 Hepsiburada ürün gönderimi modülü hazırlanıyor.\n\nÜrün: " +
         (u.ad || "")
     );
-    // Hazır olduğunda:
-    // await postWithToken("/api/hepsiburada-api/products/create", { productId: u._id }, "✅ Ürün Hepsiburada'ya gönderildi.");
   };
 
-  // 📦 Amazon’a gönder (şimdilik placeholder)
+  // 📦 Amazon’a gönder (placeholder)
   const sendToAmazon = async (u) => {
     alert(
       "📦 Amazon ürün entegrasyonu daha sonra aktif edilecek.\n\nÜrün: " +
         (u.ad || "")
     );
-    // await postWithToken("/api/amazon/products/add", { productId: u._id }, "✅ Ürün Amazon'a gönderildi.");
   };
 
-  // 🛍 Pazarama / PTT AVM’ye gönder (şimdilik placeholder)
+  // 🛍 Pazarama / PTT AVM’ye gönder (placeholder)
   const sendToPazarama = async (u) => {
     alert(
       "🛍 Pazarama / PTT AVM entegrasyonu planlandı. Şimdilik bilgi amaçlı.\n\nÜrün: " +
         (u.ad || "")
     );
-    // await postWithToken("/api/pazarama/products/add", { productId: u._id }, "✅ Ürün Pazarama'ya gönderildi.");
   };
 
   // ⬇️ Excel helpers
@@ -183,9 +179,10 @@ export default function UrunlerPanel() {
     const res = await fetch("/api/urunler", {
       headers: { Authorization: `Bearer ${token}` },
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => []);
     setUrunler(Array.isArray(data) ? data : []);
   };
+
   useEffect(() => {
     fetchUrunler();
   }, []);
@@ -236,27 +233,40 @@ export default function UrunlerPanel() {
       method = "PUT";
     }
 
+    const payload = {
+      ...form,
+      stok: toplamStok, // ✅ toplam varyant stok
+      alisFiyati: Number(form.alisFiyati || 0),
+      satisFiyati: Number(form.satisFiyati),
+      stokUyari: Number(form.stokUyari || 0),
+      kdvOrani: Number(form.kdvOrani),
+      // güvenlik için en fazla 4 resim gönder
+      resimUrls: (form.resimUrls || []).slice(0, 4),
+      resimUrl:
+        form.resimUrl ||
+        (form.resimUrls && form.resimUrls.length > 0
+          ? form.resimUrls[0]
+          : ""),
+    };
+
     const res = await fetch(url, {
       method,
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({
-        ...form,
-        stok: toplamStok, // ✅ toplam varyant stok
-        alisFiyati: Number(form.alisFiyati || 0),
-        satisFiyati: Number(form.satisFiyati),
-        stokUyari: Number(form.stokUyari || 0),
-        kdvOrani: Number(form.kdvOrani),
-      }),
+      body: JSON.stringify(payload),
     });
 
     const data = await res.json().catch(() => ({}));
 
     if (!res.ok) {
       console.error("Ürün kayıt hatası:", data);
-      return alert("❌ Hata oluştu");
+      alert(
+        "❌ Hata oluştu: " +
+          (data.message || data.error || `HTTP ${res.status}`)
+      );
+      return;
     }
 
     alert(editProduct ? "✅ Ürün güncellendi" : "✅ Ürün eklendi");
@@ -273,10 +283,13 @@ export default function UrunlerPanel() {
           barkod: form.barkod,
           sku: form.sku,
           stok: toplamStok,
-          resimUrl: form.resimUrl,
+          resimUrl:
+            form.resimUrl ||
+            (form.resimUrls && form.resimUrls.length > 0
+              ? form.resimUrls[0]
+              : ""),
         };
 
-        // Seçilen pazaryerlerine sırayla gönder
         if (pazaryeriSecim.n11) {
           await sendToN11(savedProduct);
         }
@@ -317,39 +330,80 @@ export default function UrunlerPanel() {
 
   // ✅ Düzenle
   const handleEdit = (u) => {
+    const resimUrlsFromDb =
+      u.resimUrls && Array.isArray(u.resimUrls)
+        ? u.resimUrls
+        : u.resimUrl
+        ? [u.resimUrl]
+        : [];
+
     setEditProduct(u);
     setForm({
       ...emptyForm,
       ...u,
+      resimUrls: resimUrlsFromDb,
+      resimUrl: u.resimUrl || resimUrlsFromDb[0] || "",
       varyantlar: u.varyantlar || [],
+      n11CategoryId: u.n11?.categoryId || u.n11CategoryId || "",
     });
     setPazaryeriSecim(emptyPazaryeriSecim);
-    setSelectedN11Category(u.n11CategoryId || "");
+    setSelectedN11Category(u.n11?.categoryId || u.n11CategoryId || "");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  // ✅ Görsel yükleme
+  // ✅ Çoklu görsel yükleme (maks. 4 adet)
   const handleImageUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
 
-    const fd = new FormData();
-    fd.append("file", file);
+    let currentUrls = [...(form.resimUrls || [])];
 
-    const res = await fetch("/api/upload-image", { method: "POST", body: fd });
-    const data = await res.json();
-    if (res.ok && data?.url)
-      setForm((f) => ({
-        ...f,
-        resimUrl: data.url,
-      }));
-    else alert("❌ Görsel yüklenemedi");
+    for (const file of files) {
+      if (currentUrls.length >= 4) break; // maksimum 4 resim
+
+      const fd = new FormData();
+      fd.append("file", file);
+
+      try {
+        const res = await fetch("/api/upload-image", {
+          method: "POST",
+          body: fd,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data?.url) {
+          currentUrls.push(data.url);
+        } else {
+          console.error("Görsel yüklenemedi:", data);
+        }
+      } catch (err) {
+        console.error("Görsel upload hatası:", err);
+      }
+    }
+
+    setForm((f) => ({
+      ...f,
+      resimUrls: currentUrls,
+      resimUrl: currentUrls[0] || f.resimUrl || "",
+    }));
+
+    // aynı dosyayı tekrar seçebilmek için input’u sıfırla
+    e.target.value = "";
   };
 
   // ✅ Varyant Sil
   const removeVariant = (i) => {
     const newVars = (form.varyantlar || []).filter((_, x) => x !== i);
     setForm({ ...form, varyantlar: newVars });
+  };
+
+  // ✅ Fotoğraf sil
+  const removeImage = (index) => {
+    const next = (form.resimUrls || []).filter((_, i) => i !== index);
+    setForm((f) => ({
+      ...f,
+      resimUrls: next,
+      resimUrl: next[0] || "",
+    }));
   };
 
   return (
@@ -445,9 +499,9 @@ export default function UrunlerPanel() {
           value={form.paraBirimi}
           onChange={(e) => setForm({ ...form, paraBirimi: e.target.value })}
         >
-          <option>TRY</option>
-          <option>USD</option>
-          <option>EUR</option>
+          <option value="TRY">TRY</option>
+          <option value="USD">USD</option>
+          <option value="EUR">EUR</option>
         </select>
 
         <select
@@ -506,7 +560,7 @@ export default function UrunlerPanel() {
 
         {/* Varyant + Stok */}
         <div className="col-span-12 mt-2">
-          <label className="font-medium mb-1">Varyant & Stok</label>
+          <label className="font-medium mb-1">Varyant &amp; Stok</label>
           <div className="flex gap-2 mb-1">
             <input
               id="varInput"
@@ -555,14 +609,30 @@ export default function UrunlerPanel() {
           </div>
         </div>
 
-        {/* Fotoğraf */}
+        {/* Fotoğraflar (maks 4) */}
         <div className="col-span-12">
-          <input type="file" onChange={handleImageUpload} />
-          {form.resimUrl && (
-            <img
-              src={form.resimUrl}
-              className="w-20 h-20 mt-2 rounded border"
-            />
+          <label className="block text-sm font-medium mb-1">
+            Ürün Fotoğrafları (maks. 4 adet)
+          </label>
+          <input type="file" multiple onChange={handleImageUpload} />
+          {form.resimUrls && form.resimUrls.length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-2">
+              {form.resimUrls.map((url, i) => (
+                <div key={i} className="relative">
+                  <img
+                    src={url}
+                    className="w-20 h-20 rounded border object-cover"
+                  />
+                  <button
+                    type="button"
+                    className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center"
+                    onClick={() => removeImage(i)}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
           )}
         </div>
 
