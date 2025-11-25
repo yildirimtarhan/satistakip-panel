@@ -10,29 +10,29 @@ export default async function handler(req, res) {
   const { N11_APP_KEY, N11_APP_SECRET } = process.env;
 
   const xml = `
-  <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-    xmlns:sch="http://www.n11.com/ws/schemas">
-    <soapenv:Header/>
-    <soapenv:Body>
-      <sch:GetTopLevelCategoriesRequest>
-        <auth>
-          <appKey>${N11_APP_KEY}</appKey>
-          <appSecret>${N11_APP_SECRET}</appSecret>
-        </auth>
-      </sch:GetTopLevelCategoriesRequest>
-    </soapenv:Body>
-  </soapenv:Envelope>
+    <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+      xmlns:sch="http://www.n11.com/ws/schemas">
+      <soapenv:Header/>
+      <soapenv:Body>
+        <sch:GetTopLevelCategoriesRequest>
+          <auth>
+            <appKey>${N11_APP_KEY}</appKey>
+            <appSecret>${N11_APP_SECRET}</appSecret>
+          </auth>
+        </sch:GetTopLevelCategoriesRequest>
+      </soapenv:Body>
+    </soapenv:Envelope>
   `;
 
   try {
     const { data } = await axios.post(
-      "https://api.n11.com/ws/CategoryService",
+      "https://api.n11.com/ws/CategoryService.wsdl",   // 🔥 DÜZELTİLDİ
       xml,
       {
         headers: {
-          "Content-Type": "text/xml;charset=UTF-8",
-          "SOAPAction":
-            "http://www.n11.com/ws/schemas/CategoryServicePort/GetTopLevelCategories",
+          "Content-Type": "text/xml;charset=utf-8",
+          SOAPAction:
+            "http://www.n11.com/ws/schemas/CategoryServicePort/GetTopLevelCategories", // 🔥 DÜZELTİLDİ
         },
       }
     );
@@ -40,9 +40,20 @@ export default async function handler(req, res) {
     const parser = new xml2js.Parser({ explicitArray: false });
     const json = await parser.parseStringPromise(data);
 
-    const raw = json?.["soapenv:Envelope"]?.["soapenv:Body"]?.[
-      "ns3:GetTopLevelCategoriesResponse"
-    ]?.categoryList?.category || [];
+    // 🔍 DÖNEBİLECEK TÜM RESPONSE FORMATLARI
+    const body =
+      json?.["soapenv:Envelope"]?.["soapenv:Body"] ||
+      json?.["SOAP-ENV:Envelope"]?.["SOAP-ENV:Body"] ||
+      json?.Envelope?.Body ||
+      json;
+
+    const resp =
+      body?.["ns3:GetTopLevelCategoriesResponse"] ||
+      body?.GetTopLevelCategoriesResponse ||
+      body?.["sch:GetTopLevelCategoriesResponse"] ||
+      body?.["ns2:GetTopLevelCategoriesResponse"];
+
+    const raw = resp?.categoryList?.category || [];
 
     const categories = Array.isArray(raw) ? raw : [raw];
 
@@ -51,11 +62,11 @@ export default async function handler(req, res) {
       categories: categories.map((c) => ({
         id: c.id,
         name: c.name,
-        subCategory: !!c.subCategory,
+        hasSub: !!c.subCategory,
       })),
     });
   } catch (err) {
-    console.error("N11 Category Error:", err.message);
+    console.error("🔥 N11 Category Error:", err);
     return res.status(500).json({
       success: false,
       message: "Kategori alınamadı",
