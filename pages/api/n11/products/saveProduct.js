@@ -9,14 +9,13 @@ export default async function handler(req, res) {
   if (req.method !== "POST")
     return res.status(405).json({ success: false, message: "Only POST allowed" });
 
-  // Token kontrol
   const auth = req.headers.authorization;
   if (!auth) return res.status(401).json({ success: false, message: "Token eksik" });
 
   let user;
   try {
     user = jwt.verify(auth.split(" ")[1], process.env.JWT_SECRET);
-  } catch (err) {
+  } catch {
     return res.status(401).json({ success: false, message: "Geçersiz token" });
   }
 
@@ -27,11 +26,11 @@ export default async function handler(req, res) {
   await dbConnect();
 
   const p = await Product.findById(productId);
-  if (!p) return res.status(404).json({ success: false, message: "Ürün bulunamadı" });
+  if (!p)
+    return res.status(404).json({ success: false, message: "Ürün bulunamadı" });
 
   const { N11_APP_KEY, N11_APP_SECRET } = process.env;
 
-  // XML oluşturma
   const xml = `
   <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
         xmlns:sch="http://www.n11.com/ws/schemas">
@@ -45,15 +44,14 @@ export default async function handler(req, res) {
 
         <product>
           <title>${p.ad}</title>
-          <subtitle></subtitle>
           <description>${p.aciklama || p.ad}</description>
 
           <category>
-            <id>${p.n11CategoryId || ""}</id>
+            <id>${p.n11CategoryId}</id>
           </category>
 
           <price>${p.satisFiyati}</price>
-          <currencyType>TL</currencyType>
+          <currencyType>${p.paraBirimi || "TL"}</currencyType>
 
           <productSellerCode>${p.sku || p._id}</productSellerCode>
 
@@ -85,8 +83,9 @@ export default async function handler(req, res) {
       {
         headers: {
           "Content-Type": "text/xml;charset=UTF-8",
-          "SOAPAction": "http://www.n11.com/ws/schemas/ProductServicePort/SaveProduct"
-        }
+          SOAPAction:
+            "http://www.n11.com/ws/schemas/ProductServicePort/SaveProduct",
+        },
       }
     );
 
@@ -94,34 +93,29 @@ export default async function handler(req, res) {
     const json = await parser.parseStringPromise(data);
 
     const resp =
-      json?.["SOAP-ENV:Envelope"]?.["SOAP-ENV:Body"]?.[
+      json["soapenv:Envelope"]?.["soapenv:Body"]?.[
         "ns3:SaveProductResponse"
       ];
 
-    if (!resp) {
+    if (!resp)
       return res.status(500).json({
         success: false,
         message: "N11 yanıtı okunamadı",
-        raw: json
+        raw: json,
       });
-    }
 
-    const result = resp.result;
-
-    if (result.status !== "success") {
+    if (resp.result.status !== "success") {
       return res.status(400).json({
         success: false,
-        message: result.errorMessage || "N11 hata döndürdü",
-        errorCode: result.errorCode
+        message: resp.result.errorMessage,
+        code: resp.result.errorCode,
       });
     }
 
     const productData = resp.product;
     const n11ProductId = productData.id;
-    const stockItemId =
-      productData.stockItems?.stockItem?.id || null;
+    const stockItemId = productData.stockItems?.stockItem?.id || null;
 
-    // MongoDB’ye kaydet
     await N11Product.findOneAndUpdate(
       { erpProductId: p._id },
       {
@@ -131,7 +125,8 @@ export default async function handler(req, res) {
         title: p.ad,
         price: p.satisFiyati,
         stock: p.stok,
-        sku: p.sku
+        sku: p.sku,
+        raw: productData,
       },
       { upsert: true }
     );
@@ -139,19 +134,18 @@ export default async function handler(req, res) {
     p.n11ProductId = n11ProductId;
     await p.save();
 
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
       message: "Ürün N11'e başarıyla gönderildi",
       n11ProductId,
-      stockItemId
+      stockItemId,
     });
-
   } catch (err) {
-    console.error("N11 AddProduct Error:", err.response?.data || err.message);
+    console.error("N11 AddProduct Error:", err.message);
     return res.status(500).json({
       success: false,
       message: "N11 gönderim hatası",
-      error: err.message
+      error: err.message,
     });
   }
 }

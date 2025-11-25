@@ -21,6 +21,7 @@ export default function UrunlerPanel() {
     kdvOrani: 20,
     resimUrl: "",
     varyantlar: [], // { ad, stok }
+    n11CategoryId: "", // 🔹 Seçilen N11 kategori ID
   };
   const [form, setForm] = useState(emptyForm);
 
@@ -32,6 +33,13 @@ export default function UrunlerPanel() {
     pazarama: false,
   };
   const [pazaryeriSecim, setPazaryeriSecim] = useState(emptyPazaryeriSecim);
+
+  // 🔹 N11 kategori seçici state'leri
+  const [n11Modal, setN11Modal] = useState(false);
+  const [n11Categories, setN11Categories] = useState([]);
+  const [n11Loading, setN11Loading] = useState(false);
+  const [n11Error, setN11Error] = useState("");
+  const [selectedN11Category, setSelectedN11Category] = useState("");
 
   // 🔐 Ortak helper: Token ile POST isteği
   const postWithToken = async (url, body, okMessage) => {
@@ -182,6 +190,31 @@ export default function UrunlerPanel() {
     fetchUrunler();
   }, []);
 
+  // 🔹 N11 kategori listesini yükle
+  const loadN11Categories = async () => {
+    setN11Loading(true);
+    setN11Error("");
+    try {
+      const res = await fetch("/api/n11/categories/list");
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setN11Error(data.message || "Kategori alınamadı");
+        setN11Categories([]);
+      } else {
+        setN11Categories(
+          Array.isArray(data.categories) ? data.categories : [data.categories]
+        );
+      }
+    } catch (err) {
+      console.error("N11 kategori hata:", err);
+      setN11Error("Sunucuya bağlanırken hata oluştu");
+      setN11Categories([]);
+    } finally {
+      setN11Loading(false);
+    }
+  };
+
   // ✅ Kaydet / Güncelle
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -267,6 +300,7 @@ export default function UrunlerPanel() {
     setForm(emptyForm);
     setEditProduct(null);
     setPazaryeriSecim(emptyPazaryeriSecim);
+    setSelectedN11Category("");
     fetchUrunler();
   };
 
@@ -290,6 +324,7 @@ export default function UrunlerPanel() {
       varyantlar: u.varyantlar || [],
     });
     setPazaryeriSecim(emptyPazaryeriSecim);
+    setSelectedN11Category(u.n11CategoryId || "");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -449,6 +484,26 @@ export default function UrunlerPanel() {
           onChange={(e) => setForm({ ...form, stokUyari: e.target.value })}
         />
 
+        {/* 🔍 N11 Kategori Seçici */}
+        <div className="col-span-12 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              loadN11Categories();
+              setSelectedN11Category(form.n11CategoryId || "");
+              setN11Modal(true);
+            }}
+            className="px-3 py-2 text-sm rounded bg-orange-500 text-white hover:bg-orange-600"
+          >
+            🔍 N11 Kategori Seç
+          </button>
+          {form.n11CategoryId && (
+            <span className="text-xs text-green-600">
+              ✔ Seçili N11 Kategori ID: {form.n11CategoryId}
+            </span>
+          )}
+        </div>
+
         {/* Varyant + Stok */}
         <div className="col-span-12 mt-2">
           <label className="font-medium mb-1">Varyant & Stok</label>
@@ -606,6 +661,7 @@ export default function UrunlerPanel() {
                 setForm(emptyForm);
                 setEditProduct(null);
                 setPazaryeriSecim(emptyPazaryeriSecim);
+                setSelectedN11Category("");
               }}
             >
               İptal
@@ -616,6 +672,82 @@ export default function UrunlerPanel() {
           </button>
         </div>
       </form>
+
+      {/* 🔍 N11 Kategori Modal */}
+      {n11Modal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-xl border border-slate-200 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-bold text-orange-600">
+                N11 Kategori Seç
+              </h2>
+              <button
+                className="text-slate-500 hover:text-slate-800 text-sm"
+                onClick={() => setN11Modal(false)}
+              >
+                ✖ Kapat
+              </button>
+            </div>
+
+            {n11Loading && (
+              <div className="text-sm text-slate-500 mb-2">
+                Kategoriler yükleniyor...
+              </div>
+            )}
+
+            {n11Error && (
+              <div className="mb-3 text-xs text-red-600 bg-red-50 border border-red-200 px-2 py-1 rounded">
+                {n11Error}
+              </div>
+            )}
+
+            {!n11Loading && !n11Error && (
+              <>
+                <label className="text-sm font-medium mb-1">
+                  Üst Kategoriler
+                </label>
+                <select
+                  className="input w-full mb-4"
+                  value={selectedN11Category}
+                  onChange={(e) => setSelectedN11Category(e.target.value)}
+                >
+                  <option value="">Kategori seçin...</option>
+                  {n11Categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} (ID: {c.id})
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+
+            <div className="flex justify-end gap-2 mt-auto pt-2">
+              <button
+                className="px-3 py-2 text-sm rounded bg-gray-100 hover:bg-gray-200"
+                onClick={() => setN11Modal(false)}
+              >
+                Vazgeç
+              </button>
+              <button
+                className="px-3 py-2 text-sm rounded bg-green-600 text-white hover:bg-green-700"
+                onClick={() => {
+                  if (!selectedN11Category) {
+                    alert("Lütfen bir kategori seçin");
+                    return;
+                  }
+                  setForm((f) => ({
+                    ...f,
+                    n11CategoryId: selectedN11Category,
+                  }));
+                  setN11Modal(false);
+                }}
+              >
+                ✔ Seç ve Kaydet
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Liste */}
       <table className="w-full bg-white rounded-xl shadow text-sm">

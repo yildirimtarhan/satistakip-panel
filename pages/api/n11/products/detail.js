@@ -31,28 +31,41 @@ export default async function handler(req, res) {
 
   try {
     const { data } = await axios.post(
-      "https://api.n11.com/ws/ProductService.wsdl",
+      "https://api.n11.com/ws/ProductService.svc",
       xml,
-      { headers: { "Content-Type": "text/xml; charset=utf-8" } }
+      {
+        headers: {
+          "Content-Type": "text/xml; charset=utf-8",
+          "SOAPAction": "http://www.n11.com/ws/GetProductBySellerCode",
+        },
+      }
     );
 
     const parser = new xml2js.Parser({ explicitArray: false });
     const json = await parser.parseStringPromise(data);
 
     const product =
-      json["soapenv:Envelope"]?.["soapenv:Body"]?.["ns3:GetProductBySellerCodeResponse"]?.product;
+      json?.Envelope?.Body?.GetProductBySellerCodeResponse?.product;
 
     if (!product) {
-      return res.status(404).json({ message: "Ürün bulunamadı" });
+      return res.status(404).json({
+        success: false,
+        message: "Ürün bulunamadı",
+        raw: json
+      });
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       sellerProductCode,
       product,
     });
   } catch (err) {
     console.error("N11 ürün detay hatası:", err.message);
-    return res.status(500).json({ message: "N11 ürün detay hatası", error: err.message });
+    return res.status(500).json({
+      success: false,
+      message: "N11 ürün detay hatası",
+      error: err.message,
+    });
   }
 }
