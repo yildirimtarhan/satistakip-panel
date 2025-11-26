@@ -1,133 +1,198 @@
 // 📁 /pages/api/n11/products/add.js
+
 import axios from "axios";
 import xml2js from "xml2js";
-import clientPromise from "@/lib/mongodb";
+import dbConnect from "@/lib/mongodb";
+import Product from "@/models/Product";
+import N11Product from "@/models/N11Product";
 import jwt from "jsonwebtoken";
-import { ObjectId } from "mongodb";
 
 export default async function handler(req, res) {
   if (req.method !== "POST")
-    return res.status(405).json({ message: "Sadece POST destekleniyor" });
+    return res.status(405).json({ success: false, message: "Only POST allowed" });
 
+  // ------------------------------
+  // 🔐 TOKEN DOĞRULAMA
+  // ------------------------------
+  const auth = req.headers.authorization;
+  if (!auth)
+    return res.status(401).json({ success: false, message: "Token eksik" });
+
+  let user;
   try {
-    // --- 1) Token Doğrulama ---
-    const auth = req.headers.authorization;
-    if (!auth) return res.status(401).json({ message: "Token eksik" });
+    user = jwt.verify(auth.split(" ")[1], process.env.JWT_SECRET);
+  } catch {
+    return res.status(401).json({ success: false, message: "Geçersiz token" });
+  }
 
-    const token = auth.split(" ")[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+  // ------------------------------
+  // 📌 PARAM KONTROL
+  // ------------------------------
+  const { productId } = req.body;
+  if (!productId)
+    return res.status(400).json({ success: false, message: "productId zorunlu" });
 
-    // --- 2) MongoDB Bağlantısı ---
-    const client = await clientPromise;
-    const db = client.db("satistakip");
-    const products = db.collection("products");
+  await dbConnect();
 
-    const { productId } = req.body;
-    if (!productId)
-      return res.status(400).json({ message: "productId zorunlu" });
+  // ------------------------------
+  // 📌 ERP ÜRÜNÜ ÇEK
+  // ------------------------------
+  const p = await Product.findById(productId);
+  if (!p)
+    return res.status(404).json({ success: false, message: "Ürün bulunamadı" });
 
-    // --- 3) ERP Ürünü Çek ---
-    const product = await products.findOne({
-      _id: new ObjectId(productId),
-      userId: decoded.userId,
+  // ------------------------------
+  // 📌 ENV KONTROL
+  // ------------------------------
+  const { N11_APP_KEY, N11_APP_SECRET } = process.env;
+
+  if (!N11_APP_KEY || !N11_APP_SECRET)
+    return res.status(500).json({
+      success: false,
+      message: "❌ N11 APP KEY veya SECRET eksik!",
     });
 
-    if (!product)
-      return res.status(404).json({ message: "Ürün bulunamadı" });
+  if (!p.n11CategoryId)
+    return res.status(400).json({
+      success: false,
+      message: "❌ Üründe N11 kategori ID yok",
+    });
 
-    // --- 4) N11 API değerleri ---
-    const APP_KEY = process.env.N11_APP_KEY;
-    const APP_SECRET = process.env.N11_APP_SECRET;
-
-    if (!APP_KEY || !APP_SECRET) {
-      return res.status(500).json({
-        message: "N11 API bilgileri eksik (.env kontrol et)",
-      });
-    }
-
-    // --- 5) XML Gövdesi Hazırlama ---
-    const xmlBody = `
-      <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+  // ------------------------------
+  // 📌 XML OLUŞTUR
+  // ------------------------------
+  const xml = `
+  <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
         xmlns:sch="http://www.n11.com/ws/schemas">
-        <soapenv:Header/>
-        <soapenv:Body>
-          <sch:SaveProductRequest>
-            <auth>
-              <appKey>${APP_KEY}</appKey>
-              <appSecret>${APP_SECRET}</appSecret>
-            </auth>
+    <soapenv:Header/>
+    <soapenv:Body>
+      <sch:SaveProductRequest>
+        <auth>
+          <appKey>${N11_APP_KEY}</appKey>
+          <appSecret>${N11_APP_SECRET}</appSecret>
+        </auth>
 
-            <product>
-              <title>${product.ad}</title>
-              <subtitle></subtitle>
-              <description>${product.aciklama || ""}</description>
+        <product>
+          <title>${p.ad}</title>
+          <description><![CDATA[${p.aciklama || p.ad}]]></description>
 
-              <category>
-                <id>1002811</id>
-              </category>
+          <category>
+            <id>${p.n11CategoryId}</id>
+          </category>
 
-              <price>${product.satisFiyati}</price>
-              <currencyType>1</currencyType>
+          <price>${p.satisFiyati}</price>
+          <currencyType>${p.paraBirimi || "TL"}</currencyType>
 
-              <images>
-                ${
-                  product.resimUrl
-                    ? `<image><url>${product.resimUrl}</url></image>`
-                    : ""
-                }
-              </images>
+          <productSellerCode>${p.sku || p.barkod || p._id}</productSellerCode>
 
-              <stockItems>
-                <stockItem>
-                  <quantity>${product.stok}</quantity>
-                  <sellerStockCode>${product.sku || product.barkod || product._id}</sellerStockCode>
-                </stockItem>
-              </stockItems>
+          <approvalStatus>WAITING</approvalStatus>
 
-            </product>
-          </sch:SaveProductRequest>
-        </soapenv:Body>
-      </soapenv:Envelope>
-    `;
+          <stockItems>
+            <stockItem>
+              <quantity>${p.stok}</quantity>
+              <sellerStockCode>${p.sku || p.barkod || p._id}</sellerStockCode>
+            </stockItem>
+          </stockItems>
 
-    // --- 6) N11’e Gönder ---
-    const response = await axios.post(
+          ${p.resimUrl ? `
+          <images>
+            <image>
+              <url>${p.resimUrl}</url>
+            </image>
+          </images>` : ""}
+        </product>
+
+      </sch:SaveProductRequest>
+    </soapenv:Body>
+  </soapenv:Envelope>`;
+
+  // ------------------------------
+  // 📌 N11’E İSTEĞİ GÖNDER
+  // ------------------------------
+  try {
+    const { data } = await axios.post(
       "https://api.n11.com/ws/ProductService",
-      xmlBody,
-      { headers: { "Content-Type": "text/xml;charset=UTF-8" } }
+      xml,
+      {
+        headers: {
+          "Content-Type": "text/xml;charset=UTF-8",
+          SOAPAction:
+            "http://www.n11.com/ws/schemas/ProductServicePort/SaveProduct",
+        },
+        timeout: 20000,
+      }
     );
 
+    // ------------------------------
+    // 📌 XML → JSON PARSE
+    // ------------------------------
     const parser = new xml2js.Parser({ explicitArray: false });
-    const parsed = await parser.parseStringPromise(response.data);
+    const json = await parser.parseStringPromise(data);
 
-    const result =
-      parsed?.["soapenv:Envelope"]?.["soapenv:Body"]?.["ns3:SaveProductResponse"];
+    const resp =
+      json["soapenv:Envelope"]?.["soapenv:Body"]?.[
+        "ns3:SaveProductResponse"
+      ];
 
-    if (!result) {
+    if (!resp)
       return res.status(500).json({
-        message: "N11 beklenmeyen cevap",
-        raw: parsed,
+        success: false,
+        message: "❌ N11 yanıtı okunamadı",
+        raw: json,
+      });
+
+    // ------------------------------
+    // 📌 HATA VAR MI?
+    // ------------------------------
+    if (resp.result.status !== "success") {
+      return res.status(400).json({
+        success: false,
+        message: resp.result.errorMessage,
+        code: resp.result.errorCode,
       });
     }
 
-    const n11ProductId = result?.product?.id;
+    // ------------------------------
+    // 📌 BAŞARILI – VERİ KAYDET
+    // ------------------------------
+    const productData = resp.product;
 
-    // --- 7) Ürüne N11 ID yaz ---
-    if (n11ProductId) {
-      await products.updateOne(
-        { _id: new ObjectId(productId) },
-        { $set: { n11ProductId: n11ProductId } }
-      );
-    }
+    const n11ProductId = productData.id;
+    const stockItemId =
+      productData.stockItems?.stockItem?.id || null;
+
+    // N11 ürün kaydını DB’ye yaz
+    await N11Product.findOneAndUpdate(
+      { erpProductId: p._id },
+      {
+        erpProductId: p._id,
+        n11ProductId,
+        stockItemId,
+        title: p.ad,
+        price: p.satisFiyati,
+        stock: p.stok,
+        sku: p.sku,
+        raw: productData,
+      },
+      { upsert: true }
+    );
+
+    // ERP ürün güncelle
+    p.n11ProductId = n11ProductId;
+    await p.save();
 
     return res.status(200).json({
       success: true,
-      message: "🎉 Ürün N11'e başarıyla yüklendi",
+      message: "🎉 Ürün N11'e başarıyla gönderildi",
       n11ProductId,
-      n11Response: result,
+      stockItemId,
     });
-  } catch (error) {
-    console.error("N11 Add Product Error:", error);
-    return res.status(500).json({ message: "Sunucu hatası", error: error.message });
+  } catch (err) {
+    console.error("N11 AddProduct Error:", err.message);
+    return res.status(500).json({
+      success: false,
+      message: "❌ N11 gönderim hatası",
+      error: err.message,
+    });
   }
 }
