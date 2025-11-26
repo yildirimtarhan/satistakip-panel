@@ -89,22 +89,23 @@ export default function UrunlerPanel() {
 
   // 🛒 N11’e gönder
   const sendToN11 = async (u) => {
-    if (!u?._id) {
-      alert("Ürün ID bulunamadı.");
-      return;
-    }
-    if (
-      !confirm(
-        `Bu ürünü N11'de listelemek istiyor musunuz?\n\n${u.ad || "Ürün"}`
-      )
+  if (!u?._id) {
+    alert("Ürün ID bulunamadı.");
+    return;
+  }
+  if (
+    !confirm(
+      `Bu ürünü N11'de listelemek istiyor musunuz?\n\n${u.ad || "Ürün"}`
     )
-      return;
-    await postWithToken(
-      "/api/n11/products/saveProduct",
-      { productId: u._id },
-      "✅ Ürün N11'e gönderildi."
-    );
-  };
+  )
+    return;
+  await postWithToken(
+    "/api/n11/products/add",   // 🔴 BURASI add olmalı
+    { productId: u._id },
+    "✅ Ürün N11'e gönderildi."
+  );
+};
+
 
   // 🛍 Trendyol’a gönder (placeholder)
   const sendToTrendyol = async (u) => {
