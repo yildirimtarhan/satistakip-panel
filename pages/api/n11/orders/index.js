@@ -3,7 +3,6 @@ import axios from "axios";
 import xml2js from "xml2js";
 import jwt from "jsonwebtoken";
 import clientPromise from "@/lib/mongodb";
-import N11Order from "@/models/N11Order";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
@@ -22,7 +21,16 @@ export default async function handler(req, res) {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const userId = decoded.userId;
 
-    // 🌐 SOAP Body (Resmi N11 formatında)
+    // 🌍 N11 URL doğrulaması
+    const n11Url = process.env.N11_BASE_URL?.trim();
+    if (!n11Url) {
+      return res.status(500).json({
+        success: false,
+        message: "N11_BASE_URL tanımlı değil",
+      });
+    }
+
+    // 🌐 SOAP Body (CANLI ortam)
     const xmlRequest = `
       <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sch="http://www.n11.com/ws/schemas">
         <soapenv:Header/>
@@ -42,12 +50,11 @@ export default async function handler(req, res) {
       </soapenv:Envelope>
     `;
 
-    // 🌍 İstek
-    const response = await axios.post(
-      process.env.N11_BASE_URL,
-      xmlRequest,
-      { headers: { "Content-Type": "text/xml" } }
-    );
+    // 📡 N11 canlı API’ye istek
+    const response = await axios.post(n11Url, xmlRequest, {
+      headers: { "Content-Type": "text/xml" },
+      timeout: 30000,
+    });
 
     // 🧩 XML → JSON
     const parsed = await xml2js.parseStringPromise(response.data, {
@@ -55,78 +62,48 @@ export default async function handler(req, res) {
       ignoreAttrs: true,
     });
 
-    const orderList =
+    const rawOrders =
       parsed?.Envelope?.Body?.GetOrderListResponse?.orderList?.order || [];
 
-    const orders = Array.isArray(orderList) ? orderList : [orderList];
+    const orders = Array.isArray(rawOrders) ? rawOrders : [rawOrders];
 
     const client = await clientPromise;
     const db = client.db("satistakip");
 
-    const savedOrders = [];
+    const saved = [];
 
-    for (let o of orders) {
-      // 🧩 Buyer mapping (resmi dökümana uygun)
-      const buyer = {
-        fullName: o.buyer?.fullName || "",
-        email: o.buyer?.email || "",
-        gsm: o.buyer?.gsm || "",
-        taxId: o.buyer?.taxId || "",
-        taxOffice: o.buyer?.taxOffice || "",
-      };
-
-      // 🧩 Shipping Address
-      const shippingAddress = {
-        city: o.shippingAddress?.city || "",
-        district: o.shippingAddress?.district || "",
-        neighborhood: o.shippingAddress?.neighborhood || "",
-        address: o.shippingAddress?.fullAddress?.address || "",
-      };
-
-      // 🧩 Items
-      const itemsRaw = o.itemList?.item || [];
-      const items = Array.isArray(itemsRaw) ? itemsRaw : [itemsRaw];
-
-      const normalizedItems = items.map((item) => ({
-        id: item.id,
-        sellerStockCode: item.sellerStockCode,
-        quantity: Number(item.quantity || 1),
-        price: Number(item.price || item.amount || 0),
-        status: item.status,
-      }));
-
-      // DB'ye yazılacak doc
+    for (const o of orders) {
       const doc = {
         orderNumber: o.id,
-        buyer,
-        shippingAddress,
-        items: normalizedItems,
-        orderStatus: o.orderStatus || "",
-        itemStatus: o.itemStatus || "",
+        buyer: o.buyer || {},
+        shippingAddress: o.shippingAddress || {},
+        items: Array.isArray(o.itemList?.item)
+          ? o.itemList.item
+          : [o.itemList?.item].filter(Boolean),
         totalPrice: Number(o.amount || 0),
+        orderStatus: o.orderStatus || "",
         userId,
         raw: o,
       };
 
-      // Duplicate kontrolü
-      const existing = await db
+      const exist = await db
         .collection("n11orders")
         .findOne({ orderNumber: doc.orderNumber, userId });
 
-      if (!existing) {
+      if (!exist) {
         await db.collection("n11orders").insertOne(doc);
       }
 
-      savedOrders.push(doc);
+      saved.push(doc);
     }
 
     return res.status(200).json({
       success: true,
-      orders: savedOrders,
+      orders: saved,
     });
 
   } catch (err) {
     console.error("🔥 N11 Order Fetch Error:", err);
-    return res.status(500).json({ message: "Sunucu hatası" });
+    return res.status(500).json({ success: false, message: "Sunucu hatası" });
   }
-}
+};
