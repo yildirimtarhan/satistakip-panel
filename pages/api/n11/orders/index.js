@@ -1,147 +1,132 @@
-// 📁 /pages/api/n11/orders/index.js
+// /pages/api/n11/orders/index.js
 import axios from "axios";
 import xml2js from "xml2js";
-import dbConnect from "@/lib/mongodb";
+import jwt from "jsonwebtoken";
+import clientPromise from "@/lib/mongodb";
 import N11Order from "@/models/N11Order";
-
-// 🔧 Sipariş içindeki ürünleri, N11'in farklı XML formatlarından normalize eden yardımcı fonksiyon
-function extractItemsFromOrder(o = {}) {
-  // N11 bazı siparişlerde itemList, bazılarında items, bazılarında orderItemList kullanabiliyor
-  const list =
-    o.itemList ||
-    o.items ||
-    o.orderItemList ||
-    o.orderItemListResponse ||
-    {};
-
-  // Bazı XML'lerde item yerine items.item, orderItem vs. gelebiliyor
-  let rawItems =
-    list.item || list.items || list.orderItem || list.orderItems || [];
-
-  if (Array.isArray(rawItems)) {
-    return rawItems;
-  }
-
-  if (rawItems) {
-    return [rawItems];
-  }
-
-  return [];
-}
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
-    return res.status(405).json({ message: "Only GET supported" });
+    return res.status(405).json({ message: "Only GET allowed" });
   }
-
-  const appKey = process.env.N11_APP_KEY;
-  const appSecret = process.env.N11_APP_SECRET;
-
-  if (!appKey || !appSecret) {
-    return res.status(500).json({
-      success: false,
-      message: "N11_APP_KEY veya N11_APP_SECRET eksik (.env kontrol et)",
-    });
-  }
-
-  // İsteğe bağlı: status, page, pageSize query parametreleri
-  const { status = "1", page = "0", pageSize = "20" } = req.query;
-
-  // 🌐 SOAP XML (DetailedOrderListRequest)
-  const xmlBody = `<?xml version="1.0" encoding="utf-8"?>
-  <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-    xmlns:sch="http://www.n11.com/ws/schemas">
-    <soapenv:Header/>
-    <soapenv:Body>
-      <sch:DetailedOrderListRequest>
-        <auth>
-          <appKey>${appKey}</appKey>
-          <appSecret>${appSecret}</appSecret>
-        </auth>
-        <pagingData>
-          <currentPage>${page}</currentPage>
-          <pageSize>${pageSize}</pageSize>
-        </pagingData>
-        <searchData>
-          <status>${status}</status>
-        </searchData>
-      </sch:DetailedOrderListRequest>
-    </soapenv:Body>
-  </soapenv:Envelope>`;
 
   try {
-    await dbConnect();
+    // 🔐 TOKEN KONTROLÜ
+    const authHeader = req.headers.authorization || "";
+    const token = authHeader.startsWith("Bearer ")
+      ? authHeader.split(" ")[1]
+      : null;
 
-    const { data } = await axios.post(
-      "https://api.n11.com/ws/OrderService",
-      xmlBody,
-      {
-        headers: { "Content-Type": "text/xml;charset=UTF-8" },
-        timeout: 20000,
-      }
+    if (!token) return res.status(401).json({ message: "Token gerekli" });
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const userId = decoded.userId;
+
+    // 🌐 SOAP Body (Resmi N11 formatında)
+    const xmlRequest = `
+      <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sch="http://www.n11.com/ws/schemas">
+        <soapenv:Header/>
+        <soapenv:Body>
+          <sch:GetOrderListRequest>
+            <auth>
+              <appKey>${process.env.N11_API_KEY}</appKey>
+              <appSecret>${process.env.N11_API_SECRET}</appSecret>
+            </auth>
+            <status>-1</status>
+            <pagingData>
+              <currentPage>0</currentPage>
+              <pageSize>50</pageSize>
+            </pagingData>
+          </sch:GetOrderListRequest>
+        </soapenv:Body>
+      </soapenv:Envelope>
+    `;
+
+    // 🌍 İstek
+    const response = await axios.post(
+      process.env.N11_BASE_URL,
+      xmlRequest,
+      { headers: { "Content-Type": "text/xml" } }
     );
 
-    const parser = new xml2js.Parser({ explicitArray: false });
-    const parsed = await parser.parseStringPromise(data);
+    // 🧩 XML → JSON
+    const parsed = await xml2js.parseStringPromise(response.data, {
+      explicitArray: false,
+      ignoreAttrs: true,
+    });
 
-    // Farklı namespace ihtimallerini karşıla
-    const envelope =
-      parsed["SOAP-ENV:Envelope"] ||
-      parsed["soapenv:Envelope"] ||
-      parsed.Envelope;
+    const orderList =
+      parsed?.Envelope?.Body?.GetOrderListResponse?.orderList?.order || [];
 
-    const body =
-      envelope?.["SOAP-ENV:Body"] ||
-      envelope?.["soapenv:Body"] ||
-      envelope?.Body;
+    const orders = Array.isArray(orderList) ? orderList : [orderList];
 
-    const responseNode =
-      body?.["ns3:DetailedOrderListResponse"] ||
-      body?.["ns2:DetailedOrderListResponse"] ||
-      body?.["ns1:DetailedOrderListResponse"] ||
-      body?.DetailedOrderListResponse;
+    const client = await clientPromise;
+    const db = client.db("satistakip");
 
-    const ordersRaw = responseNode?.orderList?.order || [];
-    const orders = Array.isArray(ordersRaw)
-      ? ordersRaw
-      : [ordersRaw].filter(Boolean);
+    const savedOrders = [];
 
-    // 🔄 MongoDB'ye kaydet (upsert + item normalize)
-    for (const o of orders) {
-      const items = extractItemsFromOrder(o);
+    for (let o of orders) {
+      // 🧩 Buyer mapping (resmi dökümana uygun)
+      const buyer = {
+        fullName: o.buyer?.fullName || "",
+        email: o.buyer?.email || "",
+        gsm: o.buyer?.gsm || "",
+        taxId: o.buyer?.taxId || "",
+        taxOffice: o.buyer?.taxOffice || "",
+      };
 
-      const totalPrice =
-        Number(o.totalAmount?.value ?? 0) ||
-        Number(o.amount?.value ?? 0) ||
-        0;
+      // 🧩 Shipping Address
+      const shippingAddress = {
+        city: o.shippingAddress?.city || "",
+        district: o.shippingAddress?.district || "",
+        neighborhood: o.shippingAddress?.neighborhood || "",
+        address: o.shippingAddress?.fullAddress?.address || "",
+      };
 
-      await N11Order.findOneAndUpdate(
-        { orderNumber: o.orderNumber },
-        {
-          orderNumber: o.orderNumber,
-          buyer: o.buyer || {},
-          shippingAddress: o.shippingAddress || o.shippingAddressDetail || {},
-          items,
-          totalPrice,
-          status: o.status,
-          raw: o,
-        },
-        { upsert: true, new: true }
-      );
+      // 🧩 Items
+      const itemsRaw = o.itemList?.item || [];
+      const items = Array.isArray(itemsRaw) ? itemsRaw : [itemsRaw];
+
+      const normalizedItems = items.map((item) => ({
+        id: item.id,
+        sellerStockCode: item.sellerStockCode,
+        quantity: Number(item.quantity || 1),
+        price: Number(item.price || item.amount || 0),
+        status: item.status,
+      }));
+
+      // DB'ye yazılacak doc
+      const doc = {
+        orderNumber: o.id,
+        buyer,
+        shippingAddress,
+        items: normalizedItems,
+        orderStatus: o.orderStatus || "",
+        itemStatus: o.itemStatus || "",
+        totalPrice: Number(o.amount || 0),
+        userId,
+        raw: o,
+      };
+
+      // Duplicate kontrolü
+      const existing = await db
+        .collection("n11orders")
+        .findOne({ orderNumber: doc.orderNumber, userId });
+
+      if (!existing) {
+        await db.collection("n11orders").insertOne(doc);
+      }
+
+      savedOrders.push(doc);
     }
 
     return res.status(200).json({
       success: true,
-      message: "N11 siparişleri başarıyla çekildi",
-      count: orders.length,
-      orders,
+      orders: savedOrders,
     });
-  } catch (error) {
-    console.error("❌ N11 OrderService hata:", error.message);
-    return res.status(500).json({
-      success: false,
-      message: "N11 sipariş çekme hatası",
-      error: error.message,
-    });
+
+  } catch (err) {
+    console.error("🔥 N11 Order Fetch Error:", err);
+    return res.status(500).json({ message: "Sunucu hatası" });
   }
 }

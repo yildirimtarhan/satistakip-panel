@@ -2,16 +2,18 @@ import mongoose from "mongoose";
 
 const ProductSchema = new mongoose.Schema(
   {
-    ad: { type: String, required: true },          // Ürün adı
-    barkod: { type: String, default: "" },         // Barkod
-    sku: { type: String, default: "" },            // SKU
+    ad: { type: String, required: true },
+    barkod: { type: String, default: "" },
+    sku: { type: String, default: "" },
     marka: { type: String, default: "" },
     kategori: { type: String, default: "" },
 
-    n11CategoryId: { type: String, default: "" },  // N11 Kategori ID
+    n11CategoryId: { type: String, default: "" },
 
     aciklama: { type: String, default: "" },
-    resimUrl: { type: String, default: "" },
+
+    resimUrl: { type: String, default: "" },        // kapak
+    resimUrls: { type: [String], default: [] },     // çoklu resim
 
     alisFiyati: { type: Number, default: 0 },
     satisFiyati: { type: Number, default: 0 },

@@ -1,101 +1,80 @@
+// /pages/api/n11/orders/link-cari.js
 import dbConnect from "@/lib/mongodb";
-import N11Order from "@/models/N11Order";
+import jwt from "jsonwebtoken";
 import Cari from "@/models/Cari";
+import N11Order from "@/models/N11Order";
+import Transaction from "@/models/Transaction";
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res
-      .status(405)
-      .json({ success: false, message: "Only POST supported" });
-  }
-
-  const { orderNumber } = req.body || {};
-
-  if (!orderNumber) {
-    return res
-      .status(400)
-      .json({ success: false, message: "orderNumber zorunludur" });
-  }
+  if (req.method !== "POST") return res.status(405).end();
 
   try {
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) return res.status(401).json({ message: "Token gerekli" });
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const userId = decoded.userId;
+
     await dbConnect();
 
-    let order = await N11Order.findOne({ orderNumber });
-    if (!order) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Sipariş bulunamadı" });
-    }
+    const { orderNumber, cariId } = req.body;
 
-    // Eğer zaten cari ile eşleştirilmişse
-    if (order.cariId) {
-      const existingCari = await Cari.findById(order.cariId).lean();
-      return res.status(200).json({
-        success: true,
-        message: "Sipariş zaten cari ile eşleştirilmiş.",
-        cari: existingCari || null,
+    const order = await N11Order.findOne({ orderNumber, userId });
+    if (!order)
+      return res.status(404).json({ message: "Sipariş bulunamadı" });
+
+    let cari;
+
+    if (cariId) {
+      cari = await Cari.findById(cariId);
+      if (!cari) return res.status(404).json({ message: "Cari yok" });
+    } else {
+      const buyer = order.buyer;
+      cari = await Cari.findOne({
+        userId,
+        $or: [
+          { email: buyer.email },
+          { telefon: buyer.gsm },
+          { ad: buyer.fullName },
+        ],
       });
+
+      if (!cari) {
+        cari = await Cari.create({
+          ad: buyer.fullName,
+          email: buyer.email,
+          telefon: buyer.gsm,
+          vergiTipi: buyer.taxId ? "VKN" : "TCKN",
+          vergiNo: buyer.taxId || "",
+          il: order.shippingAddress.city,
+          ilce: order.shippingAddress.district,
+          adres: order.shippingAddress.address,
+          userId,
+        });
+      }
     }
 
-    const buyer = order.buyer || {};
-    const addr = order.shippingAddress || {};
-
-    const phone = (buyer.gsm || buyer.phone || "").trim();
-    const email = (buyer.email || "").trim();
-
-    let cari = null;
-
-    // Mevcut Cari arama (telefon / email ile)
-    const orConds = [];
-    if (phone) orConds.push({ telefon: phone });
-    if (email) orConds.push({ email });
-
-    if (orConds.length > 0) {
-      cari = await Cari.findOne({ $or: orConds });
-    }
-
-    let created = false;
-    if (!cari) {
-      // 📌 Yeni Cari oluştur
-      cari = new Cari({
-        ad: buyer.fullName || buyer.name || "N11 Müşteri",
-        tur: "Müşteri",
-        telefon: phone || "",
-        email: email || "",
-        vergiTipi: "Bireysel",
-        paraBirimi: "TRY",
-        adres: addr.address || addr.fullAddress?.address || "",
-        il: addr.city || "",
-        ilce: addr.district || addr.fullAddress?.district || "",
-        postaKodu: addr.postalCode || "",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-      await cari.save();
-      created = true;
-    }
-
-    // Siparişi bu Cari’ye bağla
-    order.cariId = cari._id;
+    // Bağla
+    order.accountId = cari._id;
     await order.save();
+
+    await Transaction.create({
+      accountId: cari._id,
+      type: "n11_sale",
+      total: order.totalPrice,
+      currency: "TRY",
+      date: new Date(),
+      userId,
+    });
 
     return res.status(200).json({
       success: true,
-      message: created
-        ? "Yeni cari oluşturuldu ve siparişle eşleştirildi."
-        : "Sipariş mevcut cari ile eşleştirildi.",
-      cari: {
-        _id: cari._id,
-        ad: cari.ad,
-        telefon: cari.telefon,
-        email: cari.email,
-      },
+      message: "Sipariş cari ile eşleşti",
+      cariId: cari._id,
     });
+
   } catch (err) {
-    console.error("Cari eşleştirme hatası:", err);
-    return res.status(500).json({
-      success: false,
-      message: "Cari eşleştirme sırasında sunucu hatası.",
-    });
+    console.log("🔥 Link cari error:", err);
+    return res.status(500).json({ message: "Sunucu hatası" });
   }
 }

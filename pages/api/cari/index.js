@@ -1,4 +1,3 @@
-// 📄 /pages/api/cari/index.js
 import dbConnect from "@/lib/mongodb";
 import jwt from "jsonwebtoken";
 import { Types } from "mongoose";
@@ -32,9 +31,16 @@ export default async function handler(req, res) {
     // 📌 GET → Cari Listesi
     // ============================================================
     if (req.method === "GET") {
+      
+      // 🟢 ADMIN → TÜM CARİLERİ GETİR
+      if (decoded.role === "admin") {
+        const allCariler = await Cari.find().sort({ createdAt: -1 }).lean();
+        return res.status(200).json(allCariler);
+      }
+
+      // 🟡 USER → SADECE KENDİ CARİLERİ
       const cariler = await Cari.find({ userId }).sort({ createdAt: -1 }).lean();
 
-      // Liste düzgün dönsün diye default değerler ekliyoruz
       const fixed = cariler.map((c) => ({
         ...c,
         bakiye: Number(c.bakiye || 0),
@@ -69,7 +75,6 @@ export default async function handler(req, res) {
         postaKodu: b.postaKodu || "",
         paraBirimi: b.paraBirimi || "TRY",
 
-        // 🎯 Pazaryeri müşteri ID'leri — Frontend ile birebir
         trendyolCustomerId: b.trendyolCustomerId || "",
         hbCustomerId: b.hbCustomerId || "",
         n11CustomerId: b.n11CustomerId || "",
@@ -82,7 +87,9 @@ export default async function handler(req, res) {
         totalSales: 0,
         totalPurchases: 0,
 
+        // 🟢 EKLENDİ → Multi Firmalar için çok kritik!
         userId,
+
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -119,11 +126,7 @@ export default async function handler(req, res) {
         ...(b.ilce !== undefined && { ilce: b.ilce }),
         ...(b.postaKodu !== undefined && { postaKodu: b.postaKodu }),
         ...(b.paraBirimi !== undefined && { paraBirimi: b.paraBirimi }),
-
-        // Pazaryeri ID’leri
-        ...(b.trendyolCustomerId !== undefined && {
-          trendyolCustomerId: b.trendyolCustomerId,
-        }),
+        ...(b.trendyolCustomerId !== undefined && { trendyolCustomerId: b.trendyolCustomerId }),
         ...(b.hbCustomerId !== undefined && { hbCustomerId: b.hbCustomerId }),
         ...(b.n11CustomerId !== undefined && { n11CustomerId: b.n11CustomerId }),
         ...(b.amazonCustomerId !== undefined && { amazonCustomerId: b.amazonCustomerId }),

@@ -1,16 +1,35 @@
+// models/N11Order.js
 import mongoose from "mongoose";
 
 const N11OrderSchema = new mongoose.Schema(
   {
     orderNumber: String,
-    buyer: {},
-    shippingAddress: {},
-    items: [],
-    totalPrice: Number,
-    status: String,
 
-    // 🔗 ERP Cari bağlantısı
+    buyer: {
+      fullName: String,
+      email: String,
+      gsm: String,
+      taxId: String,
+      taxOffice: String,
+    },
+
+    shippingAddress: {
+      city: String,
+      district: String,
+      neighborhood: String,
+      address: String,
+    },
+
+    items: Array,
+
+    orderStatus: String,
+    itemStatus: String,
+
+    totalPrice: Number,
+
     accountId: { type: mongoose.Types.ObjectId, ref: "Cari" },
+
+    userId: String,
 
     raw: {},
   },

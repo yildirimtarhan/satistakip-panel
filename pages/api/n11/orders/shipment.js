@@ -1,106 +1,50 @@
-// 📁 /pages/api/n11/orders/shipment.js
+// /pages/api/n11/orders/shipment.js
 import axios from "axios";
+import jwt from "jsonwebtoken";
 import xml2js from "xml2js";
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ message: "Only POST allowed" });
-  }
+  if (req.method !== "POST") return res.status(405).end();
 
   try {
-    const { orderNumber, shipmentCompany, trackingNumber } = req.body;
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) return res.status(401).json({ message: "Token gerekli" });
 
-    if (!orderNumber || !shipmentCompany || !trackingNumber) {
-      return res.status(400).json({
-        success: false,
-        message: "Eksik alan: orderNumber, shipmentCompany, trackingNumber"
-      });
-    }
+    jwt.verify(token, process.env.JWT_SECRET);
 
-    const { N11_APP_KEY, N11_APP_SECRET } = process.env;
+    const { orderItemId, trackingNumber, trackingUrl, shipmentCompany } = req.body;
 
-    if (!N11_APP_KEY || !N11_APP_SECRET) {
-      return res.status(500).json({
-        success: false,
-        message: "N11 APP KEY veya SECRET eksik (Render ayarlarını kontrol et)"
-      });
-    }
-
-    // 📦 KARGO BİLDİRİMİ (MakeOrderItemShipmentRequest)
-    const xml = `<?xml version="1.0" encoding="utf-8"?>
-    <soapenv:Envelope 
-      xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-      xmlns:sch="http://www.n11.com/ws/schemas">
-      <soapenv:Header/>
-      <soapenv:Body>
-        <sch:MakeOrderItemShipmentRequest>
-          <auth>
-            <appKey>${N11_APP_KEY}</appKey>
-            <appSecret>${N11_APP_SECRET}</appSecret>
-          </auth>
-          <shipmentList>
-            <shipment>
-              <orderNumber>${orderNumber}</orderNumber>
-              <shipmentCompany>${shipmentCompany}</shipmentCompany>
+    const xmlRequest = `
+      <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sch="http://www.n11.com/ws/schemas">
+        <soapenv:Header/>
+        <soapenv:Body>
+          <sch:OrderItemShipmentRequest>
+            <auth>
+              <appKey>${process.env.N11_API_KEY}</appKey>
+              <appSecret>${process.env.N11_API_SECRET}</appSecret>
+            </auth>
+            <orderItemId>${orderItemId}</orderItemId>
+            <shipmentInfo>
               <trackingNumber>${trackingNumber}</trackingNumber>
-            </shipment>
-          </shipmentList>
-        </sch:MakeOrderItemShipmentRequest>
-      </soapenv:Body>
-    </soapenv:Envelope>`;
+              <trackingUrl>${trackingUrl}</trackingUrl>
+              <shipmentCompany>${shipmentCompany}</shipmentCompany>
+            </shipmentInfo>
+          </sch:OrderItemShipmentRequest>
+        </soapenv:Body>
+      </soapenv:Envelope>
+    `;
 
-    // 🛰️ API’ye gönder
-    const { data } = await axios.post(
-      "https://api.n11.com/ws/OrderService",
-      xml,
-      {
-        headers: {
-          "Content-Type": "text/xml;charset=UTF-8"
-        },
-        timeout: 20000
-      }
+    const response = await axios.post(
+      process.env.N11_BASE_URL,
+      xmlRequest,
+      { headers: { "Content-Type": "text/xml" } }
     );
 
-    // 🧩 XML -> JSON
-    const parser = new xml2js.Parser({ explicitArray: false });
-    const json = await parser.parseStringPromise(data);
+    const result = await xml2js.parseStringPromise(response.data);
 
-    // Namespace’lerin farklı versiyonlarını yakala
-    const envelope =
-      json["SOAP-ENV:Envelope"] ||
-      json["soapenv:Envelope"] ||
-      json["Envelope"];
+    return res.status(200).json({ success: true, result });
 
-    const body =
-      envelope?.["SOAP-ENV:Body"] ||
-      envelope?.["soapenv:Body"] ||
-      envelope?.Body;
-
-    const response =
-      body?.["ns3:MakeOrderItemShipmentResponse"] ||
-      body?.["ns2:MakeOrderItemShipmentResponse"] ||
-      body?.["ns1:MakeOrderItemShipmentResponse"] ||
-      body?.MakeOrderItemShipmentResponse;
-
-    if (!response) {
-      return res.status(200).json({
-        success: false,
-        message: "N11 boş veya hatalı yanıt döndürdü",
-        raw: json
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: "Kargo bildirimi başarıyla gönderildi!",
-      n11Response: response
-    });
   } catch (err) {
-    console.error("❌ KARGO BİLDİRİMİ HATASI:", err.message);
-    return res.status(500).json({
-      success: false,
-      message: "Kargo bildirimi gönderilemedi",
-      error: err.message
-    });
+    return res.status(500).json({ message: "Sunucu hatası" });
   }
 }

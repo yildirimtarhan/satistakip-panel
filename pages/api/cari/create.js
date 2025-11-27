@@ -1,6 +1,6 @@
-// 📁 /pages/api/cari/create.js
 import dbConnect from "@/lib/mongodb";
 import Cari from "@/models/Cari";
+import jwt from "jsonwebtoken";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -11,6 +11,19 @@ export default async function handler(req, res) {
 
   await dbConnect();
 
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token)
+    return res.status(401).json({ message: "Token gerekli" });
+
+  let decoded;
+  try {
+    decoded = jwt.verify(token, process.env.JWT_SECRET);
+  } catch {
+    return res.status(401).json({ message: "Geçersiz token" });
+  }
+
+  const userId = decoded.userId;
+
   const {
     ad,
     email,
@@ -19,7 +32,7 @@ export default async function handler(req, res) {
     ilce,
     adres,
     kaynak = "N11",
-    n11CustomerId, // 🔴 ÖNEMLİ: doğru alan adı
+    n11CustomerId,
   } = req.body || {};
 
   if (!ad) {
@@ -32,18 +45,22 @@ export default async function handler(req, res) {
 
   const cari = await Cari.create({
     ad,
-    tur: "Müşteri",              // ✅ Liste filtresine takılmasın
+    tur: "Müşteri",
     telefon,
     email,
     il,
     ilce,
     adres,
-    n11CustomerId: n11CustomerId || null, // ✅ Modeldeki alan adı
+    n11CustomerId: n11CustomerId || null,
     kaynak,
     paraBirimi: "TRY",
     balance: 0,
     totalSales: 0,
     totalPurchases: 0,
+
+    // 🟢 EKLENDİ — Multi Firma için kritik!
+    userId,
+
     createdAt: now,
     updatedAt: now,
   });

@@ -7,65 +7,50 @@ import N11Product from "@/models/N11Product";
 import jwt from "jsonwebtoken";
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res
-      .status(405)
-      .json({ success: false, message: "Only POST allowed" });
-  }
+  if (req.method !== "POST")
+    return res.status(405).json({ success: false, message: "Only POST allowed" });
 
-  // 🔐 Token kontrolü
+  // token
   const auth = req.headers.authorization;
-  if (!auth) {
-    return res
-      .status(401)
-      .json({ success: false, message: "Token eksik" });
-  }
+  if (!auth)
+    return res.status(401).json({ success: false, message: "Token eksik" });
 
   let user;
   try {
     user = jwt.verify(auth.split(" ")[1], process.env.JWT_SECRET);
   } catch {
-    return res
-      .status(401)
-      .json({ success: false, message: "Geçersiz token" });
+    return res.status(401).json({ success: false, message: "Geçersiz token" });
   }
 
   const { productId } = req.body;
-  if (!productId) {
-    return res
-      .status(400)
-      .json({ success: false, message: "productId zorunlu" });
-  }
+  if (!productId)
+    return res.status(400).json({ success: false, message: "productId zorunlu" });
 
   await dbConnect();
 
-  // 🗃 Ürünü çek
+  // ürün al
   const p = await Product.findById(productId);
-  if (!p) {
-    return res
-      .status(404)
-      .json({ success: false, message: "Ürün bulunamadı" });
-  }
+  if (!p)
+    return res.status(404).json({ success: false, message: "Ürün bulunamadı" });
 
   if (!p.n11CategoryId) {
     return res.status(400).json({
       success: false,
-      message: "Ürüne bağlı N11 kategori ID yok",
+      message: "N11 kategori seçilmemiş",
     });
   }
 
   const { N11_APP_KEY, N11_APP_SECRET } = process.env;
-  if (!N11_APP_KEY || !N11_APP_SECRET) {
+  if (!N11_APP_KEY || !N11_APP_SECRET)
     return res.status(500).json({
       success: false,
       message: "N11 APP KEY / SECRET tanımlı değil",
     });
-  }
 
-  // 🧩 XML gövdesi (N11 SaveProductRequest)
   const barkod = p.barkod || p.sku || p._id.toString();
-  const desc = p.aciklama || p.ad || "";
+  const aciklama = p.aciklama || p.ad;
 
+  // XML body
   const xml = `
   <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
         xmlns:sch="http://www.n11.com/ws/schemas">
@@ -79,21 +64,13 @@ export default async function handler(req, res) {
 
         <product>
           <productSellerCode>${barkod}</productSellerCode>
-          <title>${(p.ad || "").replace(/&/g, "&amp;")}</title>
-          <description><![CDATA[${desc}]]></description>
+          <title>${p.ad.replace(/&/g, "&amp;")}</title>
+          <description><![CDATA[${aciklama}]]></description>
 
           <category id="${p.n11CategoryId}"></category>
 
           <price>${String(p.satisFiyati).replace(",", ".")}</price>
-          <currencyType>${
-            p.paraBirimi === "USD"
-              ? "USD"
-              : p.paraBirimi === "EUR"
-              ? "EUR"
-              : "TL"
-          }</currencyType>
-
-          <approvalStatus>WAITING</approvalStatus>
+          <currencyType>${p.paraBirimi}</currencyType>
 
           <stockItems>
             <stockItem>
@@ -106,9 +83,7 @@ export default async function handler(req, res) {
             p.resimUrl
               ? `
           <images>
-            <image>
-              <url>${p.resimUrl}</url>
-            </image>
+            <image><url>${p.resimUrl}</url></image>
           </images>`
               : ""
           }
@@ -135,75 +110,57 @@ export default async function handler(req, res) {
     const parser = new xml2js.Parser({ explicitArray: false });
     const json = await parser.parseStringPromise(data);
 
+    const body =
+      json["soapenv:Envelope"]?.["soapenv:Body"] ||
+      json["SOAP-ENV:Envelope"]?.["SOAP-ENV:Body"];
+
     const resp =
-      json["soapenv:Envelope"]?.["soapenv:Body"]?.[
-        "ns3:SaveProductResponse"
-      ] ||
-      json["SOAP-ENV:Envelope"]?.["SOAP-ENV:Body"]?.[
-        "ns3:SaveProductResponse"
-      ] ||
-      json.Envelope?.Body?.SaveProductResponse ||
-      null;
+      body?.["ns3:SaveProductResponse"] ||
+      body?.SaveProductResponse ||
+      body?.["sch:SaveProductResponse"];
 
     if (!resp) {
-      console.error("N11 SaveProduct response parse edilemedi:", json);
       return res.status(500).json({
         success: false,
-        message: "N11 yanıtı okunamadı",
+        message: "N11 response okunamadı",
+        raw: json,
       });
     }
 
-    const result = resp.result || {};
-    if ((result.status || result.resultStatus || "").toLowerCase() !== "success") {
+    const result = resp.result;
+
+    if ((result.status || "").toLowerCase() !== "success") {
       return res.status(400).json({
         success: false,
         message: result.errorMessage || "N11 ürün kaydı başarısız",
-        code: result.errorCode || null,
+        code: result.errorCode,
       });
     }
 
-    const productData = resp.product || {};
-    const n11ProductId = productData.id || productData.productId || null;
-    const stockItem =
-      productData.stockItems?.stockItem || {};
-    const stockItemId = stockItem.id || stockItem.stockItemId || null;
+    const productData = resp.product;
 
-    // 🗃 N11Product kaydet / güncelle
     await N11Product.findOneAndUpdate(
       { erpProductId: p._id },
       {
         erpProductId: p._id,
-        n11ProductId,
-        stockItemId,
-        title: p.ad,
-        price: p.satisFiyati,
-        stock: p.stok,
-        sku: p.sku,
+        n11ProductId: productData.id,
         raw: productData,
       },
       { upsert: true }
     );
 
-    // ürün modeline de yaz
-    p.n11ProductId = n11ProductId;
+    p.n11ProductId = productData.id;
     await p.save();
 
     return res.status(200).json({
       success: true,
-      message: "Ürün N11'e başarıyla gönderildi",
-      n11ProductId,
-      stockItemId,
+      message: "Ürün N11'e gönderildi",
+      n11ProductId: productData.id,
     });
   } catch (err) {
-    // 🔍 Hata detaylarını logla
-    console.error("N11 AddProduct Error status:", err.response?.status);
-    console.error("N11 AddProduct Error data:", err.response?.data);
-
     return res.status(500).json({
       success: false,
-      message: `N11 gönderim hatası${
-        err.response?.status ? ` (HTTP ${err.response.status})` : ""
-      }`,
+      message: "N11 gönderim hatası",
       error: err.response?.data || err.message,
     });
   }
