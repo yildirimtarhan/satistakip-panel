@@ -152,47 +152,57 @@ export default function Teklifler() {
 
   // Veri yükleme
   useEffect(() => {
-    (async () => {
-      try {
-        const [cariR, urunR, compR, tklfR] = await Promise.allSettled([
-          fetch("/api/cari/list"),
-          fetch("/api/urun/list"),
-          fetch("/api/settings/company"),
-          fetch("/api/teklif/list"),
-        ]);
+  (async () => {
+    try {
+      // 🔐 Token al (sadece tarayıcıda çalışır)
+      const token =
+        typeof window !== "undefined"
+          ? localStorage.getItem("token")
+          : "";
 
-        if (cariR.status === "fulfilled" && cariR.value.ok) {
-          const d = await cariR.value.json();
-          setCariler(Array.isArray(d) ? d : d?.items || []);
-        }
+      const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
 
-        if (urunR.status === "fulfilled" && urunR.value.ok) {
-          const d = await urunR.value.json();
-          setUrunler(Array.isArray(d) ? d : d?.items || []);
-        }
+      const [cariR, urunR, compR, tklfR] = await Promise.allSettled([
+        // 🟢 DÜZELTİLDİ: /api/cari/list → /api/cari + token
+        fetch("/api/cari", { headers: authHeaders }),
+        fetch("/api/urun/list", { headers: authHeaders }),
+        fetch("/api/settings/company", { headers: authHeaders }),
+        fetch("/api/teklif/list", { headers: authHeaders }),
+      ]);
 
-        if (compR.status === "fulfilled" && compR.value.ok) {
-          const d = await compR.value.json();
-          setCompany(d);
-        } else {
-          const local = await loadCompanyInfo();
-          setCompany(local);
-        }
-
-        if (tklfR.status === "fulfilled" && tklfR.value.ok) {
-          const d = await tklfR.value.json();
-          const list = Array.isArray(d) ? d : d?.items || [];
-          setTeklifler(list);
-          const lastNo = list[0]?.number || list[0]?.offerNumber;
-          setOfferNumber(nextOfferNumber(lastNo));
-        } else {
-          setOfferNumber(nextOfferNumber(null));
-        }
-      } catch (e) {
-        console.warn("Yükleme sırasında uyarı:", e);
+      if (cariR.status === "fulfilled" && cariR.value.ok) {
+        const d = await cariR.value.json();
+        setCariler(Array.isArray(d) ? d : d?.items || []);
       }
-    })();
-  }, []);
+
+      if (urunR.status === "fulfilled" && urunR.value.ok) {
+        const d = await urunR.value.json();
+        setUrunler(Array.isArray(d) ? d : d?.items || []);
+      }
+
+      if (compR.status === "fulfilled" && compR.value.ok) {
+        const d = await compR.value.json();
+        setCompany(d);
+      } else {
+        const local = await loadCompanyInfo();
+        setCompany(local);
+      }
+
+      if (tklfR.status === "fulfilled" && tklfR.value.ok) {
+        const d = await tklfR.value.json();
+        const list = Array.isArray(d) ? d : d?.items || [];
+        setTeklifler(list);
+        const lastNo = list[0]?.number || list[0]?.offerNumber;
+        setOfferNumber(nextOfferNumber(lastNo));
+      } else {
+        setOfferNumber(nextOfferNumber(null));
+      }
+    } catch (e) {
+      console.warn("Yükleme sırasında uyarı:", e);
+    }
+  })();
+}, []);
+
 
   /* ───────── Satır işlemleri ───────── */
 
