@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Cookies from "js-cookie";
 
 export default function N11Orders() {
   const [orders, setOrders] = useState([]);
@@ -9,20 +10,49 @@ export default function N11Orders() {
 
   const fetchOrders = async () => {
     setLoading(true);
+
     try {
-      const res = await fetch("/api/n11/orders");
+      // 🔐 Token al (localStorage + cookie fallback)
+      const token =
+        typeof window !== "undefined"
+          ? localStorage.getItem("token") || Cookies.get("token")
+          : "";
+
+      if (!token) {
+        alert("Giriş yapılmamış görünüyor. Yeniden giriş yapın.");
+        setLoading(false);
+        return;
+      }
+
+      // 🟢 TOKEN EKLENDİ
+      const res = await fetch("/api/n11/orders", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
       const data = await res.json();
 
-      if (data.success) {
-        const list = data.orders || [];
-        setOrders(Array.isArray(list) ? list : [list]);
-      } else {
+      if (!res.ok) {
+        console.error("❌ API Hatası:", data);
         alert(data.message || "Sipariş alınamadı!");
+        setLoading(false);
+        return;
       }
+
+      // Sipariş listesi standartlaştırıldı
+      const list = Array.isArray(data.orders)
+        ? data.orders
+        : data.orders
+        ? [data.orders]
+        : [];
+
+      setOrders(list);
     } catch (error) {
       console.error("❌ Hata:", error);
       alert("Bağlantı hatası oluştu!");
     }
+
     setLoading(false);
   };
 
@@ -40,7 +70,7 @@ export default function N11Orders() {
       <button
         onClick={fetchOrders}
         disabled={loading}
-        className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-xl"
+        className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-xl disabled:opacity-50"
       >
         {loading ? "Yükleniyor..." : "🔄 Siparişleri Getir"}
       </button>

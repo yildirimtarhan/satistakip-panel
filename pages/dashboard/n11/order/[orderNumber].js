@@ -5,44 +5,201 @@ import dbConnect from "@/lib/mongodb";
 import N11Order from "@/models/N11Order";
 import Cari from "@/models/Cari";
 
+
 export async function getServerSideProps(context) {
   const { orderNumber } = context.params;
 
-  await dbConnect();
+  try {
+    await dbConnect();
 
-  const doc = await N11Order.findOne({ orderNumber }).lean();
+    let doc = await N11Order.findOne({ orderNumber }).lean();
+    let fromLive = false;
 
-  if (!doc) {
+    // Eğer sipariş DB'de yoksa, N11 API'den canlı çekelim
+    if (!doc) {
+      const appKey = process.env.N11_APP_KEY;
+      const appSecret = process.env.N11_APP_SECRET;
+
+      if (!appKey || !appSecret) {
+        console.error("❌ N11 API KEY/SECRET eksik!");
+        return { notFound: true };
+      }
+
+      // -----------------------------
+      // N11 SOAP REQUEST • DetailedOrderListRequest
+      // -----------------------------
+      const xml = `<?xml version="1.0" encoding="utf-8"?>
+      <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+        xmlns:sch="http://www.n11.com/ws/schemas">
+        <soapenv:Header/>
+        <soapenv:Body>
+          <sch:DetailedOrderListRequest>
+            <auth>
+              <appKey>${appKey}</appKey>
+              <appSecret>${appSecret}</appSecret>
+            </auth>
+            <pagingData>
+              <currentPage>0</currentPage>
+              <pageSize>10</pageSize>
+            </pagingData>
+            <searchData>
+              <orderNumber>${orderNumber}</orderNumber>
+            </searchData>
+          </sch:DetailedOrderListRequest>
+        </soapenv:Body>
+      </soapenv:Envelope>`;
+
+      const axiosModule = await import("axios");
+      const { default: axios } = axiosModule;
+      const xml2js = await import("xml2js");
+      const parser = new xml2js.Parser({ explicitArray: false });
+
+      const { data } = await axios.post(
+        "https://api.n11.com/ws/OrderService",
+        xml,
+        {
+          headers: {
+            "Content-Type": "text/xml;charset=UTF-8",
+          },
+          timeout: 20000,
+        }
+      );
+
+      const parsed = await parser.parseStringPromise(data);
+
+      const envelope =
+        parsed?.["SOAP-ENV:Envelope"] ||
+        parsed?.["soapenv:Envelope"] ||
+        parsed?.Envelope;
+
+      const body =
+        envelope?.["SOAP-ENV:Body"] ||
+        envelope?.["soapenv:Body"] ||
+        envelope?.Body;
+
+      const resp =
+        body?.["ns3:DetailedOrderListResponse"] ||
+        body?.DetailedOrderListResponse ||
+        body?.["sch:DetailedOrderListResponse"];
+
+      let orderList = resp?.orderList?.order;
+
+      if (!orderList) {
+        return { notFound: true };
+      }
+
+      if (Array.isArray(orderList)) {
+        orderList =
+          orderList.find((o) => o.orderNumber == orderNumber) || orderList[0];
+      }
+
+      const rawOrder = orderList;
+
+      // -----------------------------
+      // ITEMS normalize
+      // -----------------------------
+      const rawItems =
+        rawOrder?.orderItemList?.orderItem ||
+        rawOrder?.itemList?.item ||
+        rawOrder?.items?.item ||
+        [];
+
+      const itemsArray = Array.isArray(rawItems)
+        ? rawItems
+        : rawItems
+        ? [rawItems]
+        : [];
+
+      const items = itemsArray.map((it) => ({
+        id: it.id,
+        productId: it.productId,
+        productName: it.productName || it.title || "N11 Ürünü",
+        quantity: Number(it.quantity || 1),
+        price: Number(it.price || 0),
+        totalMallDiscountPrice: Number(
+          it.totalMallDiscountPrice || it.mallDiscount || 0
+        ),
+        sellerInvoiceAmount: Number(it.sellerInvoiceAmount || 0),
+        productSellerCode: it.productSellerCode,
+        status: it.status,
+        shipmentInfo: it.shipmentInfo || {},
+        rawItem: it,
+      }));
+
+      // -----------------------------
+      // ERP kayıt formatı
+      // -----------------------------
+      const docToSave = {
+        orderNumber: rawOrder.orderNumber,
+        buyer: {
+          fullName:
+            rawOrder.recipient ||
+            rawOrder.buyerName ||
+            rawOrder.buyer?.fullName ||
+            "",
+          email: rawOrder.buyer?.email || "",
+          gsm: rawOrder.buyer?.gsm || "",
+        },
+        shippingAddress:
+          rawOrder.shippingAddress ||
+          rawOrder.deliveryAddress ||
+          rawOrder.billingAddress ||
+          {},
+        items,
+        totalPrice: Number(rawOrder.totalAmount || 0),
+        status: rawOrder.status,
+        raw: rawOrder,
+      };
+
+      // -----------------------------
+      // DB'ye upsert
+      // -----------------------------
+      const saved = await N11Order.findOneAndUpdate(
+        { orderNumber: docToSave.orderNumber },
+        { $set: docToSave },
+        { new: true, upsert: true }
+      ).lean();
+
+      doc = saved || docToSave;
+      fromLive = true;
+    }
+
+    // -----------------------------
+    // Cari bağlanmış mı?
+    // -----------------------------
+    let linkedCari = null;
+
+    if (doc.accountId) {
+      const c = await Cari.findById(doc.accountId).lean();
+      if (c) {
+        linkedCari = {
+          _id: c._id.toString(),
+          ad: c.ad,
+          telefon: c.telefon,
+          email: c.email,
+        };
+      }
+    }
+
+    const order = {
+      ...doc,
+      _id: doc._id ? doc._id.toString() : null,
+      accountId: doc.accountId ? doc.accountId.toString() : null,
+      createdAt: doc.createdAt ? doc.createdAt.toISOString() : null,
+      updatedAt: doc.updatedAt ? doc.updatedAt.toISOString() : null,
+      fromLive,
+    };
+
+    return {
+      props: {
+        order,
+        linkedCari: linkedCari || null,
+      },
+    };
+  } catch (err) {
+    console.error("❌ getServerSideProps ERR:", err);
     return { notFound: true };
   }
-
-  let linkedCari = null;
-  if (doc.accountId) {
-    const c = await Cari.findById(doc.accountId).lean();
-    if (c) {
-      linkedCari = {
-        _id: c._id.toString(),
-        ad: c.ad,
-        telefon: c.telefon,
-        email: c.email,
-      };
-    }
-  }
-
-  const order = {
-    ...doc,
-    _id: doc._id.toString(),
-    accountId: doc.accountId ? doc.accountId.toString() : null,
-    createdAt: doc.createdAt ? doc.createdAt.toISOString() : null,
-    updatedAt: doc.updatedAt ? doc.updatedAt.toISOString() : null,
-  };
-
-  return {
-    props: {
-      order,
-      linkedCari: linkedCari || null,
-    },
-  };
 }
 
 export default function N11OrderDetailPage({ order, linkedCari }) {
