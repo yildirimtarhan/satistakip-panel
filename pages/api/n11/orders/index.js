@@ -4,54 +4,79 @@ import xml2js from "xml2js";
 import jwt from "jsonwebtoken";
 import clientPromise from "@/lib/mongodb";
 
+// N11 ortam URL'i (Render Environment'tan okunur)
 const ORDER_SERVICE_URL =
-  process.env.N11_ORDER_SERVICE_URL || "https://api.n11.com/ws/orderService/";
+  process.env.N11_ORDER_SERVICE_URL ||
+  "https://api.n11.com/ws/OrderService.wsdl";
 
 export default async function handler(req, res) {
+  // Sadece GET
   if (req.method !== "GET") {
-    return res.status(405).json({ success: false, message: "Only GET allowed" });
+    return res
+      .status(405)
+      .json({ success: false, message: "Only GET method is allowed" });
   }
 
   try {
-    // 🔐 1) TOKEN KONTROLÜ
+    /* ──────────────────────────────────────────────
+       1) TOKEN KONTROLÜ
+    ────────────────────────────────────────────── */
     const authHeader = req.headers.authorization || "";
     const token = authHeader.startsWith("Bearer ")
       ? authHeader.split(" ")[1]
       : null;
 
     if (!token) {
-      return res.status(401).json({ success: false, message: "Token gerekli" });
+      return res
+        .status(401)
+        .json({ success: false, message: "Token gerekli" });
     }
 
     let decoded;
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET);
     } catch (err) {
-      return res
-        .status(401)
-        .json({ success: false, message: "Geçersiz veya süresi dolmuş token" });
+      return res.status(401).json({
+        success: false,
+        message: "Geçersiz veya süresi dolmuş token",
+      });
     }
 
     const userId = decoded.userId;
 
-    if (!process.env.N11_APP_KEY || !process.env.N11_APP_SECRET) {
+    /* ──────────────────────────────────────────────
+       2) ENV KONTROLLERİ
+    ────────────────────────────────────────────── */
+    const appKey = process.env.N11_APP_KEY;
+    const appSecret = process.env.N11_APP_SECRET;
+
+    if (!appKey || !appSecret) {
       return res.status(500).json({
         success: false,
-        message: "N11 APP KEY / SECRET environment değişkenleri eksik",
+        message: "N11_APP_KEY veya N11_APP_SECRET tanımlı değil",
       });
     }
 
-    // 🌐 2) SOAP BODY (Dokümana uygun GetOrderListRequest)
+    if (!ORDER_SERVICE_URL) {
+      return res.status(500).json({
+        success: false,
+        message: "N11_ORDER_SERVICE_URL tanımlı değil",
+      });
+    }
+
+    /* ──────────────────────────────────────────────
+       3) N11 GetOrderList SOAP BODY (dokümana göre)
+    ────────────────────────────────────────────── */
     const xmlRequest = `
       <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sch="http://www.n11.com/ws/schemas">
         <soapenv:Header/>
         <soapenv:Body>
           <sch:GetOrderListRequest>
             <auth>
-              <appKey>${process.env.N11_APP_KEY}</appKey>
-              <appSecret>${process.env.N11_APP_SECRET}</appSecret>
+              <appKey>${appKey}</appKey>
+              <appSecret>${appSecret}</appSecret>
             </auth>
-            <!-- Tüm durumlar için -1 -->
+            <!-- Tüm sipariş durumlarını getirmek için -->
             <status>-1</status>
             <pagingData>
               <currentPage>0</currentPage>
@@ -62,59 +87,103 @@ export default async function handler(req, res) {
       </soapenv:Envelope>
     `;
 
-    // 🌍 3) N11 OrderService çağrısı
-    const response = await axios.post(ORDER_SERVICE_URL, xmlRequest, {
-      headers: {
-        "Content-Type": "text/xml; charset=utf-8",
-      },
-      timeout: 30000,
-    });
+    /* ──────────────────────────────────────────────
+       4) N11'e istek
+    ────────────────────────────────────────────── */
+    let response;
+    try {
+      response = await axios.post(ORDER_SERVICE_URL, xmlRequest, {
+        headers: {
+          "Content-Type": "text/xml; charset=utf-8",
+          // Bazı ortamlar SOAPAction istiyor; doküman ismini verelim
+          SOAPAction: "http://www.n11.com/ws/GetOrderList",
+        },
+        timeout: 30000,
+      });
+    } catch (err) {
+      // HTTP seviyesinde hata (404, 500 vs) → UI'da net mesaj gösterelim
+      if (axios.isAxiosError(err)) {
+        console.error("🔥 N11 Order Fetch AxiosError:", {
+          url: ORDER_SERVICE_URL,
+          status: err.response?.status,
+          data: err.response?.data,
+          code: err.code,
+        });
 
-    // 🧩 4) XML → JSON
+        const httpStatus = err.response?.status || 500;
+        const msg =
+          httpStatus === 404
+            ? "N11 sipariş servisine ulaşırken hata oluştu. (HTTP 404)"
+            : `N11 sipariş servisine ulaşırken hata oluştu. (HTTP ${httpStatus})`;
+
+        return res.status(502).json({
+          success: false,
+          message: msg,
+        });
+      }
+
+      console.error("🔥 N11 Order Fetch Error (request seviyesinde):", err);
+      return res.status(500).json({
+        success: false,
+        message: "N11 sipariş servisine erişilirken bilinmeyen hata oluştu.",
+      });
+    }
+
+    /* ──────────────────────────────────────────────
+       5) XML → JSON
+    ────────────────────────────────────────────── */
     const parsed = await xml2js.parseStringPromise(response.data, {
       explicitArray: false,
       ignoreAttrs: true,
     });
 
     const body = parsed?.Envelope?.Body;
+
     const result =
       body?.GetOrderListResponse?.result ||
       body?.getOrderListResponse?.result ||
       {};
 
-    const status = result.status;
-    const statusCode = result.statusCode;
-    const resultMessage = result.errorMessage || result.resultMessage;
+    const status = result?.status;
+    const resultMessage =
+      result?.errorMessage || result?.resultMessage || result?.message;
 
-    if (status && status.toUpperCase() !== "SUCCESS") {
-      console.error("N11 GetOrderList hata sonucu:", result);
+    if (status && String(status).toUpperCase() !== "SUCCESS") {
+      console.error("❌ N11 GetOrderList result error:", result);
       return res.status(502).json({
         success: false,
         message:
           "N11 GetOrderList başarısız: " +
-          (resultMessage || statusCode || status || "Bilinmeyen hata"),
+          (resultMessage || result?.statusCode || status),
         n11Result: result,
       });
     }
 
-    const orderList =
+    // Sipariş listesi
+    const orderListNode =
       body?.GetOrderListResponse?.orderList?.order ||
       body?.getOrderListResponse?.orderList?.order ||
       [];
 
-    const orders = Array.isArray(orderList) ? orderList : orderList ? [orderList] : [];
+    const ordersRaw = Array.isArray(orderListNode)
+      ? orderListNode
+      : orderListNode
+      ? [orderListNode]
+      : [];
 
-    // 📦 5) MongoDB bağlantısı
+    /* ──────────────────────────────────────────────
+       6) MongoDB bağlantısı
+    ────────────────────────────────────────────── */
     const client = await clientPromise;
     const db = client.db("satistakip");
     const col = db.collection("n11orders");
 
     const savedOrders = [];
 
-    for (const o of orders) {
+    for (const o of ordersRaw) {
       if (!o) continue;
 
-      // 👤 Buyer
+      // 👤 Buyer bilgisi
       const buyer = {
         fullName: o.buyer?.fullName || "",
         email: o.buyer?.email || "",
@@ -123,7 +192,7 @@ export default async function handler(req, res) {
         taxOffice: o.buyer?.taxOffice || "",
       };
 
-      // 📮 Adres
+      // 📮 Kargo adresi
       const shippingAddress = {
         city: o.shippingAddress?.city || "",
         district: o.shippingAddress?.district || "",
@@ -140,7 +209,11 @@ export default async function handler(req, res) {
 
       // 🧾 Kalemler
       const itemsRaw = o.itemList?.item || [];
-      const itemsArr = Array.isArray(itemsRaw) ? itemsRaw : itemsRaw ? [itemsRaw] : [];
+      const itemsArr = Array.isArray(itemsRaw)
+        ? itemsRaw
+        : itemsRaw
+        ? [itemsRaw]
+        : [];
 
       const items = itemsArr.map((item) => ({
         id: item.id,
@@ -167,45 +240,33 @@ export default async function handler(req, res) {
         userId,
         raw: o,
         updatedAt: new Date(),
-        createdAt: new Date(),
       };
 
       if (!doc.orderNumber) continue;
 
-      // 🔁 6) Upsert (aynı sipariş tekrar gelirse güncelle)
+      // 🔁 Upsert (aynı sipariş tekrar gelirse güncelle)
       await col.updateOne(
         { orderNumber: doc.orderNumber, userId },
-        { $set: doc },
+        {
+          $setOnInsert: { createdAt: new Date() },
+          $set: doc,
+        },
         { upsert: true }
       );
 
       savedOrders.push(doc);
     }
 
+    /* ──────────────────────────────────────────────
+       7) Response
+    ────────────────────────────────────────────── */
     return res.status(200).json({
       success: true,
       count: savedOrders.length,
       orders: savedOrders,
     });
   } catch (err) {
-    // Ayrıntılı log
-    if (axios.isAxiosError(err)) {
-      console.error("🔥 N11 Order Fetch AxiosError:", {
-        url: ORDER_SERVICE_URL,
-        status: err.response?.status,
-        data: err.response?.data,
-        code: err.code,
-      });
-      return res.status(502).json({
-        success: false,
-        message:
-          "N11 sipariş servisine ulaşırken hata oluştu. (HTTP " +
-          (err.response?.status || err.code || "bilinmiyor") +
-          ")",
-      });
-    }
-
-    console.error("🔥 N11 Order Fetch Error (genel):", err);
+    console.error("🔥 N11 Order Fetch Error (top-level):", err);
     return res.status(500).json({
       success: false,
       message: "Sunucu hatası",
