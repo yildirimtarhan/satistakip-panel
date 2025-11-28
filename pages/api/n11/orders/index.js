@@ -3,7 +3,7 @@ import axios from "axios";
 import xml2js from "xml2js";
 import jwt from "jsonwebtoken";
 import clientPromise from "@/lib/mongodb";
-import { pushOrderToERP } from "@/lib/erpService"; // ← ERP servis çağrısı
+import { pushOrderToERP } from "@/lib/erpService"; // ERP servis çağrısı
 
 const ORDER_SERVICE_URL =
   process.env.N11_ORDER_SERVICE_URL || "https://api.n11.com/ws/OrderService";
@@ -121,7 +121,11 @@ export default async function handler(req, res) {
 
     const ordersNode =
       parsed?.Envelope?.Body?.GetOrderListResponse?.orderList?.order || [];
-    const ordersArray = Array.isArray(ordersNode) ? ordersNode : (ordersNode ? [ordersNode] : []);
+    const ordersArray = Array.isArray(ordersNode)
+      ? ordersNode
+      : ordersNode
+      ? [ordersNode]
+      : [];
 
     // 7) MongoDB bağlan ve kayıt/ERP push işlemi
     const client = await clientPromise;
@@ -157,13 +161,15 @@ export default async function handler(req, res) {
       };
 
       if (!orderDoc.orderNumber) {
-        // orderNumber yoksa kaydetmeyelim
         console.warn("⚠️ orderNumber eksik, kayıt atlandı:", { raw: o });
         continue;
       }
 
       // Mevcut kayıt var mı?
-      const existing = await col.findOne({ orderNumber: orderDoc.orderNumber, userId });
+      const existing = await col.findOne({
+        orderNumber: orderDoc.orderNumber,
+        userId,
+      });
 
       // Upsert kayıt
       await col.updateOne(
@@ -195,7 +201,8 @@ export default async function handler(req, res) {
               $set: {
                 erpPushed: true,
                 erpPushedAt: new Date(),
-                erpResponseRef: erpResponse?.id || erpResponse?.reference || null,
+                erpResponseRef:
+                  erpResponse?.id || erpResponse?.reference || null,
               },
             }
           );
