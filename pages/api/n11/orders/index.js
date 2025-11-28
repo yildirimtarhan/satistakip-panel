@@ -6,7 +6,7 @@ import clientPromise from "@/lib/mongodb";
 import { pushOrderToERP } from "@/lib/erpService"; // ERP servis çağrısı
 
 const ORDER_SERVICE_URL =
-  process.env.N11_ORDER_SERVICE_URL || "https://api.n11.com/ws/OrderService";
+  process.env.N11_ORDER_SERVICE_URL || "https://api.n11.com/ws/OrderService.svc";
 
 // Opsiyonel: query ile sayfa ve durum filtreleri (varsayılan: page=1, status=-1)
 function getQueryParams(req) {
