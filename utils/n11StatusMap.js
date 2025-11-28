@@ -1,0 +1,15 @@
+export const n11StatusMap = {
+  0: "Ödeme Bekleniyor",
+  1: "Onay Bekliyor",
+  2: "Onaylandı",
+  3: "Tedarik Ediliyor",
+  4: "Hazırlanıyor",
+  5: "Kargolandı",
+  6: "Teslim Edildi",
+  7: "İptal Edildi",
+  8: "İade Talebi",
+  9: "İade Edildi",
+  10: "Tamamlandı",
+  11: "Kısmi İade",
+  12: "Kısmi İptal",
+};

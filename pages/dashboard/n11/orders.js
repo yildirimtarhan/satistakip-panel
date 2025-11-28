@@ -3,6 +3,7 @@
 
 import React, { useState } from "react";
 import Cookies from "js-cookie";
+import { n11StatusMap } from "@/utils/n11StatusMap";   // ← BURAYA
 
 export default function N11Orders() {
   const [orders, setOrders] = useState([]);
@@ -87,7 +88,9 @@ export default function N11Orders() {
             onClick={() => goToDetail(order?.orderNumber)}
           >
             <strong>Sipariş No:</strong> {order?.orderNumber || "-"} <br />
-            <strong>Durum:</strong> {order?.status || "-"} <br />
+           
+<strong>Durum:</strong> {n11StatusMap[order?.status] || order?.status || "-"}
+
             <strong>Tarih:</strong> {order?.createDate || "-"} <br />
 
             <span className="text-blue-600 text-sm underline mt-2 inline-block">

@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import dbConnect from "@/lib/mongodb";
 import N11Order from "@/models/N11Order";
 import Cari from "@/models/Cari";
+import { n11StatusMap } from "@/utils/n11StatusMap";
 
 
 export async function getServerSideProps(context) {
@@ -488,9 +489,10 @@ export default function N11OrderDetailPage({ order, linkedCari }) {
             </p>
             <p>
               <span className="font-medium">Durum:</span>{" "}
-              <span className="inline-flex px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-700">
-                {order.status || raw.status || "-"}
-              </span>
+              
+<span className="inline-flex px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-700">
+  {n11StatusMap[order.status] || n11StatusMap[raw.status] || order.status || "-"}
+</span>
             </p>
             <p>
               <span className="font-medium">Sipariş Tarihi:</span>{" "}
