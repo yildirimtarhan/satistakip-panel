@@ -1,20 +1,12 @@
-// 📁 /pages/api/n11/orders/index.js
+// 📁 /pages/api/n11/orders/index.js (REST Version)
 import axios from "axios";
-import xml2js from "xml2js";
 import jwt from "jsonwebtoken";
 import clientPromise from "@/lib/mongodb";
-import { pushOrderToERP } from "@/lib/erpService"; // ERP servis çağrısı
+import { pushOrderToERP } from "@/lib/erpService";
 
-const ORDER_SERVICE_URL =
-  process.env.N11_ORDER_SERVICE_URL || "https://api.n11.com/ws/OrderService.svc";
-
-// Opsiyonel: query ile sayfa ve durum filtreleri (varsayılan: page=1, status=-1)
-function getQueryParams(req) {
-  const page = Number(req.query.page || 1);
-  const pageSize = Number(req.query.pageSize || 50);
-  const status = req.query.status ?? "-1"; // -1: tüm siparişler
-  return { page, pageSize, status };
-}
+// ✔ N11 yeni REST endpoint
+const ORDER_REST_URL =
+  "https://api.n11.com/rest/delivery/v1/shipmentPackages";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
@@ -25,7 +17,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 1) Token ve rol kontrol
+    // 1) Token kontrol
     const authHeader = req.headers.authorization || "";
     const token = authHeader.startsWith("Bearer ")
       ? authHeader.split(" ")[1]
@@ -43,11 +35,12 @@ export default async function handler(req, res) {
     }
 
     const userId = decoded.userId;
-    const role = decoded.role || "user"; // "admin" tüm kayıtları görür
+    const role = decoded.role || "user";
 
-    // 2) N11 credential kontrol
+    // 2) N11 credentials
     const appKey = process.env.N11_APP_KEY;
     const appSecret = process.env.N11_APP_SECRET;
+
     if (!appKey || !appSecret) {
       return res.status(500).json({
         success: false,
@@ -55,79 +48,36 @@ export default async function handler(req, res) {
       });
     }
 
-    // 3) Query parametreleri
-    const { page, pageSize, status } = getQueryParams(req);
-
-    // 4) SOAP XML Request (GetOrderListRequest)
-    const xmlRequest = `
-    <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-        xmlns:sch="http://www.n11.com/ws/schemas">
-      <soapenv:Header/>
-      <soapenv:Body>
-        <sch:GetOrderListRequest>
-          <auth>
-            <appKey>${appKey}</appKey>
-            <appSecret>${appSecret}</appSecret>
-          </auth>
-          <pagingData>
-            <currentPage>${page}</currentPage>
-            <pageSize>${pageSize}</pageSize>
-          </pagingData>
-          <searchData>
-            <status>${status}</status>
-          </searchData>
-        </sch:GetOrderListRequest>
-      </soapenv:Body>
-    </soapenv:Envelope>`;
-
-    // 5) İstek gönder
+    // 3) REST API'den siparişleri çek (JSON döner)
     let response;
     try {
-      response = await axios.post(ORDER_SERVICE_URL, xmlRequest, {
+      response = await axios.get(ORDER_REST_URL, {
         headers: {
-          "Content-Type": "text/xml; charset=utf-8",
-          SOAPAction:
-            "http://www.n11.com/ws/schemas/OrderServicePort/GetOrderList",
+          appKey: appKey,
+          appSecret: appSecret,
+        },
+        params: {
+          page: 0,
+          pageSize: 50,
         },
         timeout: 30000,
       });
     } catch (err) {
-      console.error("🔥 N11 HTTP HATASI:", {
-        url: ORDER_SERVICE_URL,
+      console.error("🔥 N11 REST HATASI:", {
+        url: ORDER_REST_URL,
         status: err.response?.status,
         data: err.response?.data,
       });
       return res.status(500).json({
         success: false,
-        message: "N11 servis hatası",
+        message: "N11 REST servis hatası",
         error: err.response?.data || err.message,
       });
     }
 
-    // 6) XML → JSON parse ve Fault kontrol
-    const parsed = await xml2js.parseStringPromise(response.data, {
-      explicitArray: false,
-      ignoreAttrs: true,
-    });
+    const packages = response.data?.data?.shipmentPackages || [];
 
-    const fault = parsed?.Envelope?.Body?.Fault;
-    if (fault) {
-      return res.status(502).json({
-        success: false,
-        message: "N11 Fault döndürdü",
-        fault,
-      });
-    }
-
-    const ordersNode =
-      parsed?.Envelope?.Body?.GetOrderListResponse?.orderList?.order || [];
-    const ordersArray = Array.isArray(ordersNode)
-      ? ordersNode
-      : ordersNode
-      ? [ordersNode]
-      : [];
-
-    // 7) MongoDB bağlan ve kayıt/ERP push işlemi
+    // 4) MongoDB bağlantısı
     const client = await clientPromise;
     const db = client.db("satistakip");
     const col = db.collection("n11orders");
@@ -135,100 +85,88 @@ export default async function handler(req, res) {
     let processedCount = 0;
     let pushedToERP = 0;
 
-    for (const o of ordersArray) {
-      if (!o) continue;
+    for (const pkg of packages) {
+      const orderNumber = pkg.orderNumber;
 
-      // Normalize: alan isimleri N11 dönüşüne göre değişebilir
+      if (!orderNumber) continue;
+
       const orderDoc = {
-        orderNumber: o.orderNumber || o.id || o?.orderId || "",
-        buyerName: o.buyer?.name || o.buyer?.fullName || "",
-        buyerEmail: o.buyer?.email || "",
-        items: o.itemList?.item
-          ? Array.isArray(o.itemList.item)
-            ? o.itemList.item
-            : [o.itemList.item]
-          : [],
-        totalPrice: Number(o.totalAmount || o.totalPrice || 0),
-        shippingAddress: {
-          city: o.shippingAddress?.city || "",
-          district: o.shippingAddress?.district || "",
-          address: o.shippingAddress?.address || "",
-        },
-        status: o.status ?? null,
+        orderNumber: orderNumber,
+        status: pkg.status,
+        trackingNumber: pkg.trackingNumber,
+        cargoCompany: pkg.cargoCompany,
+        quantity: pkg.totalItemCount,
+        price: pkg.totalAmount,
+        buyerName: pkg.buyerName,
+        address: pkg.shipmentAddress,
         createdAt: new Date(),
-        raw: o,
+        raw: pkg,
         userId,
       };
 
-      if (!orderDoc.orderNumber) {
-        console.warn("⚠️ orderNumber eksik, kayıt atlandı:", { raw: o });
-        continue;
-      }
-
-      // Mevcut kayıt var mı?
+      // Eski kayıt var mı?
       const existing = await col.findOne({
-        orderNumber: orderDoc.orderNumber,
+        orderNumber: orderNumber,
         userId,
       });
 
-      // Upsert kayıt
+      // Upsert
       await col.updateOne(
-        { orderNumber: orderDoc.orderNumber, userId },
+        { orderNumber: orderNumber, userId },
         {
           $set: {
-            buyerName: orderDoc.buyerName,
-            buyerEmail: orderDoc.buyerEmail,
-            items: orderDoc.items,
-            totalPrice: orderDoc.totalPrice,
-            shippingAddress: orderDoc.shippingAddress,
             status: orderDoc.status,
+            trackingNumber: orderDoc.trackingNumber,
+            cargoCompany: orderDoc.cargoCompany,
+            quantity: orderDoc.quantity,
+            price: orderDoc.price,
+            buyerName: orderDoc.buyerName,
+            address: orderDoc.address,
             raw: orderDoc.raw,
             userId,
           },
-          $setOnInsert: { createdAt: orderDoc.createdAt, erpPushed: false },
+          $setOnInsert: {
+            createdAt: orderDoc.createdAt,
+            erpPushed: false,
+          },
         },
         { upsert: true }
       );
 
-      // ERP'ye push: sadece yeni veya henüz push edilmemiş olanlar
+      // ERP push
       const shouldPush = !existing || !existing.erpPushed;
       if (shouldPush) {
         try {
-          const erpResponse = await pushOrderToERP(orderDoc);
+          const erpRes = await pushOrderToERP(orderDoc);
           await col.updateOne(
-            { orderNumber: orderDoc.orderNumber, userId },
+            { orderNumber: orderNumber, userId },
             {
               $set: {
                 erpPushed: true,
                 erpPushedAt: new Date(),
-                erpResponseRef:
-                  erpResponse?.id || erpResponse?.reference || null,
+                erpResponseRef: erpRes?.id || erpRes?.reference || null,
               },
             }
           );
-          pushedToERP += 1;
+          pushedToERP++;
         } catch (erpErr) {
-          console.error("🔥 ERP push hatası:", erpErr?.message || erpErr);
-          // ERP hatası sipariş kaydını engellemez, sadece push flag'i false kalır
+          console.error("ERP Push Hatası:", erpErr);
         }
       }
 
-      processedCount += 1;
+      processedCount++;
     }
 
-    // 8) Role bazlı görünürlük
+    // Role göre siparişleri çek
     const query = role === "admin" ? {} : { userId };
     const resultOrders = await col
-      .find(query, { projection: { raw: 0 } }) // raw'ı listelemede gizli tut
-      .sort({ erpPushedAt: -1, createdAt: -1 })
+      .find(query, { projection: { raw: 0 } })
+      .sort({ createdAt: -1 })
       .toArray();
 
     return res.status(200).json({
       success: true,
       meta: {
-        page,
-        pageSize,
-        status,
         processedCount,
         pushedToERP,
       },
