@@ -1,7 +1,7 @@
 // 📁 /components/layout/Sidebar.jsx
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { jwtDecode } from "jwt-decode"; // ✅ doğru import
+import { jwtDecode } from "jwt-decode";
 
 const MenuItem = ({ href, icon, label }) => {
   const router = useRouter();
@@ -24,7 +24,7 @@ export default function Sidebar() {
 
   let role = null;
   try {
-    const token = localStorage.getItem("token");
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     if (token) {
       const decoded = jwtDecode(token);
       role = decoded.role;
@@ -49,73 +49,67 @@ export default function Sidebar() {
 
       {/* Menü */}
       <nav className="flex-1 space-y-1">
+        {/* Genel */}
         <MenuItem href="/dashboard" icon="🏠" label="Anasayfa" />
 
         <MenuItem href="/dashboard/ayarlar/firma" icon="🏢" label="Firma Ayarları" />
         <MenuItem href="/dashboard/api-settings" icon="⚙️" label="API Ayarları" />
 
-        {/* 🔶 Pazaryerleri Bölümü */}
+        {/* Pazaryerleri */}
         <div className="mt-3 mb-1 px-3 text-xs font-bold text-slate-500 uppercase">
           Pazaryerleri
         </div>
 
-        {/* 🟦 Hepsiburada */}
+        {/* Hepsiburada */}
         <MenuItem href="/dashboard/hepsiburada/orders" icon="🛍️" label="Hepsiburada Siparişleri" />
         <MenuItem href="/dashboard/hepsiburada/products" icon="📦" label="Hepsiburada Ürünleri" />
         <MenuItem href="/dashboard/hepsiburada/settings" icon="🔑" label="Hepsiburada API Ayarları" />
 
-        {/* 🟨 Trendyol */}
+        {/* Trendyol */}
         <MenuItem href="/dashboard/trendyol/orders" icon="🧾" label="Trendyol Siparişleri" />
         <MenuItem href="/dashboard/trendyol/products" icon="📦" label="Trendyol Ürünleri" />
         <MenuItem href="/dashboard/trendyol/settings" icon="🔑" label="Trendyol API Ayarları" />
 
-        {/* 🟣 Trendyol BuyBox */}
+        {/* Trendyol BuyBox */}
         <MenuItem href="/dashboard/pazaryeri/buybox" icon="📊" label="Trendyol BuyBox" />
 
-        {/* 🔴 N11 Sipariş Yönetimi */}
+        {/* N11 */}
         <MenuItem href="/dashboard/n11/orders" icon="🛒" label="N11 Siparişleri" />
         <MenuItem href="/dashboard/n11/settings" icon="🔑" label="N11 API Ayarları" />
 
-        {/* 🔥 N11 Ürün Yönetimi */}
+        {/* ⚠️ Eski N11 ürün menüleri kaldırıldı */}
+
+        {/* Ürün Yönetimi */}
         <div className="mt-3 mb-1 px-3 text-xs font-bold text-slate-500 uppercase">
-          N11 Ürün Yönetimi
+          ERP → Ürün Yönetimi
         </div>
 
-        <MenuItem href="/dashboard/n11/products" icon="📦" label="N11 Ürünleri" />
-        <MenuItem href="/dashboard/n11/products-sync" icon="🔄" label="Ürün Senkronize" />
-        <MenuItem href="/dashboard/n11/add-product" icon="➕" label="N11 Ürün Gönder" />
-
-        {/* 📁 E-Belge */}
-        <div className="mt-3 mb-1 px-3 text-xs font-bold text-slate-500 uppercase">
-          E-Belge
-        </div>
-
-        <MenuItem href="/dashboard/efatura" icon="📄" label="E-Fatura Paneli" />
-
-        {/* 📊 ERP Yönetimi */}
-        <MenuItem href="/dashboard/cari" icon="👥" label="Cariler" />
         <MenuItem href="/dashboard/urunler" icon="📦" label="Ürünler" />
+        <MenuItem href="/dashboard/urunler/yeni" icon="➕" label="Yeni Ürün Ekle" />
+
+        {/* Satış / Alış / Cari */}
         <MenuItem href="/dashboard/urun-satis" icon="🛒" label="Ürün Satış" />
         <MenuItem href="/dashboard/urun-alis" icon="📥" label="Ürün Alış" />
-        <MenuItem href="/dashboard/cari-tahsilat" icon="💰" label="Cari Tahsilat / Ödeme" />
+        <MenuItem href="/dashboard/cari" icon="👥" label="Cariler" />
 
+        <MenuItem href="/dashboard/cari-tahsilat" icon="💰" label="Cari Tahsilat / Ödeme" />
         <MenuItem href="/dashboard/cari-ekstresi" icon="📑" label="Cari Ekstresi" />
+
         <MenuItem href="/dashboard/stok-raporu" icon="📊" label="Stok Raporu" />
         <MenuItem href="/dashboard/stok-hareketleri" icon="🔄" label="Stok Hareketleri" />
         <MenuItem href="/dashboard/teklifler" icon="📄" label="Fiyat Teklifleri" />
         <MenuItem href="/dashboard/raporlar" icon="📈" label="Genel Raporlar" />
 
-        {/* 🔥 Sadece Admin */}
+        {/* Admin */}
         {role === "admin" && (
           <>
-            <div className="mt-3 mb-1 px-3 text-xs font-bold text-slate-500 uppercase">
-              Admin
-            </div>
+            <div className="mt-3 mb-1 px-3 text-xs font-bold text-slate-500 uppercase">Admin</div>
             <MenuItem href="/dashboard/admin/users" icon="🛡️" label="Kullanıcı Yönetimi" />
           </>
         )}
       </nav>
 
+      {/* Çıkış */}
       <button
         onClick={logout}
         className="mt-4 bg-red-500 text-white px-3 py-2 rounded-lg hover:bg-red-600"
