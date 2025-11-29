@@ -19,10 +19,10 @@ export default function UrunlerPanel() {
     stokUyari: "",
     paraBirimi: "TRY",
     kdvOrani: 20,
-    resimUrl: "",        // kapak foto
-    resimUrls: [],       // maksimum 4 foto
-    varyantlar: [],      // { ad, stok }
-    n11CategoryId: "",   // seçilen N11 kategori ID
+    resimUrl: "", // kapak foto
+    resimUrls: [], // maksimum 4 foto
+    varyantlar: [], // { ad, stok }
+    n11CategoryId: "", // seçilen N11 kategori ID
   };
 
   const [form, setForm] = useState(emptyForm);
@@ -89,23 +89,45 @@ export default function UrunlerPanel() {
 
   // 🛒 N11’e gönder
   const sendToN11 = async (u) => {
-  if (!u?._id) {
-    alert("Ürün ID bulunamadı.");
-    return;
-  }
-  if (
-    !confirm(
-      `Bu ürünü N11'de listelemek istiyor musunuz?\n\n${u.ad || "Ürün"}`
+    if (!u?._id) {
+      alert("Ürün ID bulunamadı.");
+      return;
+    }
+    if (
+      !confirm(
+        `Bu ürünü N11'de listelemek istiyor musunuz?\n\n${u.ad || "Ürün"}`
+      )
     )
-  )
-    return;
-  await postWithToken(
-    "/api/n11/products/add",   // 🔴 BURASI add olmalı
-    { productId: u._id },
-    "✅ Ürün N11'e gönderildi."
-  );
-};
+      return;
+    await postWithToken(
+      "/api/n11/products/add",
+      { productId: u._id },
+      "✅ Ürün N11'e gönderildi."
+    );
+  };
 
+  // 🔄 N11'de ürünü güncelle
+  const updateOnN11 = async (u) => {
+    if (!u?._id) {
+      alert("Ürün ID bulunamadı!");
+      return;
+    }
+
+    if (
+      !confirm(
+        `Bu ürünü N11 üzerinde güncellemek istiyor musunuz?\n\n${
+          u.ad || "Ürün"
+        }`
+      )
+    )
+      return;
+
+    await postWithToken(
+      "/api/n11/products/update",
+      { productId: u._id },
+      "✅ Ürün N11 üzerinde güncellendi."
+    );
+  };
 
   // 🛍 Trendyol’a gönder (placeholder)
   const sendToTrendyol = async (u) => {
@@ -236,12 +258,11 @@ export default function UrunlerPanel() {
 
     const payload = {
       ...form,
-      stok: toplamStok, // ✅ toplam varyant stok
+      stok: toplamStok, // toplam varyant stok
       alisFiyati: Number(form.alisFiyati || 0),
       satisFiyati: Number(form.satisFiyati),
       stokUyari: Number(form.stokUyari || 0),
       kdvOrani: Number(form.kdvOrani),
-      // güvenlik için en fazla 4 resim gönder
       resimUrls: (form.resimUrls || []).slice(0, 4),
       resimUrl:
         form.resimUrl ||
@@ -254,8 +275,7 @@ export default function UrunlerPanel() {
       method,
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
+        Authorization: `Bearer ${token}` },
       body: JSON.stringify(payload),
     });
 
@@ -272,7 +292,7 @@ export default function UrunlerPanel() {
 
     alert(editProduct ? "✅ Ürün güncellendi" : "✅ Ürün eklendi");
 
-    // 👉 Kaydettikten sonra pazaryerlerine otomatik gönderim
+    // Kaydettikten sonra pazaryerlerine otomatik gönderim
     try {
       const savedId =
         data._id || data.id || (editProduct ? editProduct._id : null);
@@ -387,7 +407,6 @@ export default function UrunlerPanel() {
       resimUrl: currentUrls[0] || f.resimUrl || "",
     }));
 
-    // aynı dosyayı tekrar seçebilmek için input’u sıfırla
     e.target.value = "";
   };
 
@@ -862,6 +881,8 @@ export default function UrunlerPanel() {
                 </button>
 
                 {/* Pazaryeri butonları */}
+
+                {/* N11 Gönder */}
                 <button
                   className="text-orange-600"
                   title="N11'e Gönder"
@@ -870,6 +891,16 @@ export default function UrunlerPanel() {
                   🛒
                 </button>
 
+                {/* N11 Güncelle */}
+                <button
+                  className="text-blue-600 ml-2"
+                  title="N11 Güncelle"
+                  onClick={() => updateOnN11(u)}
+                >
+                  ♻️
+                </button>
+
+                {/* Trendyol */}
                 <button
                   className="text-purple-600"
                   title="Trendyol'a Gönder"
@@ -878,6 +909,7 @@ export default function UrunlerPanel() {
                   🛍️
                 </button>
 
+                {/* Hepsiburada */}
                 <button
                   className="text-yellow-600"
                   title="Hepsiburada'ya Gönder"
@@ -886,6 +918,7 @@ export default function UrunlerPanel() {
                   🧾
                 </button>
 
+                {/* Amazon */}
                 <button
                   className="text-blue-500"
                   title="Amazon'a Gönder"
@@ -894,6 +927,7 @@ export default function UrunlerPanel() {
                   📦
                 </button>
 
+                {/* Pazarama / PTT AVM */}
                 <button
                   className="text-green-600"
                   title="Pazarama / PTT AVM'ye Gönder"
