@@ -1,15 +1,18 @@
 import mongoose from "mongoose";
 
 const VariantSchema = new mongoose.Schema({
-  color: { type: String, default: "" },       // Renk
-  size: { type: String, default: "" },        // Beden
+  color: { type: String, default: "" },
+  size: { type: String, default: "" },
   barcode: { type: String, default: "" },
-  sku: { type: String, default: "" },         // Her varyanta özel SKU
+  sku: { type: String, default: "" },
   stock: { type: Number, default: 0 },
   priceTl: { type: Number, default: 0 },
-  images: [{ type: String }],                 // Trendyol destekliyor
+  images: [{ type: String }],
 });
 
+// ----------------------------------------------
+//   ANA ÜRÜN MODELİ
+// ----------------------------------------------
 const ProductSchema = new mongoose.Schema(
   {
     // 🌐 Çoklu kullanıcı / firma desteği
@@ -30,12 +33,12 @@ const ProductSchema = new mongoose.Schema(
     // 🟨 STOK
     stock: { type: Number, default: 0 },
 
-    // 🟥 FİYAT (TL Modu)
+    // 🟥 TL FİYATLANDIRMA
     priceTl: { type: Number, default: 0 },
     discountPriceTl: { type: Number, default: 0 },
     vatRate: { type: Number, default: 20 },
 
-    // 🟧 DÖVİZ BAZLI FİYAT HESAPLAMA
+    // 🟧 DÖVİZ BAZLI HESAPLAMA
     usdPrice: { type: Number, default: 0 },
     eurPrice: { type: Number, default: 0 },
     profitMargin: { type: Number, default: 20 },
@@ -43,7 +46,7 @@ const ProductSchema = new mongoose.Schema(
     fxSource: { type: String, default: "tcmb" },
     calculatedPrice: { type: Number, default: 0 },
 
-    // 🟩 PAZARYERİ AYARLARI
+    // 🟩 PAZARYERİ AYARLARI (UI ile birebir uyumlu)
     marketplaceSettings: {
       n11: {
         categoryId: { type: String, default: "" },
@@ -53,12 +56,14 @@ const ProductSchema = new mongoose.Schema(
         domestic: { type: Boolean, default: true },
         attributes: { type: Object, default: {} },
       },
+
       trendyol: {
         categoryId: { type: String, default: "" },
         brandId: { type: String, default: "" },
         cargoCompanyId: { type: String, default: "" },
         attributes: { type: Object, default: {} },
       },
+
       hepsiburada: {
         categoryId: { type: String, default: "" },
         merchantSku: { type: String, default: "" },
@@ -66,6 +71,7 @@ const ProductSchema = new mongoose.Schema(
         kg: { type: String, default: "" },
         attributes: { type: Object, default: {} },
       },
+
       amazon: {
         category: { type: String, default: "" },
         bulletPoints: [{ type: String }],
@@ -73,69 +79,80 @@ const ProductSchema = new mongoose.Schema(
         hsCode: { type: String, default: "" },
         attributes: { type: Object, default: {} },
       },
+
       ciceksepeti: {
         categoryId: { type: String, default: "" },
         attributes: { type: Object, default: {} },
       },
+
       pazarama: {
         categoryId: { type: String, default: "" },
         attributes: { type: Object, default: {} },
       },
+
       idefix: {
         categoryId: { type: String, default: "" },
         attributes: { type: Object, default: {} },
       },
+
       pttavm: {
         categoryId: { type: String, default: "" },
         attributes: { type: Object, default: {} },
       },
     },
 
-    // 🟦 PAZARYERİ GÖNDERİM DURUMLARI
+    // 🟦 GÖNDERİM DURUMLARI (status panel ile birebir uyumlu)
     marketplaces: {
       n11: {
-        status: { type: String, default: "Not Sent" },
+        status: { type: String, default: "Not Sent" }, // Pending, Success, Error
         productId: { type: String, default: null },
         taskId: { type: String, default: null },
         message: { type: String, default: null },
         updatedAt: { type: Date, default: null },
       },
+
       trendyol: {
         status: { type: String, default: "Not Sent" },
         productId: { type: String, default: null },
         message: { type: String, default: null },
         updatedAt: { type: Date, default: null },
       },
+
       hepsiburada: {
         status: { type: String, default: "Not Sent" },
         productId: { type: String, default: null },
         message: { type: String, default: null },
         updatedAt: { type: Date, default: null },
       },
+
       amazon: {
         status: { type: String, default: "Not Sent" },
         productId: { type: String, default: null },
         message: { type: String, default: null },
         updatedAt: { type: Date, default: null },
       },
+
       pazarama: {
         status: { type: String, default: "Not Sent" },
         productId: { type: String, default: null },
         message: { type: String, default: null },
         updatedAt: { type: Date, default: null },
       },
+
       ciceksepeti: {
         status: { type: String, default: "Not Sent" },
         productId: { type: String, default: null },
         message: { type: String, default: null },
         updatedAt: { type: Date, default: null },
       },
+
       idefix: {
         status: { type: String, default: "Not Sent" },
         productId: { type: String, default: null },
         message: { type: String, default: null },
         updatedAt: { type: Date, default: null },
       },
+
       pttavm: {
         status: { type: String, default: "Not Sent" },
         productId: { type: String, default: null },
@@ -144,18 +161,18 @@ const ProductSchema = new mongoose.Schema(
       },
     },
 
-    // 🟥 STATÜ TAKİP
+    // 🟥 ONAY TAKİP (Cron job için)
     approvalTracking: {
       n11: {
-        lastCheck: { type: Date },
+        lastCheck: { type: Date, default: null },
         isCompleted: { type: Boolean, default: false },
       },
       trendyol: {
-        lastCheck: { type: Date },
+        lastCheck: { type: Date, default: null },
         isCompleted: { type: Boolean, default: false },
       },
       hepsiburada: {
-        lastCheck: { type: Date },
+        lastCheck: { type: Date, default: null },
         isCompleted: { type: Boolean, default: false },
       },
     },

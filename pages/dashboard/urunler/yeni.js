@@ -3,7 +3,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/router";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from "@/components/ui/tabs";
+
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
@@ -15,23 +22,20 @@ export default function NewProductPage() {
 
   const [activeTab, setActiveTab] = useState("general");
 
-  // 🔹 Ana form state (ileride API'ye göndereceğiz)
+  // Ana Form
   const [form, setForm] = useState({
-    // Genel Bilgiler
     name: "",
     sku: "",
     barcode: "",
-    modelCode: "",
     brand: "",
+    modelCode: "",
     category: "",
     description: "",
     images: [""],
 
-    // Stok & Fiyat
     priceTl: "",
     discountPriceTl: "",
     vatRate: 20,
-    currency: "TRY",
 
     usdPrice: "",
     eurPrice: "",
@@ -39,11 +43,10 @@ export default function NewProductPage() {
     riskFactor: 1.05,
     fxSource: "tcmb",
 
-    // Pazaryeri Ayarları (temel alanlar)
     n11CategoryId: "",
     n11BrandId: "",
-    n11PreparingDay: 3,
     n11ShipmentTemplate: "",
+    n11PreparingDay: 3,
     n11Domestic: true,
 
     trendyolCategoryId: "",
@@ -55,7 +58,6 @@ export default function NewProductPage() {
     hbDesi: "",
     hbKg: "",
 
-    // Gönderim seçenekleri
     sendTo: {
       n11: false,
       trendyol: false,
@@ -79,46 +81,130 @@ export default function NewProductPage() {
     }));
   };
 
-  // 🔥 Kur bazlı fiyat hesaplama (çok basit demo, sonra geliştiririz)
-  const handleFxCalculate = () => {
-    const base =
-      (Number(form.usdPrice || 0) || 0) * 30 + // TODO: gerçek kuru API'den çek
-      (Number(form.eurPrice || 0) || 0) * 32;
-
-    if (!base) return;
-
-    const risk = Number(form.riskFactor || 1);
-    const margin = Number(form.profitMargin || 0) / 100;
-
-    const finalPrice = base * risk * (1 + margin);
-
-    setForm((prev) => ({
-      ...prev,
-      priceTl: finalPrice.toFixed(2),
-    }));
-  };
-
+  // 🔥 TAMAMEN YENİ handleSubmit — Backend'e gerçek veri gönderir
   const handleSubmit = async (e) => {
     e.preventDefault();
 
     try {
-      // TODO: /api/products/add endpoint’ine POST atılacak
-      // örnek:
-      // const res = await fetch("/api/products/add", { method: "POST", body: JSON.stringify(form), headers: {"Content-Type":"application/json"} });
-      // const data = await res.json();
+      // 1) Token al
+      const token =
+        typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
-      console.log("Gönderilecek form:", form);
-      alert("Şimdilik sadece console.log yapıyoruz. Backend'e bağladığımızda burayı aktif edeceğiz.");
-      // router.push("/dashboard/urunler");
+      if (!token) {
+        alert("❌ Oturum bulunamadı. Lütfen tekrar giriş yapın.");
+        return;
+      }
+
+      // 2) Backende gidecek payload'ı hazırla
+      const payload = {
+        // GENEL
+        name: form.name,
+        sku: form.sku,
+        barcode: form.barcode,
+        modelCode: form.modelCode,
+        brand: form.brand,
+        category: form.category,
+        description: form.description,
+        images: form.images.filter((x) => x && x.trim() !== ""),
+
+        // STOK & FİYAT
+        stock: 0,
+        priceTl: Number(form.priceTl || 0),
+        discountPriceTl: Number(form.discountPriceTl || 0),
+        vatRate: Number(form.vatRate || 20),
+
+        usdPrice: Number(form.usdPrice || 0),
+        eurPrice: Number(form.eurPrice || 0),
+        profitMargin: Number(form.profitMargin || 0),
+        riskFactor: Number(form.riskFactor || 1),
+        fxSource: form.fxSource || "tcmb",
+        calculatedPrice: Number(form.priceTl || 0),
+
+        // PAZARYERİ AYARLARI
+        marketplaceSettings: {
+          n11: {
+            categoryId: form.n11CategoryId || "",
+            brandId: form.n11BrandId || "",
+            preparingDay: Number(form.n11PreparingDay || 3),
+            shipmentTemplate: form.n11ShipmentTemplate || "",
+            domestic: !!form.n11Domestic,
+            attributes: {},
+          },
+          trendyol: {
+            categoryId: form.trendyolCategoryId || "",
+            brandId: form.trendyolBrandId || "",
+            cargoCompanyId: form.trendyolCargoCompanyId || "",
+            attributes: {},
+          },
+          hepsiburada: {
+            categoryId: form.hbCategoryId || "",
+            merchantSku: form.hbMerchantSku || "",
+            desi: form.hbDesi || "",
+            kg: form.hbKg || "",
+            attributes: {},
+          },
+          amazon: {
+            category: "",
+            bulletPoints: [],
+            searchTerms: [],
+            hsCode: "",
+            attributes: {},
+          },
+          ciceksepeti: {
+            categoryId: "",
+            attributes: {},
+          },
+          pazarama: {
+            categoryId: "",
+            attributes: {},
+          },
+          idefix: {
+            categoryId: "",
+            attributes: {},
+          },
+          pttavm: {
+            categoryId: "",
+            attributes: {},
+          },
+        },
+
+        // HANGİ PAZARYERLERİNE GÖNDERİLECEK?
+        sendTo: form.sendTo || {},
+      };
+
+      // 3) API'ye gönder
+      const res = await fetch("/api/products/add", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || data.success === false) {
+        console.error("Ürün kaydetme hatası:", data);
+        alert(
+          "❌ Ürün kaydedilemedi: " +
+            (data.message || data.error || `HTTP ${res.status}`)
+        );
+        return;
+      }
+
+      alert("✅ Ürün ERP'ye kaydedildi ve pazaryerlerine gönderim başlatıldı.");
+
+      router.push("/dashboard/urunler");
     } catch (err) {
       console.error("Ürün kaydetme hatası:", err);
-      alert("Ürün kaydedilirken hata oluştu.");
+      alert("❌ Ürün kaydedilirken beklenmeyen bir hata oluştu.");
     }
   };
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-semibold">Yeni Ürün Ekle</h1>
         <Button variant="outline" onClick={() => router.back()}>
           Geri Dön
@@ -134,7 +220,7 @@ export default function NewProductPage() {
             <TabsTrigger value="sync">Pazaryerlerine Gönder</TabsTrigger>
           </TabsList>
 
-          {/* TAB 1 — GENEL BİLGİLER */}
+          {/* GENEL BİLGİLER */}
           <TabsContent value="general">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-xl shadow-sm">
               <div>
@@ -145,6 +231,7 @@ export default function NewProductPage() {
                   placeholder="Örn: Lenovo ThinkPad T14"
                 />
               </div>
+
               <div>
                 <Label>SKU</Label>
                 <Input
@@ -162,6 +249,7 @@ export default function NewProductPage() {
                   placeholder="13 haneli barkod"
                 />
               </div>
+
               <div>
                 <Label>Model Kodu</Label>
                 <Input
@@ -179,12 +267,13 @@ export default function NewProductPage() {
                   placeholder="Örn: Lenovo"
                 />
               </div>
+
               <div>
                 <Label>ERP Kategori</Label>
                 <Input
                   value={form.category}
                   onChange={(e) => handleChange("category", e.target.value)}
-                  placeholder="Laptop / Bilgisayar / Elektronik"
+                  placeholder="Laptop / Elektronik / Aksesuar"
                 />
               </div>
 
@@ -194,12 +283,12 @@ export default function NewProductPage() {
                   rows={4}
                   value={form.description}
                   onChange={(e) => handleChange("description", e.target.value)}
-                  placeholder="Ürün açıklamasını buraya girin..."
+                  placeholder="Ürün açıklamasını girin..."
                 />
               </div>
 
               <div className="md:col-span-2">
-                <Label>Görsel URL (şimdilik tek alan, sonra çoklu yaparız)</Label>
+                <Label>Görsel URL (şimdilik tek)</Label>
                 <Input
                   value={form.images[0]}
                   onChange={(e) =>
@@ -208,18 +297,20 @@ export default function NewProductPage() {
                       images: [e.target.value],
                     }))
                   }
-                  placeholder="https://...jpg"
+                  placeholder="https://image.jpg"
                 />
               </div>
             </div>
           </TabsContent>
 
-          {/* TAB 2 — STOK & FİYAT */}
+          {/* STOK & FİYAT */}
           <TabsContent value="stockPrice">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-xl shadow-sm">
-              {/* TL FİYAT BLOĞU */}
+              
+              {/* TL Fiyat */}
               <div className="space-y-3 border rounded-lg p-3">
                 <h2 className="font-semibold text-sm">TL Fiyatlandırma</h2>
+
                 <div>
                   <Label>Satış Fiyatı (TL)</Label>
                   <Input
@@ -229,6 +320,7 @@ export default function NewProductPage() {
                     placeholder="Örn: 599.90"
                   />
                 </div>
+
                 <div>
                   <Label>İndirimli Fiyat (TL)</Label>
                   <Input
@@ -240,20 +332,22 @@ export default function NewProductPage() {
                     placeholder="İsteğe bağlı"
                   />
                 </div>
+
                 <div>
                   <Label>KDV Oranı (%)</Label>
                   <Input
                     type="number"
                     value={form.vatRate}
                     onChange={(e) => handleChange("vatRate", e.target.value)}
-                    placeholder="Örn: 20"
+                    placeholder="20"
                   />
                 </div>
               </div>
 
-              {/* DÖVİZ FİYAT BLOĞU */}
+              {/* Döviz Hesaplama */}
               <div className="space-y-3 border rounded-lg p-3">
                 <h2 className="font-semibold text-sm">Döviz Bazlı Hesaplama</h2>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label>USD Fiyat</Label>
@@ -266,6 +360,7 @@ export default function NewProductPage() {
                       placeholder="Örn: 10"
                     />
                   </div>
+
                   <div>
                     <Label>EUR Fiyat</Label>
                     <Input
@@ -278,6 +373,7 @@ export default function NewProductPage() {
                     />
                   </div>
                 </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label>Kar Marjı (%)</Label>
@@ -287,9 +383,10 @@ export default function NewProductPage() {
                       onChange={(e) =>
                         handleChange("profitMargin", e.target.value)
                       }
-                      placeholder="Örn: 20"
+                      placeholder="20"
                     />
                   </div>
+
                   <div>
                     <Label>Risk Faktörü</Label>
                     <Input
@@ -299,10 +396,11 @@ export default function NewProductPage() {
                       onChange={(e) =>
                         handleChange("riskFactor", e.target.value)
                       }
-                      placeholder="Örn: 1.05"
+                      placeholder="1.05"
                     />
                   </div>
                 </div>
+
                 <div>
                   <Label>Döviz Kaynağı</Label>
                   <select
@@ -316,19 +414,37 @@ export default function NewProductPage() {
                     <option value="tamponlu">Tamponlu (+%5)</option>
                   </select>
                 </div>
-                <Button type="button" onClick={handleFxCalculate}>
-                  Kur Bazlı Fiyatı Hesapla ve TL Alanına Yaz
+
+                <Button
+                  type="button"
+                  onClick={() => {
+                    const usd = Number(form.usdPrice || 0) * 30;
+                    const eur = Number(form.eurPrice || 0) * 32;
+                    const base = usd + eur;
+                    if (!base) return;
+
+                    const risk = Number(form.riskFactor);
+                    const margin = Number(form.profitMargin) / 100;
+                    const result = base * risk * (1 + margin);
+
+                    handleChange("priceTl", result.toFixed(2));
+                  }}
+                >
+                  Kur Bazlı Fiyatı Hesapla
                 </Button>
               </div>
+
             </div>
           </TabsContent>
 
-          {/* TAB 3 — PAZARYERİ AYARLARI */}
+          {/* PAZARYERİ AYARLARI */}
           <TabsContent value="marketplaces">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
               {/* N11 */}
               <div className="bg-white p-4 rounded-xl shadow-sm space-y-3">
                 <h2 className="font-semibold text-sm mb-2">N11 Ayarları</h2>
+
                 <div>
                   <Label>N11 Kategori ID</Label>
                   <Input
@@ -336,9 +452,9 @@ export default function NewProductPage() {
                     onChange={(e) =>
                       handleChange("n11CategoryId", e.target.value)
                     }
-                    placeholder="Örn: 1000476"
                   />
                 </div>
+
                 <div>
                   <Label>N11 Marka ID</Label>
                   <Input
@@ -346,9 +462,9 @@ export default function NewProductPage() {
                     onChange={(e) =>
                       handleChange("n11BrandId", e.target.value)
                     }
-                    placeholder="N11 marka ID"
                   />
                 </div>
+
                 <div>
                   <Label>Preparing Day</Label>
                   <Input
@@ -359,6 +475,7 @@ export default function NewProductPage() {
                     }
                   />
                 </div>
+
                 <div>
                   <Label>Kargo Template</Label>
                   <Input
@@ -366,23 +483,25 @@ export default function NewProductPage() {
                     onChange={(e) =>
                       handleChange("n11ShipmentTemplate", e.target.value)
                     }
-                    placeholder="N11 kargo şablon adı / ID"
+                    placeholder="N11 kargo şablon adı"
                   />
                 </div>
-                <div className="flex items-center space-x-2 mt-2">
+
+                <div className="flex items-center space-x-2">
                   <Switch
                     checked={form.n11Domestic}
                     onCheckedChange={(val) =>
                       handleChange("n11Domestic", val)
                     }
                   />
-                  <Label>Domestic (Yurtiçi ürün)</Label>
+                  <Label>Domestic (Yurtiçi)</Label>
                 </div>
               </div>
 
               {/* Trendyol */}
               <div className="bg-white p-4 rounded-xl shadow-sm space-y-3">
                 <h2 className="font-semibold text-sm mb-2">Trendyol Ayarları</h2>
+
                 <div>
                   <Label>Trendyol Kategori ID</Label>
                   <Input
@@ -392,6 +511,7 @@ export default function NewProductPage() {
                     }
                   />
                 </div>
+
                 <div>
                   <Label>Trendyol Marka ID</Label>
                   <Input
@@ -401,6 +521,7 @@ export default function NewProductPage() {
                     }
                   />
                 </div>
+
                 <div>
                   <Label>Kargo Firması ID</Label>
                   <Input
@@ -415,6 +536,7 @@ export default function NewProductPage() {
               {/* Hepsiburada */}
               <div className="bg-white p-4 rounded-xl shadow-sm space-y-3">
                 <h2 className="font-semibold text-sm mb-2">Hepsiburada Ayarları</h2>
+
                 <div>
                   <Label>HB Kategori ID</Label>
                   <Input
@@ -424,6 +546,7 @@ export default function NewProductPage() {
                     }
                   />
                 </div>
+
                 <div>
                   <Label>Merchant SKU</Label>
                   <Input
@@ -433,6 +556,7 @@ export default function NewProductPage() {
                     }
                   />
                 </div>
+
                 <div>
                   <Label>Desi</Label>
                   <Input
@@ -440,6 +564,7 @@ export default function NewProductPage() {
                     onChange={(e) => handleChange("hbDesi", e.target.value)}
                   />
                 </div>
+
                 <div>
                   <Label>Kilogram</Label>
                   <Input
@@ -448,10 +573,11 @@ export default function NewProductPage() {
                   />
                 </div>
               </div>
+
             </div>
           </TabsContent>
 
-          {/* TAB 4 — PAZARYERLERİNE GÖNDER */}
+          {/* PAZARYERLERİNE GÖNDER */}
           <TabsContent value="sync">
             <div className="bg-white p-4 rounded-xl shadow-sm space-y-4">
               <h2 className="font-semibold text-sm mb-2">
@@ -481,22 +607,20 @@ export default function NewProductPage() {
                 ))}
               </div>
 
-              {/* Buraya ileride: pazaryeri status tablosu eklenecek */}
               <div className="mt-4 border rounded-lg p-3 text-sm text-gray-600">
-                <p className="font-medium mb-1">
-                  Not:
-                </p>
+                <p className="font-medium mb-1">Bilgi:</p>
                 <p>
-                  Kaydettiğinizde ürün önce ERP'ye yazılacak, ardından
-                  işaretlediğiniz pazaryerlerine otomatik gönderilecek.
-                  Sonraki adımda buraya N11 / Trendyol / HB onay durumlarını
-                  gösteren bir tablo ekleyeceğiz.
+                  Ürün önce ERP veri tabanına kaydedilecek, ardından
+                  işaretlediğiniz pazaryerlerine otomatik aktarılacaktır.
+                  Bir sonraki adımda buraya N11 / Trendyol / HB onay
+                  durumlarını gösteren bir "durum tablosu" eklenecek.
                 </p>
               </div>
             </div>
           </TabsContent>
         </Tabs>
 
+        {/* BUTONLAR */}
         <div className="flex justify-end mt-4 gap-2">
           <Button
             type="button"
@@ -505,7 +629,10 @@ export default function NewProductPage() {
           >
             Vazgeç
           </Button>
-          <Button type="submit">Kaydet ve Gönderimi Başlat</Button>
+
+          <Button type="submit" className="bg-orange-600 hover:bg-orange-700">
+            Kaydet ve Gönderimi Başlat
+          </Button>
         </div>
       </form>
     </div>
