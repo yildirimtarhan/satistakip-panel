@@ -9,12 +9,14 @@ import {
   TabsTrigger,
   TabsContent,
 } from "@/components/ui/tabs";
-import ImageUploader from "@/components/ImageUploader";
+
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+
+import CloudinaryUploader from "@/components/CloudinaryUploader"; // ✅ EKLENDİ
 
 export default function NewProductPage() {
   const router = useRouter();
@@ -31,7 +33,7 @@ export default function NewProductPage() {
     modelCode: "",
     category: "",
     description: "",
-    images: [""],
+    images: [], // ✔ Çoklu resim array
 
     priceTl: "",
     discountPriceTl: "",
@@ -81,7 +83,7 @@ export default function NewProductPage() {
     }));
   };
 
-  // 🔥 Artık sadece buton tıklamasıyla çalışacak submit
+  // 🔥 Sadece butonla manuel submit
   const handleSubmit = async () => {
     if (isSubmitting) return;
     setIsSubmitting(true);
@@ -105,7 +107,7 @@ export default function NewProductPage() {
         brand: form.brand,
         category: form.category,
         description: form.description,
-        images: form.images.filter((x) => x.trim() !== ""),
+        images: form.images, // ✔ Çoklu resim listesi
 
         stock: 0,
         priceTl: Number(form.priceTl || 0),
@@ -196,7 +198,7 @@ export default function NewProductPage() {
         </Button>
       </div>
 
-      {/* ❗ Artık <form> yok, sadece div → browser otomatik submit edemez */}
+      {/* ❗ Artık form yok → otomatik submit engellendi */}
       <div>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           {/* TAB MENÜSÜ */}
@@ -210,6 +212,7 @@ export default function NewProductPage() {
           {/* -------------- GENEL -------------- */}
           <TabsContent value="general">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-xl shadow-sm">
+
               <div>
                 <Label>Ürün Adı</Label>
                 <Input
@@ -270,17 +273,14 @@ export default function NewProductPage() {
                 />
               </div>
 
+              {/* ✔ Çoklu Cloudinary Upload Alanı */}
               <div className="md:col-span-2">
-                <Label>Görsel URL</Label>
-                <Input
-                  value={form.images[0]}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      images: [e.target.value],
-                    }))
+                <Label>Ürün Görselleri (Birden Fazla Yükleyebilirsiniz)</Label>
+                <CloudinaryUploader
+                  images={form.images}
+                  setImages={(img) =>
+                    setForm((prev) => ({ ...prev, images: img }))
                   }
-                  placeholder="https://image.jpg"
                 />
               </div>
             </div>
@@ -336,6 +336,7 @@ export default function NewProductPage() {
           {/* -------------- PAZARYERİ AYARLARI -------------- */}
           <TabsContent value="marketplaces">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-xl shadow-sm">
+
               <div>
                 <Label>N11 Kategori ID</Label>
                 <Input
@@ -403,7 +404,6 @@ export default function NewProductPage() {
             Vazgeç
           </Button>
 
-          {/* 🔥 Artık sadece bu buton tetikliyor */}
           <Button
             type="button"
             disabled={isSubmitting}
