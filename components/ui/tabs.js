@@ -1,50 +1,49 @@
-"use client";
+"use client"
 
-import { useState } from "react";
-import clsx from "clsx";
+import * as React from "react"
+import * as TabsPrimitive from "@radix-ui/react-tabs"
+import { cn } from "@/lib/utils"
 
-// Ana Tabs container
-export function Tabs({ defaultValue, children }) {
-  const [activeTab, setActiveTab] = useState(defaultValue);
-  return (
-    <TabsContext.Provider value={{ activeTab, setActiveTab }}>
-      <div>{children}</div>
-    </TabsContext.Provider>
-  );
-}
+export const Tabs = TabsPrimitive.Root
 
-import { createContext, useContext } from "react";
-const TabsContext = createContext();
-
-// Sekme butonlarının olduğu yer
-export function TabsList({ children }) {
-  return <div className="flex gap-2 border-b mb-4">{children}</div>;
-}
-
-// Her bir sekme butonu
-export function TabsTrigger({ value, children }) {
-  const { activeTab, setActiveTab } = useContext(TabsContext);
-
-  return (
-    <button
-      className={clsx(
-        "px-3 py-1 rounded-t border-b-2",
-        activeTab === value
-          ? "border-blue-500 text-blue-600"
-          : "border-transparent text-gray-600"
+export const TabsList = React.forwardRef(
+  ({ className, ...props }, ref) => (
+    <TabsPrimitive.List
+      ref={ref}
+      className={cn(
+        "inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground",
+        className
       )}
-      onClick={() => setActiveTab(value)}
-    >
-      {children}
-    </button>
-  );
-}
+      {...props}
+    />
+  )
+)
+TabsList.displayName = TabsPrimitive.List.displayName
 
-// Sekme içeriği
-export function TabsContent({ value, children }) {
-  const { activeTab } = useContext(TabsContext);
+export const TabsTrigger = React.forwardRef(
+  ({ className, ...props }, ref) => (
+    <TabsPrimitive.Trigger
+      ref={ref}
+      className={cn(
+        "inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm",
+        className
+      )}
+      {...props}
+    />
+  )
+)
+TabsTrigger.displayName = TabsPrimitive.Trigger.displayName
 
-  if (activeTab !== value) return null;
-
-  return <div className="mt-4">{children}</div>;
-}
+export const TabsContent = React.forwardRef(
+  ({ className, ...props }, ref) => (
+    <TabsPrimitive.Content
+      ref={ref}
+      className={cn(
+        "mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2",
+        className
+      )}
+      {...props}
+    />
+  )
+)
+TabsContent.displayName = TabsPrimitive.Content.displayName
