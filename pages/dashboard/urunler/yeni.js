@@ -1,6 +1,7 @@
+// 📁 /pages/dashboard/urunler/yeni.js
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 
 import {
@@ -16,15 +17,21 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 
-import CloudinaryUploader from "@/components/CloudinaryUploader"; // ✅ EKLENDİ
-
 export default function NewProductPage() {
   const router = useRouter();
 
   const [activeTab, setActiveTab] = useState("general");
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Ana Form State
+  // N11 çok seviyeli kategori seçim state'leri
+  const [level1, setLevel1] = useState([]); // Ana kategoriler
+  const [level2, setLevel2] = useState([]); // 2. seviye
+  const [level3, setLevel3] = useState([]); // 3. seviye
+
+  const [selectedL1, setSelectedL1] = useState("");
+  const [selectedL2, setSelectedL2] = useState("");
+  const [selectedL3, setSelectedL3] = useState("");
+
+  // Ana Form
   const [form, setForm] = useState({
     name: "",
     sku: "",
@@ -33,7 +40,7 @@ export default function NewProductPage() {
     modelCode: "",
     category: "",
     description: "",
-    images: [], // ✔ Çoklu resim array
+    images: [""],
 
     priceTl: "",
     discountPriceTl: "",
@@ -83,23 +90,67 @@ export default function NewProductPage() {
     }));
   };
 
-  // 🔥 Sadece butonla manuel submit
-  const handleSubmit = async () => {
-    if (isSubmitting) return;
-    setIsSubmitting(true);
+  // N11 ana kategorileri yükle
+  const loadLevel1 = async () => {
+    try {
+      const res = await fetch("/api/n11/categories/list");
+      const data = await res.json();
+      if (data.success && Array.isArray(data.categories)) {
+        setLevel1(data.categories);
+      } else if (data.success && Array.isArray(data.data)) {
+        // API farklı field adı kullanıyorsa
+        setLevel1(data.data);
+      }
+    } catch (err) {
+      console.error("N11 ana kategori yüklenemedi:", err);
+    }
+  };
+
+  // Belirli bir parentId için alt kategorileri yükle
+  const loadSubCategories = async (parentId, setLevelFn) => {
+    if (!parentId) {
+      setLevelFn([]);
+      return;
+    }
 
     try {
+      const res = await fetch(`/api/n11/categories/sub?id=${parentId}`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.categories)) {
+        setLevelFn(data.categories);
+      } else if (data.success && Array.isArray(data.data)) {
+        setLevelFn(data.data);
+      } else {
+        setLevelFn([]);
+      }
+    } catch (err) {
+      console.error("N11 alt kategori yüklenemedi:", err);
+      setLevelFn([]);
+    }
+  };
+
+  // Sayfa ilk açıldığında ana kategorileri çek
+  useEffect(() => {
+    loadLevel1();
+  }, []);
+
+  // 🔥 TAMAMEN YENİ handleSubmit — Backend'e gerçek veri gönderir
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    try {
+      // 1) Token al
       const token =
         typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
       if (!token) {
         alert("❌ Oturum bulunamadı. Lütfen tekrar giriş yapın.");
-        setIsSubmitting(false);
         return;
       }
 
-      // API PAYLOAD
+      // 2) API'ye gidecek payload
       const payload = {
+        // GENEL
         name: form.name,
         sku: form.sku,
         barcode: form.barcode,
@@ -107,8 +158,9 @@ export default function NewProductPage() {
         brand: form.brand,
         category: form.category,
         description: form.description,
-        images: form.images, // ✔ Çoklu resim listesi
+        images: form.images.filter((x) => x && x.trim() !== ""),
 
+        // STOK & FİYAT
         stock: 0,
         priceTl: Number(form.priceTl || 0),
         discountPriceTl: Number(form.discountPriceTl || 0),
@@ -116,31 +168,32 @@ export default function NewProductPage() {
 
         usdPrice: Number(form.usdPrice || 0),
         eurPrice: Number(form.eurPrice || 0),
-        profitMargin: Number(form.profitMargin || 20),
-        riskFactor: Number(form.riskFactor || 1.05),
-        fxSource: form.fxSource,
+        profitMargin: Number(form.profitMargin || 0),
+        riskFactor: Number(form.riskFactor || 1),
+        fxSource: form.fxSource || "tcmb",
         calculatedPrice: Number(form.priceTl || 0),
 
+        // N11, Trendyol, HB için mapping
         marketplaceSettings: {
           n11: {
-            categoryId: form.n11CategoryId,
-            brandId: form.n11BrandId,
-            preparingDay: Number(form.n11PreparingDay),
-            shipmentTemplate: form.n11ShipmentTemplate,
+            categoryId: form.n11CategoryId || "",
+            brandId: form.n11BrandId || "",
+            preparingDay: Number(form.n11PreparingDay || 3),
+            shipmentTemplate: form.n11ShipmentTemplate || "",
             domestic: !!form.n11Domestic,
             attributes: {},
           },
           trendyol: {
-            categoryId: form.trendyolCategoryId,
-            brandId: form.trendyolBrandId,
-            cargoCompanyId: form.trendyolCargoCompanyId,
+            categoryId: form.trendyolCategoryId || "",
+            brandId: form.trendyolBrandId || "",
+            cargoCompanyId: form.trendyolCargoCompanyId || "",
             attributes: {},
           },
           hepsiburada: {
-            categoryId: form.hbCategoryId,
-            merchantSku: form.hbMerchantSku,
-            desi: form.hbDesi,
-            kg: form.hbKg,
+            categoryId: form.hbCategoryId || "",
+            merchantSku: form.hbMerchantSku || "",
+            desi: form.hbDesi || "",
+            kg: form.hbKg || "",
             attributes: {},
           },
           amazon: {
@@ -150,15 +203,28 @@ export default function NewProductPage() {
             hsCode: "",
             attributes: {},
           },
-          ciceksepeti: { categoryId: "", attributes: {} },
-          pazarama: { categoryId: "", attributes: {} },
-          idefix: { categoryId: "", attributes: {} },
-          pttavm: { categoryId: "", attributes: {} },
+          ciceksepeti: {
+            categoryId: "",
+            attributes: {},
+          },
+          pazarama: {
+            categoryId: "",
+            attributes: {},
+          },
+          idefix: {
+            categoryId: "",
+            attributes: {},
+          },
+          pttavm: {
+            categoryId: "",
+            attributes: {},
+          },
         },
 
         sendTo: form.sendTo,
       };
 
+      // 3) API'ye gönder
       const res = await fetch("/api/products/add", {
         method: "POST",
         headers: {
@@ -171,22 +237,21 @@ export default function NewProductPage() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok || data.success === false) {
-        alert("❌ Ürün kaydedilemedi: " + (data.message || "Bilinmeyen Hata"));
-        setIsSubmitting(false);
+        console.error("Ürün kaydetme hatası:", data);
+        alert(
+          "❌ Ürün kaydedilemedi: " +
+            (data.message || data.error || `HTTP ${res.status}`)
+        );
         return;
       }
 
-      alert("✔ Ürün başarıyla ERP'ye kaydedildi!");
+      alert("✅ Ürün ERP'ye kaydedildi ve pazaryerlerine gönderim başlatıldı.");
 
-      setTimeout(() => {
-        router.push("/dashboard/urunler");
-      }, 300);
+      router.push("/dashboard/urunler");
     } catch (err) {
-      console.error("NEW PRODUCT ERROR:", err);
+      console.error("Ürün kaydetme hatası:", err);
       alert("❌ Beklenmeyen bir hata oluştu.");
     }
-
-    setIsSubmitting(false);
   };
 
   return (
@@ -198,10 +263,8 @@ export default function NewProductPage() {
         </Button>
       </div>
 
-      {/* ❗ Artık form yok → otomatik submit engellendi */}
-      <div>
+      <form onSubmit={handleSubmit}>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          {/* TAB MENÜSÜ */}
           <TabsList className="grid grid-cols-4 mb-4">
             <TabsTrigger value="general">Genel Bilgiler</TabsTrigger>
             <TabsTrigger value="stockPrice">Stok & Fiyat</TabsTrigger>
@@ -209,10 +272,9 @@ export default function NewProductPage() {
             <TabsTrigger value="sync">Pazaryerlerine Gönder</TabsTrigger>
           </TabsList>
 
-          {/* -------------- GENEL -------------- */}
+          {/* -------------------- GENEL -------------------- */}
           <TabsContent value="general">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-xl shadow-sm">
-
               <div>
                 <Label>Ürün Adı</Label>
                 <Input
@@ -253,14 +315,16 @@ export default function NewProductPage() {
                 <Input
                   value={form.brand}
                   onChange={(e) => handleChange("brand", e.target.value)}
+                  placeholder="Örn: Lenovo"
                 />
               </div>
 
               <div>
-                <Label>Kategori</Label>
+                <Label>ERP Kategori</Label>
                 <Input
                   value={form.category}
                   onChange={(e) => handleChange("category", e.target.value)}
+                  placeholder="Laptop / Elektronik / Aksesuar"
                 />
               </div>
 
@@ -269,29 +333,35 @@ export default function NewProductPage() {
                 <Textarea
                   rows={4}
                   value={form.description}
-                  onChange={(e) => handleChange("description", e.target.value)}
+                  onChange={(e) =>
+                    handleChange("description", e.target.value)
+                  }
                 />
               </div>
 
-              {/* ✔ Çoklu Cloudinary Upload Alanı */}
               <div className="md:col-span-2">
-                <Label>Ürün Görselleri (Birden Fazla Yükleyebilirsiniz)</Label>
-                <CloudinaryUploader
-                  images={form.images}
-                  setImages={(img) =>
-                    setForm((prev) => ({ ...prev, images: img }))
+                <Label>Görsel URL</Label>
+                <Input
+                  value={form.images[0]}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      images: [e.target.value],
+                    }))
                   }
+                  placeholder="https://image.jpg"
                 />
               </div>
             </div>
           </TabsContent>
 
-          {/* -------------- STOK & FİYAT -------------- */}
+          {/* -------------------- STOK & FİYAT -------------------- */}
           <TabsContent value="stockPrice">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-xl shadow-sm">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-white p-4 rounded-xl shadow-sm">
               <div>
                 <Label>Satış Fiyatı (TL)</Label>
                 <Input
+                  type="number"
                   value={form.priceTl}
                   onChange={(e) => handleChange("priceTl", e.target.value)}
                 />
@@ -300,6 +370,7 @@ export default function NewProductPage() {
               <div>
                 <Label>İndirimli Fiyat (TL)</Label>
                 <Input
+                  type="number"
                   value={form.discountPriceTl}
                   onChange={(e) =>
                     handleChange("discountPriceTl", e.target.value)
@@ -310,6 +381,7 @@ export default function NewProductPage() {
               <div>
                 <Label>KDV Oranı (%)</Label>
                 <Input
+                  type="number"
                   value={form.vatRate}
                   onChange={(e) => handleChange("vatRate", e.target.value)}
                 />
@@ -318,6 +390,7 @@ export default function NewProductPage() {
               <div>
                 <Label>USD Fiyat</Label>
                 <Input
+                  type="number"
                   value={form.usdPrice}
                   onChange={(e) => handleChange("usdPrice", e.target.value)}
                 />
@@ -326,62 +399,275 @@ export default function NewProductPage() {
               <div>
                 <Label>EUR Fiyat</Label>
                 <Input
+                  type="number"
                   value={form.eurPrice}
                   onChange={(e) => handleChange("eurPrice", e.target.value)}
                 />
               </div>
+
+              <div>
+                <Label>Kar Marjı (%)</Label>
+                <Input
+                  type="number"
+                  value={form.profitMargin}
+                  onChange={(e) =>
+                    handleChange("profitMargin", e.target.value)
+                  }
+                />
+              </div>
+
+              <div>
+                <Label>Risk Faktörü</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={form.riskFactor}
+                  onChange={(e) =>
+                    handleChange("riskFactor", e.target.value)
+                  }
+                  placeholder="1.05"
+                />
+              </div>
             </div>
           </TabsContent>
 
-          {/* -------------- PAZARYERİ AYARLARI -------------- */}
+          {/* -------------------- PAZARYERİ AYARLARI -------------------- */}
           <TabsContent value="marketplaces">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-xl shadow-sm">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              {/* N11 */}
+              <div className="bg-white p-4 rounded-xl shadow-sm space-y-3">
+                <h2 className="font-semibold text-sm mb-2">N11 Ayarları</h2>
 
-              <div>
-                <Label>N11 Kategori ID</Label>
-                <Input
-                  value={form.n11CategoryId}
-                  onChange={(e) =>
-                    handleChange("n11CategoryId", e.target.value)
-                  }
-                />
+                {/* N11 Çok Seviyeli Kategori Seçimi */}
+                <div className="space-y-3">
+                  <div>
+                    <Label>N11 Ana Kategori</Label>
+                    <select
+                      className="w-full border rounded-lg p-2"
+                      value={selectedL1}
+                      onChange={async (e) => {
+                        const val = e.target.value;
+                        setSelectedL1(val);
+                        setSelectedL2("");
+                        setSelectedL3("");
+                        setLevel2([]);
+                        setLevel3([]);
+
+                        if (val) {
+                          await loadSubCategories(val, setLevel2);
+                          // Seçili kategori ID'si form.n11CategoryId içine yazılır
+                          handleChange("n11CategoryId", val);
+                        } else {
+                          handleChange("n11CategoryId", "");
+                        }
+                      }}
+                    >
+                      <option value="">Seçiniz</option>
+                      {level1.map((cat) => (
+                        <option
+                          key={cat.id || cat.categoryId}
+                          value={cat.id || cat.categoryId}
+                        >
+                          {cat.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {level2.length > 0 && (
+                    <div>
+                      <Label>N11 Alt Kategori</Label>
+                      <select
+                        className="w-full border rounded-lg p-2"
+                        value={selectedL2}
+                        onChange={async (e) => {
+                          const val = e.target.value;
+                          setSelectedL2(val);
+                          setSelectedL3("");
+                          setLevel3([]);
+
+                          if (val) {
+                            await loadSubCategories(val, setLevel3);
+                            handleChange("n11CategoryId", val);
+                          } else if (selectedL1) {
+                            handleChange("n11CategoryId", selectedL1);
+                          } else {
+                            handleChange("n11CategoryId", "");
+                          }
+                        }}
+                      >
+                        <option value="">Seçiniz</option>
+                        {level2.map((cat) => (
+                          <option
+                            key={cat.id || cat.categoryId}
+                            value={cat.id || cat.categoryId}
+                          >
+                            {cat.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {level3.length > 0 && (
+                    <div>
+                      <Label>N11 Alt-Alt Kategori</Label>
+                      <select
+                        className="w-full border rounded-lg p-2"
+                        value={selectedL3}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSelectedL3(val);
+                          if (val) {
+                            handleChange("n11CategoryId", val);
+                          } else if (selectedL2) {
+                            handleChange("n11CategoryId", selectedL2);
+                          } else if (selectedL1) {
+                            handleChange("n11CategoryId", selectedL1);
+                          } else {
+                            handleChange("n11CategoryId", "");
+                          }
+                        }}
+                      >
+                        <option value="">Seçiniz</option>
+                        {level3.map((cat) => (
+                          <option
+                            key={cat.id || cat.categoryId}
+                            value={cat.id || cat.categoryId}
+                          >
+                            {cat.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <Label>N11 Marka ID</Label>
+                  <Input
+                    value={form.n11BrandId}
+                    onChange={(e) =>
+                      handleChange("n11BrandId", e.target.value)
+                    }
+                  />
+                </div>
+
+                <div>
+                  <Label>Preparing Day</Label>
+                  <Input
+                    type="number"
+                    value={form.n11PreparingDay}
+                    onChange={(e) =>
+                      handleChange("n11PreparingDay", e.target.value)
+                    }
+                  />
+                </div>
+
+                <div>
+                  <Label>Kargo Template</Label>
+                  <Input
+                    value={form.n11ShipmentTemplate}
+                    onChange={(e) =>
+                      handleChange("n11ShipmentTemplate", e.target.value)
+                    }
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 mt-3">
+                  <Switch
+                    checked={form.n11Domestic}
+                    onCheckedChange={(val) =>
+                      handleChange("n11Domestic", val)
+                    }
+                  />
+                  <Label>Yerli Üretim</Label>
+                </div>
               </div>
 
-              <div>
-                <Label>N11 Marka ID</Label>
-                <Input
-                  value={form.n11BrandId}
-                  onChange={(e) =>
-                    handleChange("n11BrandId", e.target.value)
-                  }
-                />
+              {/* TRENDYOL */}
+              <div className="bg-white p-4 rounded-xl shadow-sm space-y-3">
+                <h2 className="font-semibold text-sm mb-2">Trendyol Ayarları</h2>
+
+                <div>
+                  <Label>Trendyol Kategori ID</Label>
+                  <Input
+                    value={form.trendyolCategoryId}
+                    onChange={(e) =>
+                      handleChange("trendyolCategoryId", e.target.value)
+                    }
+                  />
+                </div>
+
+                <div>
+                  <Label>Trendyol Marka ID</Label>
+                  <Input
+                    value={form.trendyolBrandId}
+                    onChange={(e) =>
+                      handleChange("trendyolBrandId", e.target.value)
+                    }
+                  />
+                </div>
+
+                <div>
+                  <Label>Kargo Firması ID</Label>
+                  <Input
+                    value={form.trendyolCargoCompanyId}
+                    onChange={(e) =>
+                      handleChange("trendyolCargoCompanyId", e.target.value)
+                    }
+                  />
+                </div>
               </div>
 
-              <div>
-                <Label>N11 Hazırlık Günü</Label>
-                <Input
-                  value={form.n11PreparingDay}
-                  onChange={(e) =>
-                    handleChange("n11PreparingDay", e.target.value)
-                  }
-                />
-              </div>
+              {/* Hepsiburada */}
+              <div className="bg-white p-4 rounded-xl shadow-sm space-y-3">
+                <h2 className="font-semibold text-sm mb-2">
+                  Hepsiburada Ayarları
+                </h2>
 
-              <div className="flex items-center gap-2 mt-3">
-                <Switch
-                  checked={form.n11Domestic}
-                  onCheckedChange={(val) =>
-                    handleChange("n11Domestic", val)
-                  }
-                />
-                <Label>Yerli Üretim</Label>
+                <div>
+                  <Label>HB Kategori ID</Label>
+                  <Input
+                    value={form.hbCategoryId}
+                    onChange={(e) =>
+                      handleChange("hbCategoryId", e.target.value)
+                    }
+                  />
+                </div>
+
+                <div>
+                  <Label>Merchant SKU</Label>
+                  <Input
+                    value={form.hbMerchantSku}
+                    onChange={(e) =>
+                      handleChange("hbMerchantSku", e.target.value)
+                    }
+                  />
+                </div>
+
+                <div>
+                  <Label>Desi</Label>
+                  <Input
+                    value={form.hbDesi}
+                    onChange={(e) => handleChange("hbDesi", e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <Label>Ağırlık (kg)</Label>
+                  <Input
+                    value={form.hbKg}
+                    onChange={(e) => handleChange("hbKg", e.target.value)}
+                  />
+                </div>
               </div>
             </div>
           </TabsContent>
 
-          {/* -------------- PAZARYERİNE GÖNDER -------------- */}
+          {/* -------------------- PAZARYERLERİNE GÖNDER -------------------- */}
           <TabsContent value="sync">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-xl shadow-sm">
               {Object.keys(form.sendTo).map((key) => (
                 <div className="flex items-center gap-3" key={key}>
                   <Switch
@@ -405,15 +691,13 @@ export default function NewProductPage() {
           </Button>
 
           <Button
-            type="button"
-            disabled={isSubmitting}
-            onClick={handleSubmit}
+            type="submit"
             className="bg-orange-600 hover:bg-orange-700"
           >
-            {isSubmitting ? "Kaydediliyor..." : "Kaydet ve Gönderimi Başlat"}
+            Kaydet ve Gönderimi Başlat
           </Button>
         </div>
-      </div>
+      </form>
     </div>
   );
 }
