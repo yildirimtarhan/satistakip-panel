@@ -14,10 +14,12 @@ import { idefixCreateProduct } from "@/lib/marketplaces/idefixService";
 import { pttAvmCreateProduct } from "@/lib/marketplaces/pttAvmService";
 
 export default async function handler(req, res) {
+  // ✅ Sadece POST
   if (req.method !== "POST") {
-    return res
-      .status(405)
-      .json({ success: false, message: "Sadece POST yöntemi kullanılabilir" });
+    return res.status(405).json({
+      success: false,
+      message: "Sadece POST yöntemi kullanılabilir",
+    });
   }
 
   try {
@@ -47,94 +49,64 @@ export default async function handler(req, res) {
     const userId = decoded.id || decoded._id || decoded.userId;
     const companyId = decoded.companyId || null;
 
+    // 🔹 Frontend’den gelen body
     const body = req.body || {};
+    console.log("🟦 PRODUCT ADD BODY:", body);
 
-    // 🧱 1) Product modeline uygun temel data
+    // ---------------- 1) Product modeline uygun temel data ----------------
+
+    // Görselleri normalize et
     const imagesArray = Array.isArray(body.images)
       ? body.images
       : body.images
       ? [body.images]
+      : body.resimUrl
+      ? [body.resimUrl]
       : [];
 
-    const productData = {
-      userId:
-        decoded.userId || decoded.id || decoded._id || String(decoded._id),
-      companyId: decoded.companyId || null,
+    // name zorunlu alan → body.name veya body.ad’den al, hiç yoksa otomatik isim ver
+    let incomingName = body.name || body.ad || "";
+    if (!incomingName || !String(incomingName).trim()) {
+      incomingName = `Ürün ${new Date().toISOString()}`;
+    }
 
-      name: body.name,
+    const productData = {
+      // Çoklu kullanıcı / firma
+      userId: String(userId),
+      companyId: companyId || null,
+
+      // Genel bilgiler
+      name: incomingName,
       sku: body.sku || "",
-      barcode: body.barcode || "",
+      barcode: body.barcode || body.barkod || "",
       modelCode: body.modelCode || "",
-      brand: body.brand || "",
-      category: body.category || "",
-      description: body.description || "",
+      brand: body.brand || body.marka || "",
+      category: body.category || body.kategori || "",
+      description: body.description || body.aciklama || "",
       images: imagesArray,
 
-      stock: Number(body.stock || 0),
+      // Stok & fiyat
+      stock: Number(body.stock ?? 0),
 
-      priceTl: Number(body.priceTl || 0),
-      discountPriceTl: Number(body.discountPriceTl || 0),
-      vatRate: Number(body.vatRate || 20),
+      priceTl: Number(body.priceTl ?? 0),
+      discountPriceTl: Number(body.discountPriceTl ?? 0),
+      vatRate: Number(body.vatRate ?? 20),
 
-      usdPrice: Number(body.usdPrice || 0),
-      eurPrice: Number(body.eurPrice || 0),
-      profitMargin: Number(body.profitMargin || 20),
-      riskFactor: Number(body.riskFactor || 1.05),
+      usdPrice: Number(body.usdPrice ?? 0),
+      eurPrice: Number(body.eurPrice ?? 0),
+      profitMargin: Number(body.profitMargin ?? 20),
+      riskFactor: Number(body.riskFactor ?? 1.05),
       fxSource: body.fxSource || "tcmb",
-      calculatedPrice: Number(body.calculatedPrice || 0),
+      calculatedPrice: Number(body.calculatedPrice ?? 0),
 
-      marketplaceSettings: {
-        n11: {
-          categoryId: body.n11CategoryId || "",
-          brandId: body.n11BrandId || "",
-          preparingDay: Number(body.n11PreparingDay || 3),
-          shipmentTemplate: body.n11ShipmentTemplate || "",
-          domestic:
-            typeof body.n11Domestic === "boolean" ? body.n11Domestic : true,
-          attributes: body.n11Attributes || {},
-        },
-        trendyol: {
-          categoryId: body.trendyolCategoryId || "",
-          brandId: body.trendyolBrandId || "",
-          cargoCompanyId: body.trendyolCargoCompanyId || "",
-          attributes: body.trendyolAttributes || {},
-        },
-        hepsiburada: {
-          categoryId: body.hbCategoryId || "",
-          merchantSku: body.hbMerchantSku || "",
-          desi: body.hbDesi || "",
-          kg: body.hbKg || "",
-          attributes: body.hbAttributes || {},
-        },
-        amazon: {
-          category: body.amazonCategory || "",
-          bulletPoints: body.amazonBulletPoints || [],
-          searchTerms: body.amazonSearchTerms || [],
-          hsCode: body.amazonHsCode || "",
-          attributes: body.amazonAttributes || {},
-        },
-        ciceksepeti: {
-          categoryId: body.csCategoryId || "",
-          attributes: body.csAttributes || {},
-        },
-        pazarama: {
-          categoryId: body.pazaramaCategoryId || "",
-          attributes: body.pazaramaAttributes || {},
-        },
-        idefix: {
-          categoryId: body.idefixCategoryId || "",
-          attributes: body.idefixAttributes || {},
-        },
-        pttavm: {
-          categoryId: body.pttCategoryId || "",
-          attributes: body.pttAttributes || {},
-        },
-      },
+      // Pazaryeri ayarları — frontend’deki yapı ile birebir
+      marketplaceSettings: body.marketplaceSettings || {},
 
+      // Varyantlar
       variants: Array.isArray(body.variants) ? body.variants : [],
     };
 
-    // 🌐 Başlangıç marketplace statüleri
+    // ---------------- 2) Başlangıç marketplace statüleri ----------------
     const baseMarketplaces = {
       n11: {
         status: "Not Sent",
@@ -187,62 +159,10 @@ export default async function handler(req, res) {
       },
     };
 
-    // 2️⃣ ERP'ye kaydet
+    // ---------------- 3) ERP'ye ürünü kaydet ----------------
     const newProduct = await Product.create({
-      ...body,
-      userId,
-      companyId,
-      marketplaces: {
-        n11: {
-          status: "Not Sent",
-          productId: null,
-          taskId: null,
-          message: null,
-          updatedAt: null,
-        },
-        trendyol: {
-          status: "Not Sent",
-          productId: null,
-          message: null,
-          updatedAt: null,
-        },
-        hepsiburada: {
-          status: "Not Sent",
-          productId: null,
-          message: null,
-          updatedAt: null,
-        },
-        amazon: {
-          status: "Not Sent",
-          productId: null,
-          message: null,
-          updatedAt: null,
-        },
-        pazarama: {
-          status: "Not Sent",
-          productId: null,
-          message: null,
-          updatedAt: null,
-        },
-        ciceksepeti: {
-          status: "Not Sent",
-          productId: null,
-          message: null,
-          updatedAt: null,
-        },
-        idefix: {
-          status: "Not Sent",
-          productId: null,
-          message: null,
-          updatedAt: null,
-        },
-        pttavm: {
-          status: "Not Sent",
-          productId: null,
-          message: null,
-          updatedAt: null,
-        },
-      },
+      ...productData,
+      marketplaces: baseMarketplaces,
     });
 
     const sendTo = body.sendTo || {};
@@ -290,7 +210,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // ---------------- HEPSIBURADA ----------------
+    // ---------------- HEPSİBURADA ----------------
     if (sendTo.hepsiburada) {
       try {
         const result = await hbCreateProduct(newProduct);
@@ -350,7 +270,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // ---------------- ÇİÇEK SEPETİ ----------------
+    // ---------------- ÇİÇEKSEPETİ ----------------
     if (sendTo.ciceksepeti) {
       try {
         const result = await ciceksepetiCreateProduct(newProduct);
@@ -410,7 +330,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // 3️⃣ Marketplace sonuçlarını ürüne yaz
+    // ---------------- 4) Marketplace sonuçlarını ürüne yaz ----------------
     let updatedProduct = newProduct;
     if (Object.keys(marketplaceResults).length > 0) {
       const setObj = {};
@@ -438,8 +358,7 @@ export default async function handler(req, res) {
     console.error("ADD PRODUCT ERROR:", err);
     return res.status(500).json({
       success: false,
-      message: "Beklenmeyen bir hata oluştu",
-      error: err.message,
+      message: err.message || "Beklenmeyen bir hata oluştu",
     });
   }
 }

@@ -1,4 +1,3 @@
-// 📁 /pages/dashboard/urunler/yeni.js
 "use client";
 
 import { useState } from "react";
@@ -10,7 +9,7 @@ import {
   TabsTrigger,
   TabsContent,
 } from "@/components/ui/tabs";
-
+import ImageUploader from "@/components/ImageUploader";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
@@ -21,8 +20,9 @@ export default function NewProductPage() {
   const router = useRouter();
 
   const [activeTab, setActiveTab] = useState("general");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Ana Form
+  // Ana Form State
   const [form, setForm] = useState({
     name: "",
     sku: "",
@@ -81,23 +81,23 @@ export default function NewProductPage() {
     }));
   };
 
-  // 🔥 TAMAMEN YENİ handleSubmit — Backend'e gerçek veri gönderir
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  // 🔥 Artık sadece buton tıklamasıyla çalışacak submit
+  const handleSubmit = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
 
     try {
-      // 1) Token al
       const token =
         typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
       if (!token) {
         alert("❌ Oturum bulunamadı. Lütfen tekrar giriş yapın.");
+        setIsSubmitting(false);
         return;
       }
 
-      // 2) Backende gidecek payload'ı hazırla
+      // API PAYLOAD
       const payload = {
-        // GENEL
         name: form.name,
         sku: form.sku,
         barcode: form.barcode,
@@ -105,9 +105,8 @@ export default function NewProductPage() {
         brand: form.brand,
         category: form.category,
         description: form.description,
-        images: form.images.filter((x) => x && x.trim() !== ""),
+        images: form.images.filter((x) => x.trim() !== ""),
 
-        // STOK & FİYAT
         stock: 0,
         priceTl: Number(form.priceTl || 0),
         discountPriceTl: Number(form.discountPriceTl || 0),
@@ -115,32 +114,31 @@ export default function NewProductPage() {
 
         usdPrice: Number(form.usdPrice || 0),
         eurPrice: Number(form.eurPrice || 0),
-        profitMargin: Number(form.profitMargin || 0),
-        riskFactor: Number(form.riskFactor || 1),
-        fxSource: form.fxSource || "tcmb",
+        profitMargin: Number(form.profitMargin || 20),
+        riskFactor: Number(form.riskFactor || 1.05),
+        fxSource: form.fxSource,
         calculatedPrice: Number(form.priceTl || 0),
 
-        // PAZARYERİ AYARLARI
         marketplaceSettings: {
           n11: {
-            categoryId: form.n11CategoryId || "",
-            brandId: form.n11BrandId || "",
-            preparingDay: Number(form.n11PreparingDay || 3),
-            shipmentTemplate: form.n11ShipmentTemplate || "",
+            categoryId: form.n11CategoryId,
+            brandId: form.n11BrandId,
+            preparingDay: Number(form.n11PreparingDay),
+            shipmentTemplate: form.n11ShipmentTemplate,
             domestic: !!form.n11Domestic,
             attributes: {},
           },
           trendyol: {
-            categoryId: form.trendyolCategoryId || "",
-            brandId: form.trendyolBrandId || "",
-            cargoCompanyId: form.trendyolCargoCompanyId || "",
+            categoryId: form.trendyolCategoryId,
+            brandId: form.trendyolBrandId,
+            cargoCompanyId: form.trendyolCargoCompanyId,
             attributes: {},
           },
           hepsiburada: {
-            categoryId: form.hbCategoryId || "",
-            merchantSku: form.hbMerchantSku || "",
-            desi: form.hbDesi || "",
-            kg: form.hbKg || "",
+            categoryId: form.hbCategoryId,
+            merchantSku: form.hbMerchantSku,
+            desi: form.hbDesi,
+            kg: form.hbKg,
             attributes: {},
           },
           amazon: {
@@ -150,29 +148,15 @@ export default function NewProductPage() {
             hsCode: "",
             attributes: {},
           },
-          ciceksepeti: {
-            categoryId: "",
-            attributes: {},
-          },
-          pazarama: {
-            categoryId: "",
-            attributes: {},
-          },
-          idefix: {
-            categoryId: "",
-            attributes: {},
-          },
-          pttavm: {
-            categoryId: "",
-            attributes: {},
-          },
+          ciceksepeti: { categoryId: "", attributes: {} },
+          pazarama: { categoryId: "", attributes: {} },
+          idefix: { categoryId: "", attributes: {} },
+          pttavm: { categoryId: "", attributes: {} },
         },
 
-        // HANGİ PAZARYERLERİNE GÖNDERİLECEK?
-        sendTo: form.sendTo || {},
+        sendTo: form.sendTo,
       };
 
-      // 3) API'ye gönder
       const res = await fetch("/api/products/add", {
         method: "POST",
         headers: {
@@ -185,21 +169,22 @@ export default function NewProductPage() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok || data.success === false) {
-        console.error("Ürün kaydetme hatası:", data);
-        alert(
-          "❌ Ürün kaydedilemedi: " +
-            (data.message || data.error || `HTTP ${res.status}`)
-        );
+        alert("❌ Ürün kaydedilemedi: " + (data.message || "Bilinmeyen Hata"));
+        setIsSubmitting(false);
         return;
       }
 
-      alert("✅ Ürün ERP'ye kaydedildi ve pazaryerlerine gönderim başlatıldı.");
+      alert("✔ Ürün başarıyla ERP'ye kaydedildi!");
 
-      router.push("/dashboard/urunler");
+      setTimeout(() => {
+        router.push("/dashboard/urunler");
+      }, 300);
     } catch (err) {
-      console.error("Ürün kaydetme hatası:", err);
-      alert("❌ Ürün kaydedilirken beklenmeyen bir hata oluştu.");
+      console.error("NEW PRODUCT ERROR:", err);
+      alert("❌ Beklenmeyen bir hata oluştu.");
     }
+
+    setIsSubmitting(false);
   };
 
   return (
@@ -211,8 +196,10 @@ export default function NewProductPage() {
         </Button>
       </div>
 
-      <form onSubmit={handleSubmit}>
+      {/* ❗ Artık <form> yok, sadece div → browser otomatik submit edemez */}
+      <div>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          {/* TAB MENÜSÜ */}
           <TabsList className="grid grid-cols-4 mb-4">
             <TabsTrigger value="general">Genel Bilgiler</TabsTrigger>
             <TabsTrigger value="stockPrice">Stok & Fiyat</TabsTrigger>
@@ -220,7 +207,7 @@ export default function NewProductPage() {
             <TabsTrigger value="sync">Pazaryerlerine Gönder</TabsTrigger>
           </TabsList>
 
-          {/* GENEL BİLGİLER */}
+          {/* -------------- GENEL -------------- */}
           <TabsContent value="general">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-xl shadow-sm">
               <div>
@@ -228,7 +215,7 @@ export default function NewProductPage() {
                 <Input
                   value={form.name}
                   onChange={(e) => handleChange("name", e.target.value)}
-                  placeholder="Örn: Lenovo ThinkPad T14"
+                  placeholder="Örn: Lenovo ThinkPad"
                 />
               </div>
 
@@ -237,7 +224,7 @@ export default function NewProductPage() {
                 <Input
                   value={form.sku}
                   onChange={(e) => handleChange("sku", e.target.value)}
-                  placeholder="ERP içi stok kodu"
+                  placeholder="ERP içi kod"
                 />
               </div>
 
@@ -255,7 +242,6 @@ export default function NewProductPage() {
                 <Input
                   value={form.modelCode}
                   onChange={(e) => handleChange("modelCode", e.target.value)}
-                  placeholder="Üretici model kodu"
                 />
               </div>
 
@@ -264,16 +250,14 @@ export default function NewProductPage() {
                 <Input
                   value={form.brand}
                   onChange={(e) => handleChange("brand", e.target.value)}
-                  placeholder="Örn: Lenovo"
                 />
               </div>
 
               <div>
-                <Label>ERP Kategori</Label>
+                <Label>Kategori</Label>
                 <Input
                   value={form.category}
                   onChange={(e) => handleChange("category", e.target.value)}
-                  placeholder="Laptop / Elektronik / Aksesuar"
                 />
               </div>
 
@@ -283,12 +267,11 @@ export default function NewProductPage() {
                   rows={4}
                   value={form.description}
                   onChange={(e) => handleChange("description", e.target.value)}
-                  placeholder="Ürün açıklamasını girin..."
                 />
               </div>
 
               <div className="md:col-span-2">
-                <Label>Görsel URL (şimdilik tek)</Label>
+                <Label>Görsel URL</Label>
                 <Input
                   value={form.images[0]}
                   onChange={(e) =>
@@ -303,325 +286,115 @@ export default function NewProductPage() {
             </div>
           </TabsContent>
 
-          {/* STOK & FİYAT */}
+          {/* -------------- STOK & FİYAT -------------- */}
           <TabsContent value="stockPrice">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-xl shadow-sm">
-              
-              {/* TL Fiyat */}
-              <div className="space-y-3 border rounded-lg p-3">
-                <h2 className="font-semibold text-sm">TL Fiyatlandırma</h2>
-
-                <div>
-                  <Label>Satış Fiyatı (TL)</Label>
-                  <Input
-                    type="number"
-                    value={form.priceTl}
-                    onChange={(e) => handleChange("priceTl", e.target.value)}
-                    placeholder="Örn: 599.90"
-                  />
-                </div>
-
-                <div>
-                  <Label>İndirimli Fiyat (TL)</Label>
-                  <Input
-                    type="number"
-                    value={form.discountPriceTl}
-                    onChange={(e) =>
-                      handleChange("discountPriceTl", e.target.value)
-                    }
-                    placeholder="İsteğe bağlı"
-                  />
-                </div>
-
-                <div>
-                  <Label>KDV Oranı (%)</Label>
-                  <Input
-                    type="number"
-                    value={form.vatRate}
-                    onChange={(e) => handleChange("vatRate", e.target.value)}
-                    placeholder="20"
-                  />
-                </div>
+              <div>
+                <Label>Satış Fiyatı (TL)</Label>
+                <Input
+                  value={form.priceTl}
+                  onChange={(e) => handleChange("priceTl", e.target.value)}
+                />
               </div>
 
-              {/* Döviz Hesaplama */}
-              <div className="space-y-3 border rounded-lg p-3">
-                <h2 className="font-semibold text-sm">Döviz Bazlı Hesaplama</h2>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label>USD Fiyat</Label>
-                    <Input
-                      type="number"
-                      value={form.usdPrice}
-                      onChange={(e) =>
-                        handleChange("usdPrice", e.target.value)
-                      }
-                      placeholder="Örn: 10"
-                    />
-                  </div>
-
-                  <div>
-                    <Label>EUR Fiyat</Label>
-                    <Input
-                      type="number"
-                      value={form.eurPrice}
-                      onChange={(e) =>
-                        handleChange("eurPrice", e.target.value)
-                      }
-                      placeholder="Opsiyonel"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label>Kar Marjı (%)</Label>
-                    <Input
-                      type="number"
-                      value={form.profitMargin}
-                      onChange={(e) =>
-                        handleChange("profitMargin", e.target.value)
-                      }
-                      placeholder="20"
-                    />
-                  </div>
-
-                  <div>
-                    <Label>Risk Faktörü</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={form.riskFactor}
-                      onChange={(e) =>
-                        handleChange("riskFactor", e.target.value)
-                      }
-                      placeholder="1.05"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <Label>Döviz Kaynağı</Label>
-                  <select
-                    className="mt-1 w-full border rounded-md px-2 py-1 text-sm"
-                    value={form.fxSource}
-                    onChange={(e) => handleChange("fxSource", e.target.value)}
-                  >
-                    <option value="tcmb">TCMB</option>
-                    <option value="serbest">Serbest Piyasa</option>
-                    <option value="sabit">Sabit Kur</option>
-                    <option value="tamponlu">Tamponlu (+%5)</option>
-                  </select>
-                </div>
-
-                <Button
-                  type="button"
-                  onClick={() => {
-                    const usd = Number(form.usdPrice || 0) * 30;
-                    const eur = Number(form.eurPrice || 0) * 32;
-                    const base = usd + eur;
-                    if (!base) return;
-
-                    const risk = Number(form.riskFactor);
-                    const margin = Number(form.profitMargin) / 100;
-                    const result = base * risk * (1 + margin);
-
-                    handleChange("priceTl", result.toFixed(2));
-                  }}
-                >
-                  Kur Bazlı Fiyatı Hesapla
-                </Button>
+              <div>
+                <Label>İndirimli Fiyat (TL)</Label>
+                <Input
+                  value={form.discountPriceTl}
+                  onChange={(e) =>
+                    handleChange("discountPriceTl", e.target.value)
+                  }
+                />
               </div>
 
+              <div>
+                <Label>KDV Oranı (%)</Label>
+                <Input
+                  value={form.vatRate}
+                  onChange={(e) => handleChange("vatRate", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <Label>USD Fiyat</Label>
+                <Input
+                  value={form.usdPrice}
+                  onChange={(e) => handleChange("usdPrice", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <Label>EUR Fiyat</Label>
+                <Input
+                  value={form.eurPrice}
+                  onChange={(e) => handleChange("eurPrice", e.target.value)}
+                />
+              </div>
             </div>
           </TabsContent>
 
-          {/* PAZARYERİ AYARLARI */}
+          {/* -------------- PAZARYERİ AYARLARI -------------- */}
           <TabsContent value="marketplaces">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-
-              {/* N11 */}
-              <div className="bg-white p-4 rounded-xl shadow-sm space-y-3">
-                <h2 className="font-semibold text-sm mb-2">N11 Ayarları</h2>
-
-                <div>
-                  <Label>N11 Kategori ID</Label>
-                  <Input
-                    value={form.n11CategoryId}
-                    onChange={(e) =>
-                      handleChange("n11CategoryId", e.target.value)
-                    }
-                  />
-                </div>
-
-                <div>
-                  <Label>N11 Marka ID</Label>
-                  <Input
-                    value={form.n11BrandId}
-                    onChange={(e) =>
-                      handleChange("n11BrandId", e.target.value)
-                    }
-                  />
-                </div>
-
-                <div>
-                  <Label>Preparing Day</Label>
-                  <Input
-                    type="number"
-                    value={form.n11PreparingDay}
-                    onChange={(e) =>
-                      handleChange("n11PreparingDay", e.target.value)
-                    }
-                  />
-                </div>
-
-                <div>
-                  <Label>Kargo Template</Label>
-                  <Input
-                    value={form.n11ShipmentTemplate}
-                    onChange={(e) =>
-                      handleChange("n11ShipmentTemplate", e.target.value)
-                    }
-                    placeholder="N11 kargo şablon adı"
-                  />
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    checked={form.n11Domestic}
-                    onCheckedChange={(val) =>
-                      handleChange("n11Domestic", val)
-                    }
-                  />
-                  <Label>Domestic (Yurtiçi)</Label>
-                </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-xl shadow-sm">
+              <div>
+                <Label>N11 Kategori ID</Label>
+                <Input
+                  value={form.n11CategoryId}
+                  onChange={(e) =>
+                    handleChange("n11CategoryId", e.target.value)
+                  }
+                />
               </div>
 
-              {/* Trendyol */}
-              <div className="bg-white p-4 rounded-xl shadow-sm space-y-3">
-                <h2 className="font-semibold text-sm mb-2">Trendyol Ayarları</h2>
-
-                <div>
-                  <Label>Trendyol Kategori ID</Label>
-                  <Input
-                    value={form.trendyolCategoryId}
-                    onChange={(e) =>
-                      handleChange("trendyolCategoryId", e.target.value)
-                    }
-                  />
-                </div>
-
-                <div>
-                  <Label>Trendyol Marka ID</Label>
-                  <Input
-                    value={form.trendyolBrandId}
-                    onChange={(e) =>
-                      handleChange("trendyolBrandId", e.target.value)
-                    }
-                  />
-                </div>
-
-                <div>
-                  <Label>Kargo Firması ID</Label>
-                  <Input
-                    value={form.trendyolCargoCompanyId}
-                    onChange={(e) =>
-                      handleChange("trendyolCargoCompanyId", e.target.value)
-                    }
-                  />
-                </div>
+              <div>
+                <Label>N11 Marka ID</Label>
+                <Input
+                  value={form.n11BrandId}
+                  onChange={(e) =>
+                    handleChange("n11BrandId", e.target.value)
+                  }
+                />
               </div>
 
-              {/* Hepsiburada */}
-              <div className="bg-white p-4 rounded-xl shadow-sm space-y-3">
-                <h2 className="font-semibold text-sm mb-2">Hepsiburada Ayarları</h2>
-
-                <div>
-                  <Label>HB Kategori ID</Label>
-                  <Input
-                    value={form.hbCategoryId}
-                    onChange={(e) =>
-                      handleChange("hbCategoryId", e.target.value)
-                    }
-                  />
-                </div>
-
-                <div>
-                  <Label>Merchant SKU</Label>
-                  <Input
-                    value={form.hbMerchantSku}
-                    onChange={(e) =>
-                      handleChange("hbMerchantSku", e.target.value)
-                    }
-                  />
-                </div>
-
-                <div>
-                  <Label>Desi</Label>
-                  <Input
-                    value={form.hbDesi}
-                    onChange={(e) => handleChange("hbDesi", e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <Label>Kilogram</Label>
-                  <Input
-                    value={form.hbKg}
-                    onChange={(e) => handleChange("hbKg", e.target.value)}
-                  />
-                </div>
+              <div>
+                <Label>N11 Hazırlık Günü</Label>
+                <Input
+                  value={form.n11PreparingDay}
+                  onChange={(e) =>
+                    handleChange("n11PreparingDay", e.target.value)
+                  }
+                />
               </div>
 
+              <div className="flex items-center gap-2 mt-3">
+                <Switch
+                  checked={form.n11Domestic}
+                  onCheckedChange={(val) =>
+                    handleChange("n11Domestic", val)
+                  }
+                />
+                <Label>Yerli Üretim</Label>
+              </div>
             </div>
           </TabsContent>
 
-          {/* PAZARYERLERİNE GÖNDER */}
+          {/* -------------- PAZARYERİNE GÖNDER -------------- */}
           <TabsContent value="sync">
-            <div className="bg-white p-4 rounded-xl shadow-sm space-y-4">
-              <h2 className="font-semibold text-sm mb-2">
-                Pazaryerlerine Gönderim Tercihleri
-              </h2>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                {[
-                  ["n11", "N11"],
-                  ["trendyol", "Trendyol"],
-                  ["hepsiburada", "Hepsiburada"],
-                  ["pazarama", "Pazarama"],
-                  ["amazon", "Amazon"],
-                  ["ciceksepeti", "ÇiçekSepeti"],
-                  ["idefix", "İdefix"],
-                  ["pttavm", "PTT AVM"],
-                ].map(([key, label]) => (
-                  <div key={key} className="flex items-center space-x-2">
-                    <Switch
-                      checked={form.sendTo[key]}
-                      onCheckedChange={(val) =>
-                        handleSendToChange(key, val)
-                      }
-                    />
-                    <Label>{label}</Label>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-4 border rounded-lg p-3 text-sm text-gray-600">
-                <p className="font-medium mb-1">Bilgi:</p>
-                <p>
-                  Ürün önce ERP veri tabanına kaydedilecek, ardından
-                  işaretlediğiniz pazaryerlerine otomatik aktarılacaktır.
-                  Bir sonraki adımda buraya N11 / Trendyol / HB onay
-                  durumlarını gösteren bir "durum tablosu" eklenecek.
-                </p>
-              </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {Object.keys(form.sendTo).map((key) => (
+                <div className="flex items-center gap-3" key={key}>
+                  <Switch
+                    checked={form.sendTo[key]}
+                    onCheckedChange={(val) => handleSendToChange(key, val)}
+                  />
+                  <Label className="capitalize">{key}</Label>
+                </div>
+              ))}
             </div>
           </TabsContent>
         </Tabs>
 
-        {/* BUTONLAR */}
-        <div className="flex justify-end mt-4 gap-2">
+        <div className="flex justify-end mt-4 gap-3">
           <Button
             type="button"
             variant="outline"
@@ -630,11 +403,17 @@ export default function NewProductPage() {
             Vazgeç
           </Button>
 
-          <Button type="submit" className="bg-orange-600 hover:bg-orange-700">
-            Kaydet ve Gönderimi Başlat
+          {/* 🔥 Artık sadece bu buton tetikliyor */}
+          <Button
+            type="button"
+            disabled={isSubmitting}
+            onClick={handleSubmit}
+            className="bg-orange-600 hover:bg-orange-700"
+          >
+            {isSubmitting ? "Kaydediliyor..." : "Kaydet ve Gönderimi Başlat"}
           </Button>
         </div>
-      </form>
+      </div>
     </div>
   );
 }
