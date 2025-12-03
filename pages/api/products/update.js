@@ -5,6 +5,7 @@ import Product from "@/models/Product";
 import jwt from "jsonwebtoken";
 
 export default async function handler(req, res) {
+  // ❗ Sadece PUT
   if (req.method !== "PUT") {
     return res
       .status(405)
@@ -48,13 +49,89 @@ export default async function handler(req, res) {
       });
     }
 
-    // -------------------------------
-    // 📝 GÜNCELLENECEK VERİYİ AL
-    // -------------------------------
-    const updateData = req.body;
+    const userId = decoded.id || decoded._id || decoded.userId;
+    const companyId = decoded.companyId || null;
 
-    // Marketplace durumlarını ezmemek için siliyoruz
-    delete updateData.marketplaces;
+    // -------------------------------
+    // 📦 ÖNCE ÜRÜNÜ BUL
+    // -------------------------------
+    const existingProduct = await Product.findById(id);
+
+    if (!existingProduct) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found",
+      });
+    }
+
+    // Çoklu firma / kullanıcı kontrolü
+    if (
+      existingProduct.userId &&
+      String(existingProduct.userId) !== String(userId)
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "Bu ürünü güncelleme yetkiniz yok",
+      });
+    }
+
+    if (
+      companyId &&
+      existingProduct.companyId &&
+      String(existingProduct.companyId) !== String(companyId)
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "Bu firmaya ait olmayan ürünü güncelleyemezsiniz",
+      });
+    }
+
+    // -------------------------------
+    // 📝 GÜNCELLENECEK VERİ
+    // -------------------------------
+    const updateData = { ...req.body };
+
+    // Güvenlik: bazı alanlar asla güncellenmesin
+    delete updateData._id;
+    delete updateData.userId;
+    delete updateData.companyId;
+    delete updateData.marketplaces; // Pazaryeri status alanlarını ezmeyelim
+
+    // Görselleri normalize et
+    if (updateData.images) {
+      if (!Array.isArray(updateData.images)) {
+        updateData.images = [updateData.images].filter(Boolean);
+      } else {
+        updateData.images = updateData.images
+          .map((x) => (x || "").toString().trim())
+          .filter(Boolean);
+      }
+    }
+
+    // Sayısal alanları number’a çevir
+    const numberFields = [
+      "priceTl",
+      "discountPriceTl",
+      "vatRate",
+      "usdPrice",
+      "eurPrice",
+      "profitMargin",
+      "riskFactor",
+      "calculatedPrice",
+      "stock",
+      "n11PreparingDay",
+    ];
+
+    numberFields.forEach((field) => {
+      if (updateData[field] !== undefined) {
+        updateData[field] = Number(updateData[field] || 0);
+      }
+    });
+
+    // marketplaceSettings varsa sadece set et (status alanlarının olduğu "marketplaces" ile karışmasın)
+    if (updateData.marketplaceSettings) {
+      // burada özel bir işleme gerek yok, direkt kaydedebiliriz
+    }
 
     // -------------------------------
     // 🔧 DB'DE ÜRÜNÜ GÜNCELLE
@@ -64,13 +141,6 @@ export default async function handler(req, res) {
       { $set: updateData },
       { new: true }
     );
-
-    if (!updatedProduct) {
-      return res.status(404).json({
-        success: false,
-        message: "Product not found",
-      });
-    }
 
     return res.status(200).json({
       success: true,
