@@ -14,7 +14,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // ✔ DOĞRU SOAP XML
+    // ✔ N11 dokümanına göre %100 doğru XML
     const xml = `
       <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
         xmlns:sch="http://www.n11.com/ws/schemas">
@@ -25,40 +25,32 @@ export default async function handler(req, res) {
               <appKey>${APP_KEY}</appKey>
               <appSecret>${APP_SECRET}</appSecret>
             </auth>
-            <pagingData>
-              <currentPage>0</currentPage>
-              <pageSize>1000</pageSize>
-            </pagingData>
           </sch:GetBrandListRequest>
         </soapenv:Body>
       </soapenv:Envelope>
     `;
 
-    const response = await axios.post(
-      "https://api.n11.com/ws/ProductService.svc",
-      xml,
-      {
-        headers: {
-          "Content-Type": "text/xml;charset=UTF-8",
-          SOAPAction: "http://www.n11.com/ws/GetBrandList",
-        },
-        timeout: 20000,
-      }
-    );
+    // ✔ DOĞRU servis endpoint'i
+    const url = "https://api.n11.com/ws/ProductService.svc";
 
-    // ✔ XML → JSON
+    const response = await axios.post(url, xml, {
+      headers: {
+        "Content-Type": "text/xml;charset=UTF-8",
+        SOAPAction: "http://www.n11.com/ws/GetBrandList",
+      },
+    });
+
+    // XML → JSON parse
     const parsed = await xml2js.parseStringPromise(response.data, {
       explicitArray: false,
     });
 
-    const rawList =
-      parsed["s:Envelope"]?.["s:Body"]?.GetBrandListResponse?.brandList?.brand;
+    // ✔ N11'in SOAP dönüş yapısı
+    const brandList =
+      parsed["s:Envelope"]?.["s:Body"]?.GetBrandListResponse?.brandList?.brand ||
+      [];
 
-    if (!rawList) {
-      return res.status(200).json({ success: true, brands: [] });
-    }
-
-    const brands = Array.isArray(rawList) ? rawList : [rawList];
+    const brands = Array.isArray(brandList) ? brandList : [brandList];
 
     return res.status(200).json({
       success: true,
@@ -73,7 +65,7 @@ export default async function handler(req, res) {
     return res.status(500).json({
       success: false,
       message: "N11 marka listesi alınamadı",
-      error: error.response?.statusText || error.message,
+      error: error.message,
     });
   }
 }
