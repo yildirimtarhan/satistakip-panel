@@ -1,42 +1,99 @@
+// 📁 /pages/dashboard/urunler/edit/[id].js
 "use client";
 
+import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
-import { useEffect, useState } from "react";
 
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from "@/components/ui/tabs";
+
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import CloudinaryUploader from "@/components/CloudinaryUploader";
 
 export default function EditProductPage() {
   const router = useRouter();
   const { id } = router.query;
 
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
   const [activeTab, setActiveTab] = useState("general");
+  const [loading, setLoading] = useState(true);
+  const [brands, setBrands] = useState([]);
 
-  const [form, setForm] = useState(null);
-
-  // N11 çok seviyeli kategori seçim state'leri
-  const [level1, setLevel1] = useState([]); // Ana kategoriler
-  const [level2, setLevel2] = useState([]); // 2. seviye
-  const [level3, setLevel3] = useState([]); // 3. seviye
+  // Çok seviyeli kategoriler (N11)
+  const [level1, setLevel1] = useState([]);
+  const [level2, setLevel2] = useState([]);
+  const [level3, setLevel3] = useState([]);
 
   const [selectedL1, setSelectedL1] = useState("");
   const [selectedL2, setSelectedL2] = useState("");
   const [selectedL3, setSelectedL3] = useState("");
 
-  // 🔄 Ürün Bilgisi Çek
+  // Form State — Yeni Ürün Sayfası ile %100 Uyumlu
+  const [form, setForm] = useState({
+    name: "",
+    sku: "",
+    barcode: "",
+    brand: "",
+    modelCode: "",
+    category: "",
+    description: "",
+    images: [],
+
+    priceTl: "",
+    discountPriceTl: "",
+    vatRate: 20,
+
+    usdPrice: "",
+    eurPrice: "",
+    profitMargin: 20,
+    riskFactor: 1.05,
+    fxSource: "tcmb",
+
+    n11CategoryId: "",
+    n11BrandId: "",
+    n11ShipmentTemplate: "",
+    n11PreparingDay: 3,
+    n11Domestic: true,
+
+    trendyolCategoryId: "",
+    trendyolBrandId: "",
+    trendyolCargoCompanyId: "",
+
+    hbCategoryId: "",
+    hbMerchantSku: "",
+    hbDesi: "",
+    hbKg: "",
+
+    sendTo: {
+      n11: false,
+      trendyol: false,
+      hepsiburada: false,
+      amazon: false,
+      pazarama: false,
+      ciceksepeti: false,
+      idefix: false,
+      pttavm: false,
+    },
+  });
+
+  // -------------------------------
+  // BACKEND → ÜRÜNÜ GETİR (EDIT)
+  // -------------------------------
   useEffect(() => {
     if (!id) return;
-    fetchProduct();
+    loadProduct();
+    loadLevel1();
+    loadBrands();
   }, [id]);
 
-  const fetchProduct = async () => {
+  const loadProduct = async () => {
     try {
       const token = localStorage.getItem("token");
 
@@ -45,551 +102,405 @@ export default function EditProductPage() {
       });
 
       const data = await res.json();
-
-      if (!data.success) {
-        alert(data.message || "Ürün bulunamadı");
-        router.push("/dashboard/urunler");
+      if (!res.ok || !data.product) {
+        alert("Ürün bulunamadı.");
         return;
       }
 
-      setForm(data.product);
+      const p = data.product;
+
+      // 🔥 Form state’ini ürün ile doldur
+      setForm({
+        name: p.name || "",
+        sku: p.sku || "",
+        barcode: p.barcode || "",
+        brand: p.brand || "",
+        modelCode: p.modelCode || "",
+        category: p.category || "",
+        description: p.description || "",
+        images: p.images || [],
+
+        priceTl: p.priceTl || "",
+        discountPriceTl: p.discountPriceTl || "",
+        vatRate: p.vatRate || 20,
+
+        usdPrice: p.usdPrice || "",
+        eurPrice: p.eurPrice || "",
+        profitMargin: p.profitMargin || 20,
+        riskFactor: p.riskFactor || 1.05,
+        fxSource: p.fxSource || "tcmb",
+
+        n11CategoryId: p?.marketplaceSettings?.n11?.categoryId || "",
+        n11BrandId: p?.marketplaceSettings?.n11?.brandId || "",
+        n11ShipmentTemplate: p?.marketplaceSettings?.n11?.shipmentTemplate || "",
+        n11PreparingDay: p?.marketplaceSettings?.n11?.preparingDay || 3,
+        n11Domestic: p?.marketplaceSettings?.n11?.domestic ?? true,
+
+        trendyolCategoryId: p?.marketplaceSettings?.trendyol?.categoryId || "",
+        trendyolBrandId: p?.marketplaceSettings?.trendyol?.brandId || "",
+        trendyolCargoCompanyId:
+          p?.marketplaceSettings?.trendyol?.cargoCompanyId || "",
+
+        hbCategoryId: p?.marketplaceSettings?.hepsiburada?.categoryId || "",
+        hbMerchantSku: p?.marketplaceSettings?.hepsiburada?.merchantSku || "",
+        hbDesi: p?.marketplaceSettings?.hepsiburada?.desi || "",
+        hbKg: p?.marketplaceSettings?.hepsiburada?.kg || "",
+
+        sendTo: p.sendTo || {
+          n11: false,
+          trendyol: false,
+          hepsiburada: false,
+          amazon: false,
+          pazarama: false,
+          ciceksepeti: false,
+          idefix: false,
+          pttavm: false,
+        },
+      });
+
+      setSelectedL1(p?.marketplaceSettings?.n11?.categoryId || "");
       setLoading(false);
-    } catch (err) {
-      console.error("Ürün çekme hatası:", err);
+    } catch (e) {
+      console.error("Ürün yüklenemedi:", e);
     }
   };
 
-  const handleChange = (key, value) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
+  // ----------------------------------------
+  // N11 CATEGORY & BRAND LOADING (Yeni.js ile aynı)
+  // ----------------------------------------
+  const loadBrands = async () => {
+    try {
+      const res = await fetch("/api/n11/brands");
+      const d = await res.json();
+      if (d.success) setBrands(d.brands);
+    } catch (err) {
+      console.error("Marka yükleme hatası:", err);
+    }
   };
 
-  const handleMarketplaceChange = (mp, key, value) => {
-    setForm((prev) => ({
-      ...prev,
-      marketplaceSettings: {
-        ...prev.marketplaceSettings,
-        [mp]: {
-          ...prev.marketplaceSettings[mp],
-          [key]: value,
-        },
-      },
-    }));
-  };
-
-  // N11 ana kategorileri yükle
   const loadLevel1 = async () => {
     try {
       const res = await fetch("/api/n11/categories/list");
-      const data = await res.json();
-      if (data.success && Array.isArray(data.categories)) {
-        setLevel1(data.categories);
-      } else if (data.success && Array.isArray(data.data)) {
-        setLevel1(data.data);
-      }
+      const d = await res.json();
+      setLevel1(d.categories || []);
     } catch (err) {
-      console.error("N11 ana kategori yüklenemedi:", err);
+      console.error("Kategori yükleme hatası:", err);
     }
   };
 
-  // Belirli bir parentId için alt kategorileri yükle
-  const loadSubCategories = async (parentId, setLevelFn) => {
-    if (!parentId) {
-      setLevelFn([]);
-      return;
-    }
-
+  const loadSubCategories = async (parentId, setFn) => {
     try {
       const res = await fetch(`/api/n11/categories/sub?id=${parentId}`);
-      const data = await res.json();
-      if (data.success && Array.isArray(data.categories)) {
-        setLevelFn(data.categories);
-      } else if (data.success && Array.isArray(data.data)) {
-        setLevelFn(data.data);
-      } else {
-        setLevelFn([]);
-      }
+      const d = await res.json();
+      setFn(d.categories || []);
     } catch (err) {
-      console.error("N11 alt kategori yüklenemedi:", err);
-      setLevelFn([]);
+      setFn([]);
     }
   };
 
-  // Sayfa açıldığında ana kategorileri çek
-  useEffect(() => {
-    loadLevel1();
-  }, []);
+  // --------------------------------
+  // FORM CHANGE HANDLERS
+  // --------------------------------
+  const handleChange = (field, value) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  };
 
-  const handleSubmit = async () => {
-    setSaving(true);
+  const handleSendToChange = (key, value) => {
+    setForm((prev) => ({
+      ...prev,
+      sendTo: { ...prev.sendTo, [key]: value },
+    }));
+  };
 
-    try {
-      const token = localStorage.getItem("token");
+  // --------------------------------
+  // UPDATE PRODUCT
+  // --------------------------------
+  const handleSubmit = async (e) => {
+    e.preventDefault();
 
-      const res = await fetch(`/api/products/update?id=${id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+    const token = localStorage.getItem("token");
+
+    const payload = {
+      ...form,
+      images: form.images.filter(Boolean),
+
+      marketplaceSettings: {
+        n11: {
+          categoryId: form.n11CategoryId,
+          brandId: form.n11BrandId,
+          preparingDay: form.n11PreparingDay,
+          shipmentTemplate: form.n11ShipmentTemplate,
+          domestic: form.n11Domestic,
         },
-        body: JSON.stringify(form),
-      });
+        trendyol: {
+          categoryId: form.trendyolCategoryId,
+          brandId: form.trendyolBrandId,
+          cargoCompanyId: form.trendyolCargoCompanyId,
+        },
+        hepsiburada: {
+          categoryId: form.hbCategoryId,
+          merchantSku: form.hbMerchantSku,
+          desi: form.hbDesi,
+          kg: form.hbKg,
+        },
+      },
+    };
 
-      const data = await res.json();
+    const res = await fetch(`/api/products/update?id=${id}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
 
-      if (!res.ok) {
-        alert(data.message || "Kaydedilemedi!");
-      } else {
-        alert("Ürün başarıyla güncellendi!");
-        router.push("/dashboard/urunler");
-      }
-    } catch (err) {
-      alert("Bir hata oluştu");
-      console.error(err);
+    const data = await res.json();
+
+    if (res.ok) {
+      alert("Ürün başarıyla güncellendi!");
+      router.push("/dashboard/urunler");
+    } else {
+      alert("Hata: " + data.message);
     }
-
-    setSaving(false);
   };
 
-  if (loading || !form) {
-    return <div className="p-6">Yükleniyor...</div>;
-  }
+  if (loading) return <div className="p-6">Yükleniyor...</div>;
+
+  // --------------------------------------------------------------------
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
-      <h1 className="text-2xl font-semibold mb-4">Ürünü Düzenle</h1>
-
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid grid-cols-4 mb-4">
-          <TabsTrigger value="general">Genel Bilgiler</TabsTrigger>
-          <TabsTrigger value="stockPrice">Stok & Fiyat</TabsTrigger>
-          <TabsTrigger value="marketplaces">Pazaryeri Ayarları</TabsTrigger>
-          <TabsTrigger value="sync">Gönderim Durumu</TabsTrigger>
-        </TabsList>
-
-        {/* -------------------- GENEL -------------------- */}
-        <TabsContent value="general">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-xl shadow-sm">
-            <div>
-              <Label>Ürün Adı</Label>
-              <Input
-                value={form.name}
-                onChange={(e) => handleChange("name", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <Label>SKU</Label>
-              <Input
-                value={form.sku}
-                onChange={(e) => handleChange("sku", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <Label>Barkod</Label>
-              <Input
-                value={form.barcode}
-                onChange={(e) => handleChange("barcode", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <Label>Model Kodu</Label>
-              <Input
-                value={form.modelCode}
-                onChange={(e) => handleChange("modelCode", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <Label>Marka</Label>
-              <Input
-                value={form.brand}
-                onChange={(e) => handleChange("brand", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <Label>Kategori</Label>
-              <Input
-                value={form.category}
-                onChange={(e) => handleChange("category", e.target.value)}
-              />
-            </div>
-
-            <div className="md:col-span-2">
-              <Label>Açıklama</Label>
-              <Textarea
-                value={form.description}
-                onChange={(e) =>
-                  handleChange("description", e.target.value)
-                }
-              />
-            </div>
-
-            <div className="md:col-span-2">
-              <Label>Görsel URL</Label>
-              <Input
-                value={form.images?.[0] || ""}
-                onChange={(e) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    images: [e.target.value],
-                  }))
-                }
-              />
-            </div>
-          </div>
-        </TabsContent>
-
-        {/* -------------------- STOK & FİYAT -------------------- */}
-        <TabsContent value="stockPrice">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-white p-4 rounded-xl shadow-sm">
-            <div>
-              <Label>Satış Fiyatı (TL)</Label>
-              <Input
-                type="number"
-                value={form.priceTl}
-                onChange={(e) => handleChange("priceTl", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <Label>İndirimli Fiyat (TL)</Label>
-              <Input
-                type="number"
-                value={form.discountPriceTl}
-                onChange={(e) =>
-                  handleChange("discountPriceTl", e.target.value)
-                }
-              />
-            </div>
-
-            <div>
-              <Label>KDV Oranı (%)</Label>
-              <Input
-                type="number"
-                value={form.vatRate}
-                onChange={(e) => handleChange("vatRate", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <Label>USD Fiyat</Label>
-              <Input
-                type="number"
-                value={form.usdPrice}
-                onChange={(e) => handleChange("usdPrice", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <Label>EUR Fiyat</Label>
-              <Input
-                type="number"
-                value={form.eurPrice}
-                onChange={(e) => handleChange("eurPrice", e.target.value)}
-              />
-            </div>
-          </div>
-        </TabsContent>
-
-        {/* -------------------- PAZARYERİ AYARLARI -------------------- */}
-        <TabsContent value="marketplaces">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {/* N11 */}
-            <div className="bg-white p-4 rounded-xl shadow-sm space-y-3">
-              <h2 className="font-semibold text-sm mb-2">N11 Ayarları</h2>
-
-              {/* N11 Çok Seviyeli Kategori Seçimi */}
-              <div className="space-y-3">
-                <div>
-                  <Label>N11 Ana Kategori</Label>
-                  <select
-                    className="w-full border rounded-lg p-2"
-                    value={selectedL1}
-                    onChange={async (e) => {
-                      const val = e.target.value;
-                      setSelectedL1(val);
-                      setSelectedL2("");
-                      setSelectedL3("");
-                      setLevel2([]);
-                      setLevel3([]);
-
-                      if (val) {
-                        await loadSubCategories(val, setLevel2);
-                        handleMarketplaceChange("n11", "categoryId", val);
-                      } else {
-                        handleMarketplaceChange("n11", "categoryId", "");
-                      }
-                    }}
-                  >
-                    <option value="">Seçiniz</option>
-                    {level1.map((cat) => (
-                      <option
-                        key={cat.id || cat.categoryId}
-                        value={cat.id || cat.categoryId}
-                      >
-                        {cat.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {level2.length > 0 && (
-                  <div>
-                    <Label>N11 Alt Kategori</Label>
-                    <select
-                      className="w-full border rounded-lg p-2"
-                      value={selectedL2}
-                      onChange={async (e) => {
-                        const val = e.target.value;
-                        setSelectedL2(val);
-                        setSelectedL3("");
-                        setLevel3([]);
-
-                        if (val) {
-                          await loadSubCategories(val, setLevel3);
-                          handleMarketplaceChange("n11", "categoryId", val);
-                        } else if (selectedL1) {
-                          handleMarketplaceChange(
-                            "n11",
-                            "categoryId",
-                            selectedL1
-                          );
-                        } else {
-                          handleMarketplaceChange("n11", "categoryId", "");
-                        }
-                      }}
-                    >
-                      <option value="">Seçiniz</option>
-                      {level2.map((cat) => (
-                        <option
-                          key={cat.id || cat.categoryId}
-                          value={cat.id || cat.categoryId}
-                        >
-                          {cat.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {level3.length > 0 && (
-                  <div>
-                    <Label>N11 Alt-Alt Kategori</Label>
-                    <select
-                      className="w-full border rounded-lg p-2"
-                      value={selectedL3}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setSelectedL3(val);
-                        if (val) {
-                          handleMarketplaceChange("n11", "categoryId", val);
-                        } else if (selectedL2) {
-                          handleMarketplaceChange(
-                            "n11",
-                            "categoryId",
-                            selectedL2
-                          );
-                        } else if (selectedL1) {
-                          handleMarketplaceChange(
-                            "n11",
-                            "categoryId",
-                            selectedL1
-                          );
-                        } else {
-                          handleMarketplaceChange("n11", "categoryId", "");
-                        }
-                      }}
-                    >
-                      <option value="">Seçiniz</option>
-                      {level3.map((cat) => (
-                        <option
-                          key={cat.id || cat.categoryId}
-                          value={cat.id || cat.categoryId}
-                        >
-                          {cat.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                <p className="text-xs text-gray-500 mt-1">
-                  Seçilen kategori ID:{" "}
-                  {form.marketplaceSettings?.n11?.categoryId || "-"}
-                </p>
-              </div>
-
-              <Label>Marka ID</Label>
-              <Input
-                value={form.marketplaceSettings?.n11?.brandId}
-                onChange={(e) =>
-                  handleMarketplaceChange("n11", "brandId", e.target.value)
-                }
-              />
-
-              <Label>Preparing Day</Label>
-              <Input
-                type="number"
-                value={form.marketplaceSettings?.n11?.preparingDay}
-                onChange={(e) =>
-                  handleMarketplaceChange(
-                    "n11",
-                    "preparingDay",
-                    e.target.value
-                  )
-                }
-              />
-
-              <Label>Kargo Şablonu</Label>
-              <Input
-                value={form.marketplaceSettings?.n11?.shipmentTemplate}
-                onChange={(e) =>
-                  handleMarketplaceChange(
-                    "n11",
-                    "shipmentTemplate",
-                    e.target.value
-                  )
-                }
-              />
-            </div>
-
-            {/* Trendyol */}
-            <div className="bg-white p-4 rounded-xl shadow-sm space-y-3">
-              <h2 className="font-semibold text-sm mb-2">
-                Trendyol Ayarları
-              </h2>
-
-              <Label>Kategori ID</Label>
-              <Input
-                value={form.marketplaceSettings?.trendyol?.categoryId}
-                onChange={(e) =>
-                  handleMarketplaceChange(
-                    "trendyol",
-                    "categoryId",
-                    e.target.value
-                  )
-                }
-              />
-
-              <Label>Marka ID</Label>
-              <Input
-                value={form.marketplaceSettings?.trendyol?.brandId}
-                onChange={(e) =>
-                  handleMarketplaceChange(
-                    "trendyol",
-                    "brandId",
-                    e.target.value
-                  )
-                }
-              />
-
-              <Label>Kargo Firma ID</Label>
-              <Input
-                value={form.marketplaceSettings?.trendyol?.cargoCompanyId}
-                onChange={(e) =>
-                  handleMarketplaceChange(
-                    "trendyol",
-                    "cargoCompanyId",
-                    e.target.value
-                  )
-                }
-              />
-            </div>
-
-            {/* Hepsiburada */}
-            <div className="bg-white p-4 rounded-xl shadow-sm space-y-3">
-              <h2 className="font-semibold text-sm mb-2">
-                Hepsiburada Ayarları
-              </h2>
-
-              <Label>Kategori ID</Label>
-              <Input
-                value={form.marketplaceSettings?.hepsiburada?.categoryId}
-                onChange={(e) =>
-                  handleMarketplaceChange(
-                    "hepsiburada",
-                    "categoryId",
-                    e.target.value
-                  )
-                }
-              />
-
-              <Label>Merchant SKU</Label>
-              <Input
-                value={form.marketplaceSettings?.hepsiburada?.merchantSku}
-                onChange={(e) =>
-                  handleMarketplaceChange(
-                    "hepsiburada",
-                    "merchantSku",
-                    e.target.value
-                  )
-                }
-              />
-
-              <Label>Desi</Label>
-              <Input
-                value={form.marketplaceSettings?.hepsiburada?.desi}
-                onChange={(e) =>
-                  handleMarketplaceChange("hepsiburada", "desi", e.target.value)
-                }
-              />
-
-              <Label>Ağırlık (kg)</Label>
-              <Input
-                value={form.marketplaceSettings?.hepsiburada?.kg}
-                onChange={(e) =>
-                  handleMarketplaceChange("hepsiburada", "kg", e.target.value)
-                }
-              />
-            </div>
-          </div>
-        </TabsContent>
-
-        {/* -------------------- GÖNDERİM DURUMU -------------------- */}
-        <TabsContent value="sync">
-          <div className="bg-white p-4 rounded-xl shadow-sm space-y-3">
-            <h2 className="font-semibold text-sm mb-2">Gönderim Durumu</h2>
-
-            {/* Buraya N11 / Trendyol task status vs. eklenebilir */}
-
-            <Button
-              variant="secondary"
-              onClick={async () => {
-                const res = await fetch("/api/n11/products/update", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    sellerCode: form.sku,
-                    price: form.priceTl,
-                    stock: form.stock,
-                  }),
-                });
-
-                const data = await res.json();
-                alert(data.message);
-              }}
-            >
-              N11'e Güncelle
-            </Button>
-          </div>
-        </TabsContent>
-      </Tabs>
-
-      <div className="flex justify-end mt-6 gap-3">
-        <Button variant="outline" onClick={() => router.push("/dashboard/urunler")}>
-          Vazgeç
-        </Button>
-        <Button
-          onClick={handleSubmit}
-          disabled={saving}
-          className="bg-orange-600 hover:bg-orange-700"
-        >
-          {saving ? "Kaydediliyor..." : "Kaydet"}
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-semibold">Ürünü Düzenle</h1>
+        <Button variant="outline" onClick={() => router.back()}>
+          Geri
         </Button>
       </div>
+
+      <form onSubmit={handleSubmit}>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid grid-cols-4 mb-4">
+            <TabsTrigger value="general">Genel</TabsTrigger>
+            <TabsTrigger value="stockPrice">Stok & Fiyat</TabsTrigger>
+            <TabsTrigger value="marketplaces">Pazaryeri Ayarları</TabsTrigger>
+            <TabsTrigger value="sync">Gönderim Ayarları</TabsTrigger>
+          </TabsList>
+
+          {/* ---------------- GENEL BİLGİLER ---------------- */}
+          <TabsContent value="general">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-xl shadow-sm">
+              
+              <div>
+                <Label>Ürün Adı</Label>
+                <Input value={form.name} onChange={(e) => handleChange("name", e.target.value)} />
+              </div>
+
+              <div>
+                <Label>SKU</Label>
+                <Input value={form.sku} onChange={(e) => handleChange("sku", e.target.value)} />
+              </div>
+
+              <div>
+                <Label>Barkod</Label>
+                <Input value={form.barcode} onChange={(e) => handleChange("barcode", e.target.value)} />
+              </div>
+
+              <div>
+                <Label>Model Kodu</Label>
+                <Input
+                  value={form.modelCode}
+                  onChange={(e) => handleChange("modelCode", e.target.value)}
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <Label>Açıklama</Label>
+                <Textarea
+                  rows={4}
+                  value={form.description}
+                  onChange={(e) => handleChange("description", e.target.value)}
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <Label>Görseller</Label>
+                <CloudinaryUploader
+                  images={form.images}
+                  setImages={(imgs) =>
+                    setForm((prev) => ({ ...prev, images: imgs }))
+                  }
+                />
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* ------------- STOK & FIYAT --------------- */}
+          <TabsContent value="stockPrice">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-xl shadow-sm">
+              
+              <div>
+                <Label>Satış Fiyatı (TL)</Label>
+                <Input type="number" value={form.priceTl} onChange={(e) => handleChange("priceTl", e.target.value)} />
+              </div>
+
+              <div>
+                <Label>İndirimli Fiyat</Label>
+                <Input type="number" value={form.discountPriceTl} onChange={(e) => handleChange("discountPriceTl", e.target.value)} />
+              </div>
+
+              <div>
+                <Label>KDV</Label>
+                <Input type="number" value={form.vatRate} onChange={(e) => handleChange("vatRate", e.target.value)} />
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* ------------- PAZARYERI AYARLARI --------------- */}
+          <TabsContent value="marketplaces">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              
+              {/* ----------- N11 ------------ */}
+              <div className="p-4 bg-white rounded-xl shadow-sm space-y-3">
+                <h2 className="font-semibold text-sm">N11 Ayarları</h2>
+
+                {/* Kategori Dropdown Level 1-2-3 */}
+                <Label>N11 Kategori</Label>
+                <select
+                  className="w-full border p-2 rounded-lg"
+                  value={form.n11CategoryId}
+                  onChange={(e) => handleChange("n11CategoryId", e.target.value)}
+                >
+                  <option value="">Kategori seç</option>
+                  {level1.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Marka */}
+                <Label>N11 Marka</Label>
+                <select
+                  className="w-full border p-2 rounded-lg"
+                  value={form.n11BrandId}
+                  onChange={(e) => handleChange("n11BrandId", e.target.value)}
+                >
+                  <option value="">Marka seç</option>
+                  {brands.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+
+                <Label>Hazırlık Günü</Label>
+                <Input
+                  type="number"
+                  value={form.n11PreparingDay}
+                  onChange={(e) => handleChange("n11PreparingDay", e.target.value)}
+                />
+
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={form.n11Domestic}
+                    onCheckedChange={(v) => handleChange("n11Domestic", v)}
+                  />
+                  <Label>Yerli Üretim</Label>
+                </div>
+              </div>
+
+              {/* ----------- Trendyol ------------ */}
+              <div className="p-4 bg-white rounded-xl shadow-sm space-y-3">
+                <h2 className="font-semibold text-sm">Trendyol Ayarları</h2>
+
+                <Label>Kategori ID</Label>
+                <Input
+                  value={form.trendyolCategoryId}
+                  onChange={(e) => handleChange("trendyolCategoryId", e.target.value)}
+                />
+
+                <Label>Marka ID</Label>
+                <Input
+                  value={form.trendyolBrandId}
+                  onChange={(e) => handleChange("trendyolBrandId", e.target.value)}
+                />
+
+                <Label>Kargo Firma ID</Label>
+                <Input
+                  value={form.trendyolCargoCompanyId}
+                  onChange={(e) => handleChange("trendyolCargoCompanyId", e.target.value)}
+                />
+              </div>
+
+              {/* ----------- Hepsiburada ------------ */}
+              <div className="p-4 bg-white rounded-xl shadow-sm space-y-3">
+                <h2 className="font-semibold text-sm">HB Ayarları</h2>
+
+                <Label>Kategori ID</Label>
+                <Input
+                  value={form.hbCategoryId}
+                  onChange={(e) => handleChange("hbCategoryId", e.target.value)}
+                />
+
+                <Label>Merchant SKU</Label>
+                <Input
+                  value={form.hbMerchantSku}
+                  onChange={(e) => handleChange("hbMerchantSku", e.target.value)}
+                />
+
+                <Label>Desi</Label>
+                <Input
+                  value={form.hbDesi}
+                  onChange={(e) => handleChange("hbDesi", e.target.value)}
+                />
+
+                <Label>Ağırlık (kg)</Label>
+                <Input
+                  value={form.hbKg}
+                  onChange={(e) => handleChange("hbKg", e.target.value)}
+                />
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* ------------- GÖNDERİM AYARLARI --------------- */}
+          <TabsContent value="sync">
+            <div className="bg-white p-4 rounded-xl shadow-sm">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {Object.entries({
+                  n11: "N11",
+                  trendyol: "Trendyol",
+                  hepsiburada: "Hepsiburada",
+                  amazon: "Amazon",
+                  pazarama: "Pazarama",
+                  ciceksepeti: "Çiçeksepeti",
+                  idefix: "İdefix",
+                  pttavm: "PTT AVM",
+                }).map(([key, label]) => (
+                  <div className="flex items-center gap-3" key={key}>
+                    <Switch
+                      checked={form.sendTo[key]}
+                      onCheckedChange={(v) => handleSendToChange(key, v)}
+                    />
+                    <Label>{label}</Label>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </TabsContent>
+        </Tabs>
+
+        <div className="flex justify-end mt-6 gap-4">
+          <Button variant="outline" onClick={() => router.push("/dashboard/urunler")}>
+            Vazgeç
+          </Button>
+
+          <Button type="submit" className="bg-blue-600 text-white">
+            Kaydet
+          </Button>
+        </div>
+      </form>
     </div>
   );
 }
