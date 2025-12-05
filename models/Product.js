@@ -1,3 +1,4 @@
+// 📁 /models/Product.js
 import mongoose from "mongoose";
 
 const VariantSchema = new mongoose.Schema({
@@ -99,6 +100,18 @@ const ProductSchema = new mongoose.Schema(
         categoryId: { type: String, default: "" },
         attributes: { type: Object, default: {} },
       },
+    },
+
+    // 🟦 GÖNDERİLECEK PAZARYERLERİ (yeni.js & edit.js ile uyumlu)
+    sendTo: {
+      n11: { type: Boolean, default: false },
+      trendyol: { type: Boolean, default: false },
+      hepsiburada: { type: Boolean, default: false },
+      amazon: { type: Boolean, default: false },
+      pazarama: { type: Boolean, default: false },
+      ciceksepeti: { type: Boolean, default: false },
+      idefix: { type: Boolean, default: false },
+      pttavm: { type: Boolean, default: false },
     },
 
     // 🟦 GÖNDERİM DURUMLARI (status panel ile birebir uyumlu)
