@@ -131,28 +131,33 @@ export default function NewProductPage() {
   };
 
   // 🔥 Kategoriye göre N11 marka listesi
-  const loadBrandsByCategory = async (categoryId) => {
-    if (!categoryId) {
-      setBrands([]);
-      return;
-    }
+  // 🔥 N11 Marka listesi yükle
+const loadBrandsByCategory = async (categoryId) => {
+  try {
 
-    try {
-      const res = await fetch(`/api/n11/category/brands?id=${categoryId}`);
-      const data = await res.json();
+    // Yeni backend yapısına uygun endpoint
+    const res = await fetch(`/api/n11/brands`);
+    const data = await res.json();
 
-      if (data.success && Array.isArray(data.brands)) {
+    // Hem data.brands hem data.data olasılıklarını yönetiyoruz
+    if (data.success) {
+      if (Array.isArray(data.brands)) {
         setBrands(data.brands);
-      } else if (data.success && Array.isArray(data.data)) {
+      } else if (Array.isArray(data.data)) {
         setBrands(data.data);
       } else {
         setBrands([]);
       }
-    } catch (err) {
-      console.error("N11 marka listesi çekilemedi:", err);
+    } else {
       setBrands([]);
     }
-  };
+
+  } catch (err) {
+    console.error("N11 marka listesi çekilemedi:", err);
+    setBrands([]);
+  }
+};
+
 
   const handleChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));

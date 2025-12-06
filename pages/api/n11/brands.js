@@ -3,39 +3,39 @@ import axios from "axios";
 import xml2js from "xml2js";
 
 export default async function handler(req, res) {
+  if (req.method !== "GET") {
+    return res
+      .status(405)
+      .json({ success: false, message: "Only GET method is allowed" });
+  }
+
   try {
     const APP_KEY = process.env.N11_APP_KEY;
     const APP_SECRET = process.env.N11_APP_SECRET;
 
-    const categoryId = req.query.id;
-
-    if (!categoryId) {
-      return res.status(400).json({
-        success: false,
-        message: "Kategori ID gerekli",
-      });
-    }
-
     if (!APP_KEY || !APP_SECRET) {
       return res.status(500).json({
         success: false,
-        message: "❌ N11 API bilgileri eksik.",
+        message: "❌ N11 APP_KEY veya APP_SECRET tanımlı değil.",
       });
     }
 
-    // ✔ Kategori Attribute Request
+    // 🔹 N11 GetBrandListRequest – pagingData ile
     const xml = `
       <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
         xmlns:sch="http://www.n11.com/ws/schemas">
         <soapenv:Header/>
         <soapenv:Body>
-          <sch:GetCategoryAttributesRequest>
+          <sch:GetBrandListRequest>
             <auth>
               <appKey>${APP_KEY}</appKey>
               <appSecret>${APP_SECRET}</appSecret>
             </auth>
-            <categoryId>${categoryId}</categoryId>
-          </sch:GetCategoryAttributesRequest>
+            <pagingData>
+              <currentPage>0</currentPage>
+              <pageSize>500</pageSize>
+            </pagingData>
+          </sch:GetBrandListRequest>
         </soapenv:Body>
       </soapenv:Envelope>
     `;
@@ -46,56 +46,69 @@ export default async function handler(req, res) {
       {
         headers: {
           "Content-Type": "text/xml;charset=UTF-8",
-          SOAPAction: "http://www.n11.com/ws/GetCategoryAttributes",
+          SOAPAction: "http://www.n11.com/ws/GetBrandList",
         },
+        timeout: 30000,
       }
     );
 
-    // XML → JSON
+    // 🔹 XML → JS
     const parsed = await xml2js.parseStringPromise(response.data, {
       explicitArray: false,
     });
 
-    const attributes =
-      parsed?.["s:Envelope"]?.["s:Body"]?.GetCategoryAttributesResponse
-        ?.categoryAttributes?.categoryAttribute || [];
+    // N11’in tipik response yapısı şu yönde:
+    // Envelope → Body → GetBrandListResponse → result → status / errorMessage
+    // brandList → brand
+    const body =
+      parsed["s:Envelope"]?.["s:Body"] ||
+      parsed["soap:Envelope"]?.["soap:Body"] ||
+      parsed["Envelope"]?.["Body"];
 
-    let attrArray = Array.isArray(attributes) ? attributes : [attributes];
+    const resp =
+      body?.GetBrandListResponse || body?.getBrandListResponse || body;
 
-    // Marka alanını buluyoruz
-    const brandAttr = attrArray.find(
-      (a) =>
-        a.name?.toLowerCase() === "brand" ||
-        a.name?.toLowerCase() === "marka"
-    );
+    const result = resp?.result;
+    const status = result?.status || result?.Status;
 
-    if (!brandAttr) {
-      return res.status(200).json({
-        success: true,
-        brands: [],
-        message: "Bu kategoride marka attribute yok",
+    if (status && status !== "SUCCESS") {
+      const errMsg =
+        result?.errorMessage || result?.ErrorMessage || "N11 hata döndürdü";
+      console.error("❌ N11 GetBrandList status ERROR:", errMsg);
+      return res.status(500).json({
+        success: false,
+        message: "N11 marka listesi alınamadı",
+        error: errMsg,
       });
     }
 
-    const values =
-      brandAttr?.valueList?.value || brandAttr?.valueList || [];
+    const brandListNode = resp?.brandList?.brand || resp?.brandList || [];
+    const brandsArray = Array.isArray(brandListNode)
+      ? brandListNode
+      : brandListNode
+      ? [brandListNode]
+      : [];
 
-    const brands = Array.isArray(values) ? values : [values];
+    const brands = brandsArray.map((b) => ({
+      id: b.id || b.brandId || "",
+      name: b.name || "",
+    }));
 
     return res.status(200).json({
       success: true,
-      brands: brands.map((b) => ({
-        id: b.id,
-        name: b.name,
-      })),
+      brands,
+      count: brands.length,
     });
   } catch (error) {
-    console.error("❌ N11 kategori marka listesi hatası:", error);
+    console.error(
+      "❌ N11 marka listeleme hatası (backend):",
+      error.response?.data || error.message || error
+    );
 
     return res.status(500).json({
       success: false,
-      message: "Kategori marka listesi alınamadı",
-      error: error.message,
+      message: "N11 marka listesi alınamadı",
+      error: error.message || "Unknown error",
     });
   }
 }
