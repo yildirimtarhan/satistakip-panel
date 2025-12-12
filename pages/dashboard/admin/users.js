@@ -6,10 +6,15 @@ export default function AdminUsersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const getToken = () => localStorage.getItem("token");
+
   // 🔄 Kullanıcıları çek
   const fetchUsers = async () => {
     try {
-      const res = await fetch("/api/admin/users");
+      const token = getToken();
+      const res = await fetch("/api/admin/users", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const data = await res.json();
 
       if (!res.ok) {
@@ -30,12 +35,15 @@ export default function AdminUsersPage() {
     fetchUsers();
   }, []);
 
-  // ✅ Kullanıcı Onaylama
   const handleApprove = async (id, newStatus) => {
     try {
+      const token = getToken();
       const res = await fetch("/api/admin/updateUser", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ id, approved: newStatus }),
       });
 
@@ -46,12 +54,15 @@ export default function AdminUsersPage() {
     }
   };
 
-  // 🔄 Rol Güncelleme
   const updateRole = async (id, newRole) => {
     try {
+      const token = getToken();
       const res = await fetch("/api/admin/updateUser", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ id, role: newRole }),
       });
 
@@ -62,14 +73,17 @@ export default function AdminUsersPage() {
     }
   };
 
-  // ❌ Kullanıcı Sil
   const deleteUser = async (id) => {
     if (!confirm("Kullanıcıyı silmek istediğinize emin misiniz?")) return;
 
     try {
+      const token = getToken();
       const res = await fetch("/api/admin/deleteUser", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ id }),
       });
 
@@ -110,7 +124,6 @@ export default function AdminUsersPage() {
                 <td className="p-2 border">{user.email}</td>
                 <td className="p-2 border">{user.phone}</td>
 
-                {/* 🔥 Rol */}
                 <td className="p-2 border">
                   <select
                     className="border rounded p-1"
@@ -125,7 +138,6 @@ export default function AdminUsersPage() {
                   </select>
                 </td>
 
-                {/* Durum */}
                 <td className="p-2 border">
                   {user.approved ? (
                     <span className="text-green-600 font-semibold">✔ Onaylı</span>
@@ -134,7 +146,6 @@ export default function AdminUsersPage() {
                   )}
                 </td>
 
-                {/* İşlemler */}
                 <td className="p-2 border">
                   {!user.approved ? (
                     <button

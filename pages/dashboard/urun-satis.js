@@ -1,349 +1,616 @@
+// 📄 /pages/dashboard/urun-satis.js
 "use client";
-import { useState, useEffect } from "react";
+
+import { useEffect, useState } from "react";
+import RequireAuth from "@/components/RequireAuth";
 import Cookies from "js-cookie";
 
-export default function UrunSatis() {
-  const [cariler, setCariler] = useState([]);
-  const [urunler, setUrunler] = useState([]);
-  const [cariId, setCariId] = useState("");
-  const [rates, setRates] = useState({ TRY: 1, USD: 0, EUR: 0 });
-  const [manualRates, setManualRates] = useState({ USD: "", EUR: "" });
+/**
+ * Para formatı (TRY gibi)
+ */
+const fmt = (n) =>
+  Number(n || 0).toLocaleString("tr-TR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+/* ──────────────────────────────────────────────
+   jsPDF + autoTable (dinamik import, Roboto destekli)
+───────────────────────────────────────────────*/
+
+// Dinamik jsPDF + autoTable import (SSR hatalarını önler)
+async function makeJsPDF() {
+  const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+    import("jspdf"),
+    import("jspdf-autotable"),
+  ]);
+  return { jsPDF, autoTable };
+}
+
+// Roboto fontlarını base64’e çevir
+async function loadFontBase64(url) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const buf = await res.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++)
+      binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+  } catch {
+    return null;
+  }
+}
+
+// jsPDF’e Roboto ekler; yoksa Helvetica
+async function ensureRoboto(doc) {
+  const regularB64 = await loadFontBase64("/fonts/Roboto-Regular.ttf");
+  const boldB64 = await loadFontBase64("/fonts/Roboto-Bold.ttf");
+
+  if (regularB64) {
+    doc.addFileToVFS("Roboto-Regular.ttf", regularB64);
+    doc.addFont("Roboto-Regular.ttf", "Roboto", "normal");
+  }
+  if (boldB64) {
+    doc.addFileToVFS("Roboto-Bold.ttf", boldB64);
+    doc.addFont("Roboto-Bold.ttf", "Roboto", "bold");
+  }
+
+  const hasRoboto = !!regularB64;
+  const setFont = (style = "normal") => {
+    if (hasRoboto) doc.setFont("Roboto", style);
+    else doc.setFont("helvetica", style);
+  };
+  return { hasRoboto, setFont };
+}
+
+/* ──────────────────────────────────────────────
+   COMPONENT
+───────────────────────────────────────────────*/
+
+export default function Satislar() {
+  const [loading, setLoading] = useState(true);
+  const [satislar, setSatislar] = useState([]);
+  const [filtered, setFiltered] = useState([]);
+
+  const [search, setSearch] = useState("");
+  const [date, setDate] = useState("");
   const [token, setToken] = useState("");
 
-  const emptyRow = {
-    barkod: "",
-    productId: "",
-    ad: "",
-    varyant: "",
-    adet: 1,
-    fiyat: 0,
-    kdv: 20,
-    currency: "TRY",
-  };
+  // Detay Modal state
+  const [selectedSale, setSelectedSale] = useState(null);
+  const [showModal, setShowModal] = useState(false);
 
-  const [rows, setRows] = useState([emptyRow]);
-
-  // ✅ Token güvenli alınır
   useEffect(() => {
-    const t = Cookies.get("token");
-    if (t) setToken(t);
+    const t = Cookies.get("token") || localStorage.getItem("token") || "";
+    setToken(t);
+
+    if (t) loadSales(t);
   }, []);
 
-  // ✅ Veri yükleme
-  useEffect(() => {
-    if (!token) return;
-
-    fetch("/api/cari", { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => r.json())
-      .then((d) => setCariler(Array.isArray(d) ? d : []));
-
-    fetch("/api/urunler", { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => r.json())
-      .then((d) => setUrunler(Array.isArray(d) ? d : []));
-
-    fetchRates();
-  }, [token]);
-
-  // ✅ Kurlar
-  const fetchRates = async () => {
+  /**
+   * 🔹 Satış kayıtlarını çek
+   * /api/cari/transactions içinden type: "sale" olanlar listelenir.
+   * BE tarafında şuna benzer bir kayıt yapman gerekiyor:
+   * {
+   *   type: "sale",
+   *   saleNo: "S-2025-0001",
+   *   accountId,
+   *   customerName,
+   *   date,
+   *   invoiceNo,
+   *   orderNo,
+   *   currency: "TRY",
+   *   totalTRY,
+   *   lines: [ { productName, quantity, unitPrice, kdv, currency, totalLineTRY }, ... ]
+   * }
+   */
+  const loadSales = async (token) => {
     try {
-      const r = await fetch("/api/rates/tcmb");
-      const data = await r.json();
-      if (r.ok && data?.rates) setRates(data.rates);
-    } catch (e) {
-      console.error("Kur hatası:", e);
+      setLoading(true);
+
+      const res = await fetch("/api/cari/transactions", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!res.ok) throw new Error("Satış listesi alınamadı.");
+
+      const data = await res.json();
+
+      // Sadece satış işlemleri
+      const saleList = (data || []).filter((t) => t.type === "sale");
+
+      // Tarihe göre yeni → eski sıralama
+      saleList.sort(
+        (a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt)
+      );
+
+      setSatislar(saleList);
+      setFiltered(saleList);
+    } catch (err) {
+      console.error("Satış listesi hata:", err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const effectiveRate = (cur) =>
-    cur === "USD"
-      ? Number(manualRates.USD) || rates.USD
-      : cur === "EUR"
-      ? Number(manualRates.EUR) || rates.EUR
-      : 1;
+  /**
+   * 🔍 Filtreleme & Arama
+   */
+  useEffect(() => {
+    let list = [...satislar];
 
-  const setRow = (i, obj) => {
-    const c = [...rows];
-    c[i] = { ...c[i], ...obj };
-    setRows(c);
-  };
+    if (search.trim() !== "") {
+      const s = search.toLowerCase();
+      list = list.filter((item) => {
+        const saleNo = (item.saleNo || "").toLowerCase();
+        const invoiceNo = (item.invoiceNo || "").toLowerCase();
+        const orderNo = (item.orderNo || "").toLowerCase();
+        const customerName =
+          (item.customerName || item.accountName || "").toLowerCase();
 
-  const handleBarkod = (i, val) => {
-    setRow(i, { barkod: val });
-    const urun = Array.isArray(urunler)
-      ? urunler.find((u) => u.barkod === val)
-      : null;
-    if (urun) {
-      setRow(i, {
-        productId: urun._id,
-        ad: urun.ad,
-        fiyat: urun.satisFiyati || 0,
-        kdv: urun.kdvOrani || 20,
-        varyant: "",
+        return (
+          saleNo.includes(s) ||
+          invoiceNo.includes(s) ||
+          orderNo.includes(s) ||
+          customerName.includes(s)
+        );
       });
     }
-  };
 
-  const handleUrunAd = (i, val) => {
-    setRow(i, { ad: val });
-    const urun = Array.isArray(urunler)
-      ? urunler.find((x) => x.ad === val)
-      : null;
-    if (urun)
-      setRow(i, {
-        productId: urun._id,
-        barkod: urun.barkod || "",
-        fiyat: urun.satisFiyati || 0,
-        kdv: urun.kdvOrani || 20,
-        varyant: "",
+    if (date) {
+      list = list.filter((item) => {
+        const d = item.date || item.invoiceDate || item.createdAt;
+        if (!d) return false;
+        return String(d).slice(0, 10) === date;
       });
-  };
+    }
 
-  const rowTL = (r) => {
-    const fx = effectiveRate(r.currency);
-    const total = Number(r.adet) * Number(r.fiyat);
-    const withKdv = total + (total * Number(r.kdv)) / 100;
-    return r.currency === "TRY" ? withKdv : withKdv * fx;
-  };
+    setFiltered(list);
+  }, [search, date, satislar]);
+  /**
+   * 📊 Toplamlar (rapor üst bilgisi)
+   */
+  const totalCount = filtered.length;
+  const totalAmount = filtered.reduce(
+    (sum, s) => sum + Number(s.totalTRY || 0),
+    0
+  );
 
-  const addRow = () => setRows([...rows, { ...emptyRow }]);
-  const removeRow = (i) => setRows(rows.filter((_, x) => x !== i));
+  /**
+   * 🧾 PDF – tek satış için fiş
+   */
+  const pdfYazdir = async (sale) => {
+    try {
+      const { jsPDF, autoTable } = await makeJsPDF();
+      const doc = new jsPDF({
+        unit: "pt",
+        format: "a4",
+        orientation: "portrait",
+      });
+      const { setFont } = await ensureRoboto(doc);
 
-  // ✅ Kaydet
-  const handleSave = async () => {
-    if (!cariId) return alert("⚠️ Müşteri seçin");
-    if (!token) return alert("⚠️ Giriş yapılmamış");
+      const pageW = doc.internal.pageSize.getWidth();
+      const pageH = doc.internal.pageSize.getHeight();
 
-    for (let r of rows) {
-      if (!r.productId) return alert("⚠️ Ürün seçilmedi");
+      // Başlık
+      setFont("bold");
+      doc.setFontSize(18);
+      doc.text("SATIŞ FİŞİ", pageW / 2, 40, { align: "center" });
 
-      const urun = Array.isArray(urunler)
-        ? urunler.find((u) => u._id === r.productId)
-        : null;
-      if (!urun) continue;
+      setFont("normal");
+      doc.setFontSize(10);
 
-      let stok = urun.stok || 0;
-      if (r.varyant && Array.isArray(urun.varyantlar)) {
-        const v = urun.varyantlar.find((x) => x.ad === r.varyant);
-        stok = v ? v.stok : 0;
-      }
+      const tarih = sale.date
+        ? new Date(sale.date).toLocaleDateString("tr-TR")
+        : "-";
 
-      if (stok < Number(r.adet)) {
-        return alert(
-          `❌ ${urun.ad} / ${r.varyant || "-"} stok yetersiz! (Stok: ${stok})`
+      const musteri =
+        sale.customerName || sale.accountName || sale.cariAd || "Müşteri";
+
+      // Sol üst: satış bilgileri
+      doc.text(`Satış No: ${sale.saleNo || "-"}`, 40, 70);
+      doc.text(`Tarih   : ${tarih}`, 40, 86);
+      doc.text(`Fatura No: ${sale.invoiceNo || "-"}`, 40, 102);
+      doc.text(`Sipariş No: ${sale.orderNo || "-"}`, 40, 118);
+
+      // Sağ üst: müşteri
+      doc.text(`Müşteri: ${musteri}`, pageW - 40, 70, { align: "right" });
+      if (sale.customerTaxNo) {
+        doc.text(
+          `Vergi No: ${sale.customerTaxNo}`,
+          pageW - 40,
+          86,
+          { align: "right" }
         );
       }
 
-      const fx = effectiveRate(r.currency);
-      const totalTRY = rowTL(r);
+      // Satırları oku
+      const lines =
+        sale.lines || sale.saleLines || sale.items || sale.rows || [];
 
-      await fetch("/api/cari/transactions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+      const bodyRows =
+        lines.length > 0
+          ? lines.map((l, i) => {
+              const ad =
+                l.productName ||
+                l.urunAd ||
+                l.name ||
+                l.ad ||
+                l.sku ||
+                "-";
+              const qty = Number(l.quantity || l.adet || 0);
+              const price = Number(l.unitPrice || l.fiyat || 0);
+              const kdv = Number(l.kdv || 0);
+              const cur = l.currency || sale.currency || "TRY";
+              const base = qty * price;
+              const kdvTutar = (base * kdv) / 100;
+              const toplam = base + kdvTutar;
+
+              return [
+                i + 1,
+                ad,
+                qty,
+                `${fmt(price)} ${cur}`,
+                `%${kdv}`,
+                `${fmt(toplam)} ${cur}`,
+              ];
+            })
+          : [
+              [
+                1,
+                "-",
+                1,
+                `0,00 ${sale.currency || "TRY"}`,
+                "%0",
+                `0,00 ${sale.currency || "TRY"}`,
+              ],
+            ];
+
+      autoTable(doc, {
+        startY: 150,
+        head: [["#", "Ürün", "Adet", "Birim Fiyat", "KDV", "Tutar"]],
+        body: bodyRows,
+        styles: { fontSize: 9, cellPadding: 4, lineWidth: 0.2 },
+        headStyles: {
+          fillColor: [255, 140, 0],
+          textColor: 255,
+          fontStyle: "bold",
+          halign: "center",
         },
-        body: JSON.stringify({
-          accountId: cariId,
-          productId: r.productId,
-          varyant: r.varyant || null,
-          type: "sale",
-          quantity: Number(r.adet),
-          unitPrice: Number(r.fiyat),
-          currency: r.currency,
-          fxRate: fx,
-          totalTRY,
-        }),
+        columnStyles: {
+          0: { halign: "center", cellWidth: 26 },
+          2: { halign: "right", cellWidth: 60 },
+          3: { halign: "right", cellWidth: 90 },
+          4: { halign: "right", cellWidth: 50 },
+          5: { halign: "right", cellWidth: 90 },
+        },
+        theme: "grid",
       });
-    }
 
-    alert("✅ Satış kaydedildi!");
-    setRows([{ ...emptyRow }]);
+      const totalY = doc.lastAutoTable.finalY + 20;
+
+      const cur = sale.currency || "TRY";
+      const genel = Number(sale.totalTRY || 0);
+
+      setFont("bold");
+      doc.setFontSize(11);
+      doc.text(
+        `Genel Toplam: ${fmt(genel)} ${cur}`,
+        pageW - 40,
+        totalY,
+        { align: "right" }
+      );
+
+      setFont("normal");
+      doc.setFontSize(9);
+      doc.text(
+        "Bu fiş SatışTakip ERP üzerinden elektronik ortamda oluşturulmuştur.",
+        pageW / 2,
+        pageH - 30,
+        { align: "center" }
+      );
+
+      const fileName = `Satis-${sale.saleNo || "fis"}.pdf`;
+      doc.save(fileName);
+    } catch (err) {
+      console.error("PDF oluşturma hatası:", err);
+      alert("❌ PDF oluşturulamadı. Konsolu kontrol edin.");
+    }
+  };
+  /**
+   * Detay modalını aç
+   */
+  const openDetail = (sale) => {
+    setSelectedSale(sale);
+    setShowModal(true);
   };
 
-  const netTotal = Array.isArray(rows)
-    ? rows.reduce((s, r) => s + rowTL(r), 0)
-    : 0;
+  const closeDetail = () => {
+    setShowModal(false);
+    setSelectedSale(null);
+  };
 
-  return (
-    <div className="p-6 space-y-4">
-      <h2 className="text-xl font-bold">🛒 Ürün Satışı</h2>
+  // Modal içi satırları formatla
+  const getSaleLines = (sale) => {
+    if (!sale) return [];
+    return (
+      sale.lines ||
+      sale.saleLines ||
+      sale.items ||
+      sale.rows ||
+      []
+    );
+  };
 
-      <div className="p-3 bg-white rounded border flex-wrap flex items-center gap-2 text-sm">
-        <b>Kur:</b> USD ₺{rates.USD} | EUR ₺{rates.EUR}
-        <input
-          placeholder="USD"
-          className="border p-1 w-20"
-          value={manualRates.USD}
-          onChange={(e) =>
-            setManualRates({ ...manualRates, USD: e.target.value })
-          }
-        />
-        <input
-          placeholder="EUR"
-          className="border p-1 w-20"
-          value={manualRates.EUR}
-          onChange={(e) =>
-            setManualRates({ ...manualRates, EUR: e.target.value })
-          }
-        />
-        <button onClick={fetchRates} className="px-2 py-1 border rounded">
-          🔄
-        </button>
+  const renderModal = () => {
+    if (!showModal || !selectedSale) return null;
+
+    const lines = getSaleLines(selectedSale);
+    const musteri =
+      selectedSale.customerName ||
+      selectedSale.accountName ||
+      selectedSale.cariAd ||
+      "-";
+    const tarih = selectedSale.date
+      ? new Date(selectedSale.date).toLocaleString("tr-TR")
+      : "-";
+
+    return (
+      <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
+        <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-auto p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold">
+              Satış Detayı – {selectedSale.saleNo || "-"}
+            </h2>
+            <button
+              onClick={closeDetail}
+              className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 text-sm"
+            >
+              Kapat ✖
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm mb-4">
+            <div className="space-y-1">
+              <div>
+                <span className="font-medium">Müşteri: </span>
+                {musteri}
+              </div>
+              <div>
+                <span className="font-medium">Tarih: </span>
+                {tarih}
+              </div>
+              <div>
+                <span className="font-medium">Fatura No: </span>
+                {selectedSale.invoiceNo || "-"}
+              </div>
+              <div>
+                <span className="font-medium">Sipariş No: </span>
+                {selectedSale.orderNo || "-"}
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <div>
+                <span className="font-medium">Para Birimi: </span>
+                {selectedSale.currency || "TRY"}
+              </div>
+              <div>
+                <span className="font-medium">Genel Toplam: </span>
+                {fmt(selectedSale.totalTRY || 0)}{" "}
+                {selectedSale.currency || "TRY"}
+              </div>
+              {selectedSale.note && (
+                <div>
+                  <span className="font-medium">Not: </span>
+                  {selectedSale.note}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="border rounded-lg overflow-auto">
+            <table className="min-w-full text-xs md:text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-2 py-2 text-left">Ürün</th>
+                  <th className="px-2 py-2 text-right">Adet</th>
+                  <th className="px-2 py-2 text-right">Birim Fiyat</th>
+                  <th className="px-2 py-2 text-right">KDV (%)</th>
+                  <th className="px-2 py-2 text-right">Tutar</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lines.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={5}
+                      className="text-center text-gray-500 py-3"
+                    >
+                      Satır bilgisi bulunamadı.
+                    </td>
+                  </tr>
+                ) : (
+                  lines.map((l, idx) => {
+                    const ad =
+                      l.productName ||
+                      l.urunAd ||
+                      l.name ||
+                      l.ad ||
+                      l.sku ||
+                      "-";
+                    const qty = Number(l.quantity || l.adet || 0);
+                    const price = Number(l.unitPrice || l.fiyat || 0);
+                    const kdv = Number(l.kdv || 0);
+                    const base = qty * price;
+                    const kdvTutar = (base * kdv) / 100;
+                    const toplam = base + kdvTutar;
+                    const cur =
+                      l.currency || selectedSale.currency || "TRY";
+
+                    return (
+                      <tr key={idx} className="border-t">
+                        <td className="px-2 py-1">{ad}</td>
+                        <td className="px-2 py-1 text-right">{qty}</td>
+                        <td className="px-2 py-1 text-right">
+                          {fmt(price)} {cur}
+                        </td>
+                        <td className="px-2 py-1 text-right">%{kdv}</td>
+                        <td className="px-2 py-1 text-right">
+                          {fmt(toplam)} {cur}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex justify-end mt-4 gap-2">
+            <button
+              onClick={() => pdfYazdir(selectedSale)}
+              className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm"
+            >
+              🧾 Bu Satış İçin PDF
+            </button>
+            <button
+              onClick={closeDetail}
+              className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300 text-sm"
+            >
+              Kapat
+            </button>
+          </div>
+        </div>
       </div>
+    );
+  };
+  return (
+    <RequireAuth>
+      <div className="p-6 space-y-6">
+        <h1 className="text-2xl font-bold text-orange-600">🧾 Satışlar</h1>
 
-      <select
-        className="border p-2 rounded"
-        value={cariId}
-        onChange={(e) => setCariId(e.target.value)}
-      >
-        <option value="">Müşteri Seç *</option>
-        {Array.isArray(cariler) &&
-          cariler.map((c) => (
-            <option key={c._id} value={c._id}>
-              {c.ad}
-            </option>
-          ))}
-      </select>
+        {/* Rapor Özeti */}
+        <div className="flex flex-wrap gap-4 text-sm">
+          <div className="px-4 py-2 rounded-lg bg-white border shadow-sm">
+            <div className="text-gray-500">Toplam Satış Adedi</div>
+            <div className="text-lg font-semibold">{totalCount}</div>
+          </div>
+          <div className="px-4 py-2 rounded-lg bg-white border shadow-sm">
+            <div className="text-gray-500">Genel Toplam (TRY)</div>
+            <div className="text-lg font-semibold text-green-700">
+              ₺{fmt(totalAmount)}
+            </div>
+          </div>
+        </div>
 
-      <table className="w-full border text-sm">
-        <thead className="bg-gray-100 text-xs">
-          <tr>
-            <th>Barkod</th>
-            <th>Ürün</th>
-            <th>Varyant</th>
-            <th>Adet</th>
-            <th>Fiyat</th>
-            <th>PB</th>
-            <th>KDV</th>
-            <th>TL</th>
-            <th></th>
-          </tr>
-        </thead>
+        {/* Filtreler */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+          <div>
+            <label className="text-sm text-gray-600">Arama</label>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Satış No, müşteri, fatura no..."
+              className="border rounded px-3 py-2 w-full"
+            />
+          </div>
 
-        <tbody>
-          {Array.isArray(rows) &&
-            rows.map((r, i) => {
-              const urun = Array.isArray(urunler)
-                ? urunler.find((u) => u._id === r.productId)
-                : null;
-              return (
-                <tr key={i} className="text-xs">
-                  <td>
-                    <input
-                      className="border p-1 w-full"
-                      value={r.barkod}
-                      onChange={(e) => handleBarkod(i, e.target.value)}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      list="urunList"
-                      className="border p-1 w-full"
-                      value={r.ad}
-                      onChange={(e) => handleUrunAd(i, e.target.value)}
-                    />
-                  </td>
+          <div>
+            <label className="text-sm text-gray-600">Tarih</label>
+            <input
+              type="date"
+              className="border rounded px-3 py-2 w-full"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+            />
+          </div>
+        </div>
 
-                  <td>
-                    {urun?.varyantlar?.length > 0 ? (
-                      <select
-                        className="border p-1 w-full"
-                        value={r.varyant}
-                        onChange={(e) => setRow(i, { varyant: e.target.value })}
-                      >
-                        <option value="">Seç</option>
-                        {urun.varyantlar.map((v) => (
-                          <option key={v.ad} value={v.ad}>
-                            {v.ad} ({v.stok})
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
+        {/* Tablo */}
+        <div className="mt-4 overflow-auto border rounded bg-white">
+          <table className="min-w-full text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-3 py-2 text-left">Satış No</th>
+                <th className="px-3 py-2 text-left">Müşteri</th>
+                <th className="px-3 py-2 text-left">Tarih</th>
+                <th className="px-3 py-2 text-left">Fatura No</th>
+                <th className="px-3 py-2 text-left">Sipariş No</th>
+                <th className="px-3 py-2 text-right">Tutar (TRY)</th>
+                <th className="px-3 py-2 text-center">İşlem</th>
+              </tr>
+            </thead>
 
-                  <td>
-                    <input
-                      className="border p-1 w-14 text-right"
-                      value={r.adet}
-                      onChange={(e) => setRow(i, { adet: e.target.value })}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      className="border p-1 w-20 text-right"
-                      value={r.fiyat}
-                      onChange={(e) => setRow(i, { fiyat: e.target.value })}
-                    />
-                  </td>
-
-                  <td>
-                    <select
-                      className="border p-1 w-full"
-                      value={r.currency}
-                      onChange={(e) =>
-                        setRow(i, { currency: e.target.value })
-                      }
-                    >
-                      <option>TRY</option>
-                      <option>USD</option>
-                      <option>EUR</option>
-                    </select>
-                  </td>
-
-                  <td>
-                    <select
-                      className="border p-1 w-full"
-                      value={r.kdv}
-                      onChange={(e) => setRow(i, { kdv: e.target.value })}
-                    >
-                      {[0, 1, 8, 10, 20].map((k) => (
-                        <option key={k} value={k}>
-                          %{k}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-
-                  <td className="text-right font-medium">
-                    ₺{rowTL(r).toLocaleString("tr-TR")}
-                  </td>
-
-                  <td>
-                    <button
-                      className="text-red-600"
-                      onClick={() => removeRow(i)}
-                    >
-                      ✖
-                    </button>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="text-center py-4">
+                    Yükleniyor...
                   </td>
                 </tr>
-              );
-            })}
-        </tbody>
-      </table>
+              ) : filtered.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="text-center py-4 text-gray-500"
+                  >
+                    Kayıt bulunamadı.
+                  </td>
+                </tr>
+              ) : (
+                filtered.map((s, i) => {
+                  const tarih = s.date
+                    ? new Date(s.date).toLocaleDateString("tr-TR")
+                    : s.invoiceDate
+                    ? new Date(s.invoiceDate).toLocaleDateString("tr-TR")
+                    : "-";
 
-      <datalist id="urunList">
-        {Array.isArray(urunler) &&
-          urunler.map((u) => <option key={u._id} value={u.ad} />)}
-      </datalist>
+                  const musteri =
+                    s.customerName || s.accountName || s.cariAd || "-";
 
-      <div className="flex items-center gap-3 mt-2">
-        <button onClick={addRow} className="bg-gray-200 px-3 py-1 rounded">
-          + Satır
-        </button>
-        <button
-          onClick={handleSave}
-          className="bg-blue-600 text-white px-4 py-2"
-        >
-          Kaydet ✅
-        </button>
-        <span className="ml-auto font-bold text-lg">
-          Genel: ₺{netTotal.toLocaleString("tr-TR")}
-        </span>
+                  return (
+                    <tr
+                      key={s._id || i}
+                      className="border-t hover:bg-slate-50"
+                    >
+                      <td className="px-3 py-2">{s.saleNo || "-"}</td>
+                      <td className="px-3 py-2">{musteri}</td>
+                      <td className="px-3 py-2">{tarih}</td>
+                      <td className="px-3 py-2">{s.invoiceNo || "-"}</td>
+                      <td className="px-3 py-2">{s.orderNo || "-"}</td>
+                      <td className="px-3 py-2 text-right">
+                        {fmt(s.totalTRY || 0)} {s.currency || "TRY"}
+                      </td>
+                      <td className="px-3 py-2 text-center space-x-2">
+                        <button
+                          onClick={() => openDetail(s)}
+                          className="px-3 py-1 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 text-xs"
+                        >
+                          Detay
+                        </button>
+                        <button
+                          onClick={() => pdfYazdir(s)}
+                          className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-xs"
+                        >
+                          PDF
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {renderModal()}
       </div>
-    </div>
+    </RequireAuth>
   );
 }

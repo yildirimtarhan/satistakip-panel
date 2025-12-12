@@ -27,28 +27,48 @@ export default function FirmaAyarları() {
     r.readAsDataURL(f);
   };
 
-  // ✅ Verileri yükle (MongoDB varsa)
+  // ✅ Firma bilgilerini token ile çek
   useEffect(() => {
     (async () => {
       try {
-        const r = await fetch("/api/settings/company");
+        const token = localStorage.getItem("token");
+
+        const r = await fetch("/api/settings/company", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
         if (r.ok) {
           const d = await r.json();
           setForm(d);
         }
-      } catch {}
+      } catch (err) {
+        console.error("Firma ayarları yüklenemedi:", err);
+      }
     })();
   }, []);
 
-  // ✅ Kaydet
+  // ✅ Firma bilgilerini token ile kaydet
   const save = async () => {
-    const r = await fetch("/api/settings/company", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
-    const d = await r.json();
-    alert(d.message);
+    try {
+      const token = localStorage.getItem("token");
+
+      const r = await fetch("/api/settings/company", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(form),
+      });
+
+      const d = await r.json();
+      alert(d.message || "Kaydedildi");
+    } catch (err) {
+      console.error("Firma ayarları kaydedilemedi:", err);
+      alert("Hata oluştu!");
+    }
   };
 
   return (
@@ -58,45 +78,102 @@ export default function FirmaAyarları() {
       <div className="bg-white p-4 rounded-xl shadow grid grid-cols-2 gap-3">
         <div>
           <label>Firma Adı</label>
-          <input name="firmaAdi" value={form.firmaAdi} onChange={handleChange} className="border p-2 rounded w-full"/>
+          <input
+            name="firmaAdi"
+            value={form.firmaAdi}
+            onChange={handleChange}
+            className="border p-2 rounded w-full"
+          />
         </div>
+
         <div>
           <label>Yetkili Kişi</label>
-          <input name="yetkili" value={form.yetkili} onChange={handleChange} className="border p-2 rounded w-full"/>
+          <input
+            name="yetkili"
+            value={form.yetkili}
+            onChange={handleChange}
+            className="border p-2 rounded w-full"
+          />
         </div>
+
         <div>
           <label>Telefon</label>
-          <input name="telefon" value={form.telefon} onChange={handleChange} className="border p-2 rounded w-full"/>
+          <input
+            name="telefon"
+            value={form.telefon}
+            onChange={handleChange}
+            className="border p-2 rounded w-full"
+          />
         </div>
+
         <div>
           <label>E-posta</label>
-          <input name="eposta" value={form.eposta} onChange={handleChange} className="border p-2 rounded w-full"/>
+          <input
+            name="eposta"
+            value={form.eposta}
+            onChange={handleChange}
+            className="border p-2 rounded w-full"
+          />
         </div>
+
         <div>
           <label>Web Sitesi</label>
-          <input name="web" value={form.web} onChange={handleChange} className="border p-2 rounded w-full"/>
+          <input
+            name="web"
+            value={form.web}
+            onChange={handleChange}
+            className="border p-2 rounded w-full"
+          />
         </div>
+
         <div>
           <label>Vergi Dairesi</label>
-          <input name="vergiDairesi" value={form.vergiDairesi} onChange={handleChange} className="border p-2 rounded w-full"/>
+          <input
+            name="vergiDairesi"
+            value={form.vergiDairesi}
+            onChange={handleChange}
+            className="border p-2 rounded w-full"
+          />
         </div>
+
         <div>
           <label>Vergi No</label>
-          <input name="vergiNo" value={form.vergiNo} onChange={handleChange} className="border p-2 rounded w-full"/>
-        </div>
-        <div className="col-span-2">
-          <label>Adres</label>
-          <textarea name="adres" value={form.adres} onChange={handleChange} className="border p-2 rounded w-full"/>
+          <input
+            name="vergiNo"
+            value={form.vergiNo}
+            onChange={handleChange}
+            className="border p-2 rounded w-full"
+          />
         </div>
 
         <div className="col-span-2">
-          <label>Logo</label><br/>
-          <input type="file" onChange={pickLogo}/>
-          {form.logo && <img src={form.logo} alt="logo" className="h-16 mt-2 border rounded" />}
+          <label>Adres</label>
+          <textarea
+            name="adres"
+            value={form.adres}
+            onChange={handleChange}
+            className="border p-2 rounded w-full"
+          />
+        </div>
+
+        <div className="col-span-2">
+          <label>Logo</label>
+          <br />
+          <input type="file" onChange={pickLogo} />
+          {form.logo && (
+            <img
+              src={form.logo}
+              alt="logo"
+              className="h-16 mt-2 border rounded"
+            />
+          )}
         </div>
       </div>
 
-      <button onClick={save} className="bg-orange-600 text-white px-4 py-2 rounded">
+      <button
+        onClick={save}
+        className="bg-orange-600 text-white px-4 py-2 rounded"
+      >
         💾 Kaydet
       </button>
     </div>
