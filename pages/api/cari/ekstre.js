@@ -1,6 +1,7 @@
 import dbConnect from "@/lib/mongodb";
 import Transaction from "@/models/Transaction";
 import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
@@ -24,12 +25,18 @@ export default async function handler(req, res) {
       return res.status(400).json({ message: "accountId zorunlu" });
     }
 
-    const filter = { accountId };
+    const filter = {
+      accountId: new mongoose.Types.ObjectId(accountId),
+    };
 
     if (start || end) {
       filter.createdAt = {};
       if (start) filter.createdAt.$gte = new Date(start);
-      if (end) filter.createdAt.$lte = new Date(end);
+      if (end) {
+        const endDate = new Date(end);
+        endDate.setHours(23, 59, 59, 999);
+        filter.createdAt.$lte = endDate;
+      }
     }
 
     const txs = await Transaction.find(filter).sort({ createdAt: 1 });
@@ -37,13 +44,11 @@ export default async function handler(req, res) {
     let bakiye = 0;
 
     const rows = txs.map((t) => {
-      // BORÇ → +
       if (t.type === "purchase" || t.type === "payment") {
-        bakiye += Number(t.totalTRY || 0);
-      }
-      // ALACAK → -
-      if (t.type === "sale" || t.type === "collection") {
         bakiye -= Number(t.totalTRY || 0);
+      }
+      if (t.type === "sale" || t.type === "collection") {
+        bakiye += Number(t.totalTRY || 0);
       }
 
       return {
