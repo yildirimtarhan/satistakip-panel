@@ -1,4 +1,4 @@
-// 📁 /pages/dashboard/cari-ekstresi.js
+// 📁 /pages/dashboard/cari-ekstre.js
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
@@ -37,26 +37,42 @@ export default function CariEkstresi() {
   };
 
   const fetchEkstre = async () => {
-    if (!seciliCariId) {
-      alert("Lütfen cari seçiniz");
-      return;
-    }
+  if (!seciliCariId) {
+    alert("Lütfen cari seçiniz");
+    return;
+  }
 
+  // 🔥 state temizle (önemli)
+  setRows([]);
+  setBakiye(0);
+
+  try {
     const res = await fetch(
       `/api/cari/ekstre?accountId=${seciliCariId}&start=${dateFrom}&end=${dateTo}`,
       {
+        method: "GET",
         headers: {
           Authorization: `Bearer ${token}`,
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache",
         },
       }
     );
+
+    if (!res.ok) {
+      console.error("Ekstre fetch hatası:", res.status);
+      return;
+    }
 
     const data = await res.json();
     if (data.success) {
       setRows(data.rows || []);
       setBakiye(data.bakiye || 0);
     }
-  };
+  } catch (err) {
+    console.error("Ekstre alınamadı:", err);
+  }
+};
 
   useEffect(() => {
     const c = cariler.find((x) => x._id === seciliCariId);
