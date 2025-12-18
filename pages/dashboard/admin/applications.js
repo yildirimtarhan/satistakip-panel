@@ -1,102 +1,90 @@
-// 📁 /pages/api/edonusum/admin/applications.js
-import dbConnect from "@/lib/mongodb";
-import jwt from "jsonwebtoken";
+"use client";
 
-export default async function handler(req, res) {
-  try {
-    await dbConnect();
+import { useEffect, useState } from "react";
+import Cookies from "js-cookie";
 
-    // 🔐 Token kontrolü
-    const authHeader = req.headers.authorization || "";
-    const token = authHeader.startsWith("Bearer ")
-      ? authHeader.split(" ")[1]
+export default function AdminApplicationsPage() {
+  const [applications, setApplications] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const token =
+    typeof window !== "undefined"
+      ? Cookies.get("token") || localStorage.getItem("token")
       : null;
 
-    if (!token) return res.status(401).json({ message: "Token gerekli" });
-
-    let decoded;
+  const loadApplications = async () => {
     try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
+      setLoading(true);
+      setError("");
+
+      const res = await fetch("/api/edonusum/admin/applications", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.message || "Başvurular alınamadı");
+        return;
+      }
+
+      setApplications(data.applications || []);
     } catch (err) {
-      return res.status(401).json({ message: "Geçersiz token" });
+      console.error("Başvuru çekme hatası:", err);
+      setError("Sunucuya bağlanılamadı");
+    } finally {
+      setLoading(false);
     }
+  };
 
-    // 🔥 Sadece admin yetkili
-    if (decoded.role !== "admin") {
-      return res.status(403).json({ message: "Bu işlem için yetkiniz yok" });
-    }
+  useEffect(() => {
+    if (token) loadApplications();
+  }, [token]);
 
-    const conn = await dbConnect();
-    const db = conn.connection.db;
-    const col = db.collection("edonusum_applications");
+  if (loading) return <div className="p-6">Yükleniyor...</div>;
+  if (error) return <div className="p-6 text-red-600">{error}</div>;
 
-    // ============================
-    // 📌 1) GET — Başvuruları listele
-    // ============================
-    if (req.method === "GET") {
-      const list = await col
-        .find({})
-        .sort({ createdAt: -1 })
-        .toArray();
+  return (
+    <div className="p-6">
+      <h1 className="text-xl font-bold mb-4">
+        🛡️ E-Dönüşüm Başvuru Onayları
+      </h1>
 
-      return res.status(200).json({ success: true, applications: list });
-    }
+      <div className="bg-white rounded-xl shadow overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-100">
+            <tr>
+              <th className="p-2">Firma</th>
+              <th className="p-2">Tür</th>
+              <th className="p-2">Durum</th>
+              <th className="p-2">Tarih</th>
+            </tr>
+          </thead>
+          <tbody>
+            {applications.map((a) => (
+              <tr key={a._id} className="border-b">
+                <td className="p-2">{a.companyName || "-"}</td>
+                <td className="p-2">{a.type}</td>
+                <td className="p-2">{a.status}</td>
+                <td className="p-2">
+                  {new Date(a.createdAt).toLocaleDateString("tr-TR")}
+                </td>
+              </tr>
+            ))}
 
-    // ============================
-    // 📌 2) PUT — Başvuru Güncelle (onay / red)
-    // ============================
-    if (req.method === "PUT") {
-      const { id, status, adminNote } = req.body;
-
-      if (!id || !status) {
-        return res.status(400).json({ message: "id ve status gerekli" });
-      }
-
-      const allowed = ["approved", "rejected", "pending"];
-      if (!allowed.includes(status)) {
-        return res.status(400).json({ message: "Geçersiz status" });
-      }
-
-      await col.updateOne(
-        { _id: new require("mongodb").ObjectId(id) },
-        {
-          $set: {
-            status,
-            adminNote: adminNote || "",
-            updatedAt: new Date(),
-          },
-        }
-      );
-
-      return res.status(200).json({
-        success: true,
-        message: "Başvuru güncellendi",
-      });
-    }
-
-    // ============================
-    // 📌 3) DELETE — Başvuru Sil
-    // ============================
-    if (req.method === "DELETE") {
-      const { id } = req.query;
-
-      if (!id) return res.status(400).json({ message: "id gerekli" });
-
-      await col.deleteOne({ _id: new require("mongodb").ObjectId(id) });
-
-      return res.status(200).json({
-        success: true,
-        message: "Başvuru silindi",
-      });
-    }
-
-    return res.status(405).json({ message: "Method desteklenmiyor" });
-
-  } catch (err) {
-    console.error("Admin Başvuru Onay API Hatası:", err);
-    return res.status(500).json({
-      success: false,
-      message: "Sunucu hatası",
-    });
-  }
+            {applications.length === 0 && (
+              <tr>
+                <td colSpan={4} className="p-4 text-center text-gray-500">
+                  Kayıt yok
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
