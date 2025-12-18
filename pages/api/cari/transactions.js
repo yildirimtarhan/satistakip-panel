@@ -178,7 +178,7 @@ export default async function handler(req, res) {
       // Ekstreye transaction yaz
       await Transaction.create({
         accountId: accountIdForPurchase,
-        type: "BORC", // alış
+        type: "purchase", // alış
         amount: Number(totalTRY.toFixed(2)),
         currency: "TRY",
         date: date ? new Date(date) : new Date(),
