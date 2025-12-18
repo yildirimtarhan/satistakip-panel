@@ -202,25 +202,33 @@ export default function Sidebar() {
           label="E-Fatura Paneli"
         />
 
-        {/* ============================
-            ERP MODÜLLERİ
-        ============================ */}
-        <SectionTitle>ERP Modülleri</SectionTitle>
+       {/* ============================
+    ERP MODÜLLERİ
+============================ */}
+<SectionTitle>ERP Modülleri</SectionTitle>
 
-        <MenuItem href="/dashboard/cari" icon="👥" label="Cariler" />
-        <MenuItem href="/dashboard/cari-ekstre" icon="📈" label="Cari Ekstre" />
-        <MenuItem
-          href="/dashboard/cari-tahsilat"
-          icon="💰"
-          label="Tahsilat / Ödeme"
-        />
+<MenuItem href="/dashboard/cari" icon="👥" label="Cariler" />
+<MenuItem href="/dashboard/cari-ekstre" icon="📈" label="Cari Ekstre" />
+<MenuItem
+  href="/dashboard/cari-tahsilat"
+  icon="💰"
+  label="Tahsilat / Ödeme"
+/>
 
-        <MenuItem href="/dashboard/urunler" icon="📦" label="Ürünler" />
-        <MenuItem href="/dashboard/urun-alis" icon="📥" label="Ürün Alış" />
-        <MenuItem href="/dashboard/urun-satis" icon="🛒" label="Ürün Satış" />
+<MenuItem href="/dashboard/urunler" icon="📦" label="Ürünler" />
+<MenuItem href="/dashboard/urun-alis" icon="📥" label="Ürün Alış" />
+<MenuItem href="/dashboard/urun-satis" icon="🛒" label="Ürün Satış" />
 
-        <MenuItem href="/dashboard/teklifler" icon="📃" label="Teklif Formu" />
-        <MenuItem href="/dashboard/stok-raporu" icon="📊" label="Stok Raporu" />
+{/* ✅ YENİ EKLENENLER */}
+<MenuItem href="/dashboard/satislar" icon="🧾" label="Satışlar" />
+<MenuItem
+  href="/dashboard/satis-raporlari"
+  icon="📊"
+  label="Satış Raporları"
+/>
+
+<MenuItem href="/dashboard/teklifler" icon="📃" label="Teklif Formu" />
+<MenuItem href="/dashboard/stok-raporu" icon="📊" label="Stok Raporu" />
 
         {/* ============================
             ADMIN PANELİ
