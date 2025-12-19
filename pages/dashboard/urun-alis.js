@@ -81,11 +81,7 @@ export default function UrunAlis() {
     fetchRates();
   }, []);
 
-  const effectiveRate = (cur) => {
-    if (cur === "USD") return Number(manualRates.USD) || rates.USD || 0;
-    if (cur === "EUR") return Number(manualRates.EUR) || rates.EUR || 0;
-    return 1;
-  };
+  
 
   // 🔍 Barkoddan ürün bul (barcode + barkod destekli)
   const handleBarkod = (i, val) => {
@@ -158,20 +154,10 @@ export default function UrunAlis() {
   const removeRow = (i) =>
     setRows(rows.filter((_, idx) => idx !== i));
 
-  // 🧮 Satırın TL karşılığı (KDV dahil)
-const rowTL = (r) => {
-  const fx = effectiveRate(r.currency) || 1; // ✅ KRİTİK SATIR
-
-  const total =
-    Number(r.adet) * Number(r.fiyat);
-
-  const withKdv =
-    total + (total * Number(r.kdv)) / 100;
-
-  return r.currency === "TRY"
-    ? Number(withKdv.toFixed(2))
-    : Number((withKdv * fx).toFixed(2));
+  const rowTL = (r) => {
+  return Number(r.adet || 0) * Number(r.fiyat || 0);
 };
+
 
 
   const toplamTL = () =>
@@ -182,8 +168,8 @@ const rowTL = (r) => {
     );
 
   
-  // 💾 Kaydet
-// 💾 Kaydet
+  
+// 💾 Kaydet (B mimarisi – FINAL)
 const handleSave = async () => {
   if (!cariId) {
     alert("⚠️ Tedarikçi seçin");
@@ -195,12 +181,14 @@ const handleSave = async () => {
   }
 
   try {
+    const items = [];
+
     for (const r of rows) {
       if (!r.ad && !r.barkod) continue;
 
       let productId = r.productId;
 
-      // Ürün yoksa oluştur
+      // Ürün yoksa oluştur (MEVCUT DAVRANIŞ KORUNDU)
       if (!productId && r.ad.trim() !== "") {
         const res = await fetch("/api/products/add", {
           method: "POST",
@@ -212,7 +200,7 @@ const handleSave = async () => {
             name: r.ad,
             barcode: r.barkod || "",
             barkod: r.barkod || "",
-            priceTl: r.currency === "TRY" ? Number(r.fiyat || 0) : 0,
+            priceTl: Number(r.fiyat || 0),
             vatRate: Number(r.kdv || 20),
             stock: 0,
           }),
@@ -226,63 +214,58 @@ const handleSave = async () => {
 
       if (!productId) continue;
 
-      const fx = effectiveRate(r.currency);
-      const totalTRY = rowTL(r);
-
-      // 🔹 Cari hareketi
-      await fetch("/api/cari/transactions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          accountId: cariId,
-          productId,
-          type: "purchase",
-          quantity: Number(r.adet),
-          unitPrice: Number(r.fiyat),
-          currency: r.currency,
-          fxRate: r.currency === "TRY" ? 1 : fx,
-          totalTRY,
-          amount: totalTRY, // 🔥 KRİTİK
-          invoiceDate: header.tarih || null,
-          invoiceNo: header.belgeNo || "",
-          orderNo: header.siparisNo || "",
-          note: header.aciklama || "",
-        }),
+      // 🔑 BACKEND İLE BİREBİR UYUMLU ITEM
+      items.push({
+        productId,
+        quantity: Number(r.adet),
+        unitPrice: Number(r.fiyat),
+        currency: r.currency || "TRY",
+        fxRate:
+          r.currency === "USD"
+            ? Number(manualRates.USD || rates.USD || 1)
+            : r.currency === "EUR"
+            ? Number(manualRates.EUR || rates.EUR || 1)
+            : 1,
       });
-
-      // 🔹 Stok güncelle
-      const resStock = await fetch("/api/urunler/update-stock", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          productId,
-          delta: Number(r.adet),
-          reason: "purchase",
-        }),
-      });
-
-      const stockResult = await resStock.json();
-      if (!resStock.ok) {
-        console.error("❌ Stok güncellenmedi:", stockResult);
-        throw new Error(stockResult.message || "Stok güncellenemedi");
-      }
     }
 
-    alert("✅ Ürün alışı kaydedildi!");
+    if (items.length === 0) {
+      alert("⚠️ Alış kalemi yok");
+      return;
+    }
+
+    // 🔥 TEK MERKEZ API – FINAL PAYLOAD
+    const res = await fetch("/api/purchases/create", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        accountId: cariId,                 // ✅ DÜZELTİLDİ
+        invoiceDate: header.tarih || null, // ✅ EKLENDİ
+        invoiceNo: header.belgeNo || "",   // ✅ EKLENDİ
+        orderNo: header.siparisNo || "",   // ✅ EKLENDİ
+        note: header.aciklama || "",
+        items,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert(data.message || "Alış kaydedilemedi");
+      return;
+    }
+
+    alert("✅ Ürün alışı başarıyla kaydedildi!");
     setRows([{ ...emptyRow }]);
 
   } catch (err) {
     console.error("Alış kaydetme hatası:", err);
-    alert("Alış kaydedilirken bir hata oluştu, konsolu kontrol edin.");
+    alert("Alış kaydedilirken hata oluştu");
   }
 };
-
 
 
   // 🧾 PDF – Ürün Alış Fişi (A4 Dikey)

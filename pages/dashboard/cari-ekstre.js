@@ -1,7 +1,6 @@
-// 📁 /pages/dashboard/cari-ekstre.js
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import * as XLSX from "xlsx";
-import jsPDF from "jspdf";
+import { registerFont } from "@/utils/pdfFont";
 
 
 export default function CariEkstresi() {
@@ -20,9 +19,7 @@ export default function CariEkstresi() {
   const [dateTo, setDateTo] = useState(new Date().toISOString().slice(0, 10));
 
   const token =
-    typeof window !== "undefined"
-      ? localStorage.getItem("token")
-      : null;
+    typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
   useEffect(() => {
     fetchCariler();
@@ -37,42 +34,34 @@ export default function CariEkstresi() {
   };
 
   const fetchEkstre = async () => {
-  if (!seciliCariId) {
-    alert("Lütfen cari seçiniz");
-    return;
-  }
-
-  // 🔥 state temizle (önemli)
-  setRows([]);
-  setBakiye(0);
-
-  try {
-    const res = await fetch(
-      `/api/cari/ekstre?accountId=${seciliCariId}&start=${dateFrom}&end=${dateTo}`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Cache-Control": "no-cache",
-          Pragma: "no-cache",
-        },
-      }
-    );
-
-    if (!res.ok) {
-      console.error("Ekstre fetch hatası:", res.status);
+    if (!seciliCariId) {
+      alert("Lütfen cari seçiniz");
       return;
     }
 
-    const data = await res.json();
-    if (data.success) {
-      setRows(data.rows || []);
-      setBakiye(data.bakiye || 0);
+    setRows([]);
+    setBakiye(0);
+
+    try {
+      const res = await fetch(
+        `/api/cari/ekstre?accountId=${seciliCariId}&start=${dateFrom}&end=${dateTo}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Cache-Control": "no-cache",
+          },
+        }
+      );
+
+      const data = await res.json();
+      if (data.success) {
+        setRows(data.rows || []);
+        setBakiye(data.bakiye || 0);
+      }
+    } catch (err) {
+      console.error("Ekstre alınamadı:", err);
     }
-  } catch (err) {
-    console.error("Ekstre alınamadı:", err);
-  }
-};
+  };
 
   useEffect(() => {
     const c = cariler.find((x) => x._id === seciliCariId);
@@ -86,33 +75,67 @@ export default function CariEkstresi() {
     });
 
   const exportPDF = async () => {
-  const { default: autoTable } = await import("jspdf-autotable");
+  // 🔥 jsPDF ve autoTable birlikte import
+  const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+    import("jspdf"),
+    import("jspdf-autotable"),
+  ]);
 
   const doc = new jsPDF("p", "pt", "a4");
 
-  doc.text("Cari Ekstresi", 40, 40);
-  doc.text(`Cari: ${seciliCari?.ad || "-"}`, 40, 60);
-  doc.text(`Tarih: ${dateFrom} - ${dateTo}`, 40, 80);
+  registerFont(doc); // ✅ TÜRKÇE FONT
+
+  doc.setFont("DejaVu");
+doc.setFontSize(14);
+doc.text(
+  `Cari Ekstresi – ${seciliCari?.ad || ""}`,
+  40,
+  40
+);
+
+doc.setFontSize(11);
+doc.text(
+  `Tarih Aralığı: ${dateFrom} - ${dateTo}`,
+  40,
+  60
+);
+
 
   autoTable(doc, {
-    startY: 100,
-    head: [["Tarih", "Açıklama", "Borç", "Alacak", "Bakiye"]],
-    body: rows.map((r) => [
-      new Date(r.date).toLocaleDateString("tr-TR"),
-      r.description || "-",
-      (r.borc ?? 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 }),
-      (r.alacak ?? 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 }),
-      (r.bakiye ?? 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 }),
-    ]),
-  });
+  startY: 80,
+  head: [["Tarih", "Açıklama", "Borç", "Alacak", "Bakiye"]],
+  body: rows.map((r) => [
+    r?.tarih ? new Date(r.tarih).toLocaleDateString("tr-TR") : "-",
+    r?.aciklama || "-",
+    tl(r?.borc || 0),
+    tl(r?.alacak || 0),
+    tl(r?.bakiye || 0),
+  ]),
+  styles: {
+    font: "DejaVu",
+    fontSize: 10,
+    halign: "right",
+  },
+  headStyles: {
+    font: "DejaVu",
+    halign: "center",
+    fillColor: [255, 153, 0],
+  },
+  columnStyles: {
+    0: { halign: "center" },
+    1: { halign: "left" },
+  },
+  margin: { left: 40, right: 40 },
+});
 
   doc.save(`cari-ekstre_${seciliCari?.ad || "cari"}.pdf`);
 };
 
+
   const exportExcel = () => {
     const excelRows = rows.map((r) => ({
-      Tarih: new Date(r.date).toLocaleDateString("tr-TR"),
-      Açıklama: r.description || "-",
+      Tarih: r.tarih ? new Date(r.tarih).toLocaleDateString("tr-TR") : "-",
+      Açıklama: r.aciklama || "-",
       Borç: r.borc,
       Alacak: r.alacak,
       Bakiye: r.bakiye,
@@ -130,7 +153,6 @@ export default function CariEkstresi() {
         📄 Cari Ekstresi
       </h1>
 
-      {/* Filtre */}
       <div className="bg-white p-4 rounded-xl shadow grid grid-cols-12 gap-3">
         <select
           className="input col-span-4"
@@ -158,20 +180,15 @@ export default function CariEkstresi() {
           onChange={(e) => setDateTo(e.target.value)}
         />
 
-        <button
-          onClick={fetchEkstre}
-          className="btn-primary col-span-2"
-        >
+        <button onClick={fetchEkstre} className="btn-primary col-span-2">
           🔍 Getir
         </button>
       </div>
 
-      {/* Özet */}
       <div className="grid grid-cols-12 gap-4">
         <Card title="Bakiye" value={tl(bakiye)} />
       </div>
 
-      {/* İşlem Butonları */}
       <div className="flex gap-2">
         <button className="btn-gray" onClick={exportExcel}>
           📥 Excel
@@ -181,38 +198,33 @@ export default function CariEkstresi() {
         </button>
       </div>
 
-      {/* Tablo */}
       <div className="bg-white rounded-xl shadow overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-orange-100">
             <tr>
-              <th>Tarih</th>
-              <th>Açıklama</th>
-              <th>Borç</th>
-              <th>Alacak</th>
-              <th>Bakiye</th>
+              <th className="px-3 py-2 text-left">Tarih</th>
+              <th className="px-3 py-2 text-left">Açıklama</th>
+              <th className="px-3 py-2 text-right">Borç</th>
+              <th className="px-3 py-2 text-right">Alacak</th>
+              <th className="px-3 py-2 text-right">Bakiye</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
-              <tr key={i} className="border-b hover:bg-slate-50">
-                <td>{new Date(r.date).toLocaleDateString("tr-TR")}</td>
-                <td>{r.description}</td>
-                <td>{tl(r.borc)}</td>
-                <td>{tl(r.alacak)}</td>
-                <td>{tl(r.bakiye)}</td>
-              </tr>
-            ))}
-            {rows.length === 0 && (
-              <tr>
-                <td
-                  colSpan={5}
-                  className="text-center p-3 text-gray-500"
-                >
-                  Kayıt yok
+            {rows.map((row, i) => (
+              <tr key={row._id || i} className="border-b">
+                <td className="px-3 py-2">
+                  {row.tarih
+                    ? new Date(row.tarih).toLocaleDateString("tr-TR")
+                    : "-"}
+                </td>
+                <td className="px-3 py-2">{row.aciklama || "-"}</td>
+                <td className="px-3 py-2 text-right">{tl(row.borc)}</td>
+                <td className="px-3 py-2 text-right">{tl(row.alacak)}</td>
+                <td className="px-3 py-2 text-right font-bold">
+                  {tl(row.bakiye)}
                 </td>
               </tr>
-            )}
+            ))}
           </tbody>
         </table>
       </div>

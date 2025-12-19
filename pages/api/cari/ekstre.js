@@ -11,6 +11,7 @@ export default async function handler(req, res) {
   try {
     await dbConnect();
 
+    // 🔐 Token kontrol
     const auth = req.headers.authorization || "";
     const token = auth.replace("Bearer ", "");
     if (!token) {
@@ -25,50 +26,58 @@ export default async function handler(req, res) {
       return res.status(400).json({ message: "accountId zorunlu" });
     }
 
+    // 🔎 FİLTRE
     const filter = {
       accountId: new mongoose.Types.ObjectId(accountId),
     };
 
     if (start || end) {
-      filter.createdAt = {};
-      if (start) filter.createdAt.$gte = new Date(start);
+      filter.date = {};
+      if (start) filter.date.$gte = new Date(start);
       if (end) {
         const endDate = new Date(end);
-        endDate.setHours(23, 59, 59, 999);
-        filter.createdAt.$lte = endDate;
+        endDate.setHours(23, 59, 59, 999); // 🔥 KRİTİK
+        filter.date.$lte = endDate;
       }
     }
 
-    const txs = await Transaction.find(filter).sort({ createdAt: 1 });
+    // 📥 TRANSACTIONLAR
+    const txs = await Transaction.find(filter).sort({ date: 1 });
 
     let bakiye = 0;
 
     const rows = txs.map((t) => {
-      if (t.type === "purchase" || t.type === "payment") {
-        bakiye -= Number(t.totalTRY || 0);
-      }
-      if (t.type === "sale" || t.type === "collection") {
-        bakiye += Number(t.totalTRY || 0);
-      }
+      const tutar = Number(t.amount || t.totalTRY || 0);
+
+      const borc =
+        t.type === "purchase" || t.type === "sale" ? tutar : 0;
+
+      const alacak =
+        t.type === "payment" || t.type === "collection" ? tutar : 0;
+
+      bakiye += borc - alacak;
 
       return {
         _id: t._id,
-        tarih: t.createdAt,
-        tur: t.type,
-        tutar: Number(t.totalTRY || 0),
+        tarih: t.date,
+        aciklama:
+          t.description ||
+          t.note ||
+          t.invoiceNo ||
+          "",
+        borc,
+        alacak,
         bakiye,
-        aciklama: t.note || "",
-        belgeNo: t.invoiceNo || "",
       };
     });
 
-    res.json({
+    return res.json({
       success: true,
       rows,
       bakiye,
     });
   } catch (err) {
     console.error("Cari ekstre hata:", err);
-    res.status(500).json({ message: "Cari ekstre alınamadı" });
+    return res.status(500).json({ message: "Cari ekstre alınamadı" });
   }
 }
