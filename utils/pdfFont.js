@@ -1,8 +1,14 @@
-// utils/pdfFont.js
-import DejaVuBase64 from "@/utils/fonts/DejaVuSans.base64";
+// /utils/pdfFont.js
+import RobotoRegularBase64 from "@/utils/robotoRegularBase64";
+
+let registered = false;
 
 export function registerFont(doc) {
-  doc.addFileToVFS("DejaVu.ttf", DejaVuBase64);
-  doc.addFont("DejaVu.ttf", "DejaVu", "normal");
-  doc.setFont("DejaVu");
+  // aynı dokümana tekrar tekrar eklemeyelim
+  if (!registered) {
+    doc.addFileToVFS("Roboto-Regular.ttf", RobotoRegularBase64);
+    doc.addFont("Roboto-Regular.ttf", "Roboto", "normal");
+    registered = true;
+  }
+  doc.setFont("Roboto");
 }

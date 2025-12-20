@@ -39,6 +39,7 @@
     "next-cloudinary": "^6.17.5",
     "nodemailer": "^7.0.7",
     "nookies": "^2.5.2",
+    "pdfkit": "^0.17.2",
     "postcss": "^8.4.47",
     "qrcode": "^1.5.4",
     "react": "19.0.0",

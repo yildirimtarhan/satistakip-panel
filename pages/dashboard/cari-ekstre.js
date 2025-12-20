@@ -1,242 +1,369 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
+import Cookies from "js-cookie";
 import { registerFont } from "@/utils/pdfFont";
 
+const toNumber = (v) => {
+  if (v === null || v === undefined) return 0;
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
 
-export default function CariEkstresi() {
-  const [cariler, setCariler] = useState([]);
-  const [seciliCariId, setSeciliCariId] = useState("");
-  const [seciliCari, setSeciliCari] = useState(null);
+  let s = String(v).trim();
+  if (!s) return 0;
 
-  const [rows, setRows] = useState([]);
-  const [bakiye, setBakiye] = useState(0);
+  // ₺, boşluk vs temizle
+  s = s.replaceAll("₺", "").replace(/\s/g, "");
 
-  const [dateFrom, setDateFrom] = useState(
-    new Date(new Date().setMonth(new Date().getMonth() - 1))
-      .toISOString()
-      .slice(0, 10)
-  );
-  const [dateTo, setDateTo] = useState(new Date().toISOString().slice(0, 10));
+  // TR format: 2.000,00 -> 2000.00
+  if (s.includes(",")) {
+    s = s.replace(/\./g, "").replace(",", ".");
+  } else {
+    // 2.000 -> 2000 (binlik ayırıcı olabilir)
+    const dotCount = (s.match(/\./g) || []).length;
+    if (dotCount > 1) s = s.replace(/\./g, "");
+  }
 
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+};
 
-  useEffect(() => {
-    fetchCariler();
-  }, []);
+const tl = (v) =>
+  toNumber(v).toLocaleString("tr-TR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 
-  const fetchCariler = async () => {
-    const res = await fetch("/api/cari", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await res.json();
-    setCariler(Array.isArray(data) ? data : []);
-  };
+const fmtDate = (d) => {
+  if (!d) return "-";
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return "-";
+  return dt.toLocaleDateString("tr-TR");
+};
 
-  const fetchEkstre = async () => {
-    if (!seciliCariId) {
-      alert("Lütfen cari seçiniz");
-      return;
-    }
-
-    setRows([]);
-    setBakiye(0);
-
-    try {
-      const res = await fetch(
-        `/api/cari/ekstre?accountId=${seciliCariId}&start=${dateFrom}&end=${dateTo}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Cache-Control": "no-cache",
-          },
-        }
-      );
-
-      const data = await res.json();
-      if (data.success) {
-        setRows(data.rows || []);
-        setBakiye(data.bakiye || 0);
-      }
-    } catch (err) {
-      console.error("Ekstre alınamadı:", err);
-    }
-  };
-
-  useEffect(() => {
-    const c = cariler.find((x) => x._id === seciliCariId);
-    setSeciliCari(c || null);
-  }, [seciliCariId, cariler]);
-
-  const tl = (n) =>
-    Number(n || 0).toLocaleString("tr-TR", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-
-  const exportPDF = async () => {
-  // 🔥 jsPDF ve autoTable birlikte import
-  const [{ jsPDF }, { default: autoTable }] = await Promise.all([
-    import("jspdf"),
-    import("jspdf-autotable"),
-  ]);
-
-  const doc = new jsPDF("p", "pt", "a4");
-
-  registerFont(doc); // ✅ TÜRKÇE FONT
-
-  doc.setFont("DejaVu");
-doc.setFontSize(14);
-doc.text(
-  `Cari Ekstresi – ${seciliCari?.ad || ""}`,
-  40,
-  40
-);
-
-doc.setFontSize(11);
-doc.text(
-  `Tarih Aralığı: ${dateFrom} - ${dateTo}`,
-  40,
-  60
-);
-
-
-  autoTable(doc, {
-  startY: 80,
-  head: [["Tarih", "Açıklama", "Borç", "Alacak", "Bakiye"]],
-  body: rows.map((r) => [
-    r?.tarih ? new Date(r.tarih).toLocaleDateString("tr-TR") : "-",
-    r?.aciklama || "-",
-    tl(r?.borc || 0),
-    tl(r?.alacak || 0),
-    tl(r?.bakiye || 0),
-  ]),
-  styles: {
-    font: "DejaVu",
-    fontSize: 10,
-    halign: "right",
-  },
-  headStyles: {
-    font: "DejaVu",
-    halign: "center",
-    fillColor: [255, 153, 0],
-  },
-  columnStyles: {
-    0: { halign: "center" },
-    1: { halign: "left" },
-  },
-  margin: { left: 40, right: 40 },
+// API farklı alanlarla dönse bile tek formata sok
+const normalizeRow = (r) => ({
+  tarih: r.tarih || r.date || r.createdAt || r.at || null,
+  aciklama: r.aciklama || r.description || r.note || r.title || "-",
+  borc: r.borc ?? r.debit ?? 0,
+  alacak: r.alacak ?? r.credit ?? 0,
+  bakiye: r.bakiye ?? r.balance ?? 0,
 });
 
-  doc.save(`cari-ekstre_${seciliCari?.ad || "cari"}.pdf`);
+export default function CariEkstrePage() {
+  const [token, setToken] = useState("");
+  const [cariler, setCariler] = useState([]);
+  const [accountId, setAccountId] = useState("");
+  const [rows, setRows] = useState([]);
+  const openPDF = () => {
+  const token =
+    Cookies.get("token") || localStorage.getItem("token") || "";
+
+  const url = `/api/cari/ekstre-pdf?accountId=${accountId}&start=${dateFrom}&end=${dateTo}`;
+
+  window.open(url, "_blank", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
 };
 
 
-  const exportExcel = () => {
-    const excelRows = rows.map((r) => ({
-      Tarih: r.tarih ? new Date(r.tarih).toLocaleDateString("tr-TR") : "-",
-      Açıklama: r.aciklama || "-",
-      Borç: r.borc,
-      Alacak: r.alacak,
-      Bakiye: r.bakiye,
-    }));
+  // date input: YYYY-MM-DD
+  const today = new Date();
+  const isoToday = today.toISOString().slice(0, 10);
 
-    const ws = XLSX.utils.json_to_sheet(excelRows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Ekstre");
-    XLSX.writeFile(wb, "cari-ekstre.xlsx");
+  const [dateFrom, setDateFrom] = useState(
+    new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10)
+  );
+  const [dateTo, setDateTo] = useState(isoToday);
+
+  useEffect(() => {
+    const t = Cookies.get("token") || localStorage.getItem("token") || "";
+    setToken(t);
+
+    const fetchCariler = async () => {
+      try {
+        const res = await fetch("/api/cari", {
+          headers: t ? { Authorization: `Bearer ${t}` } : {},
+        });
+        const data = await res.json();
+        const list = Array.isArray(data) ? data : data?.cariler || [];
+        setCariler(list);
+
+        if (list.length && !accountId) setAccountId(list[0]._id);
+      } catch (e) {
+        console.error("Cariler alınamadı:", e);
+      }
+    };
+
+    fetchCariler();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const seciliCari = useMemo(
+    () => cariler.find((c) => c._id === accountId) || null,
+    [cariler, accountId]
+  );
+
+  const computedRows = useMemo(() => rows.map(normalizeRow), [rows]);
+
+  const toplamBorc = useMemo(
+    () => computedRows.reduce((a, r) => a + toNumber(r.borc), 0),
+    [computedRows]
+  );
+  const toplamAlacak = useMemo(
+    () => computedRows.reduce((a, r) => a + toNumber(r.alacak), 0),
+    [computedRows]
+  );
+  const sonBakiye = useMemo(() => {
+    if (!computedRows.length) return 0;
+    return toNumber(computedRows[computedRows.length - 1].bakiye);
+  }, [computedRows]);
+
+  const fetchEkstre = async () => {
+    if (!accountId) return;
+
+    try {
+      const qs = new URLSearchParams({
+        accountId,
+        start: dateFrom,
+        end: dateTo,
+      });
+
+      const res = await fetch(`/api/cari/ekstre?${qs.toString()}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+
+      const data = await res.json();
+
+      // esnek okuma
+      const list =
+        data?.rows ||
+        data?.transactions ||
+        data?.items ||
+        (Array.isArray(data) ? data : []);
+
+      setRows(Array.isArray(list) ? list : []);
+    } catch (e) {
+      console.error("Ekstre alınamadı:", e);
+      setRows([]);
+    }
   };
 
+  const exportExcel = () => {
+    const out = computedRows.map((r) => ({
+      Tarih: fmtDate(r.tarih),
+      Açıklama: r.aciklama || "-",
+      Borç: toNumber(r.borc),
+      Alacak: toNumber(r.alacak),
+      Bakiye: toNumber(r.bakiye),
+    }));
+
+    // toplam satırı
+    out.push({
+      Tarih: "",
+      Açıklama: "TOPLAM",
+      Borç: toplamBorc,
+      Alacak: toplamAlacak,
+      Bakiye: sonBakiye,
+    });
+
+    const ws = XLSX.utils.json_to_sheet(out);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Cari Ekstresi");
+
+    XLSX.writeFile(
+      wb,
+      `cari-ekstre_${(seciliCari?.ad || "cari").replaceAll(" ", "_")}.xlsx`
+    );
+  };
+
+  const exportPDF = async () => {
+  try {
+    const [{ jsPDF }, autoTableMod] = await Promise.all([
+      import("jspdf"),
+      import("jspdf-autotable"),
+    ]);
+
+    const autoTable = autoTableMod.default || autoTableMod;
+    const doc = new jsPDF("p", "pt", "a4");
+
+    // Başlık
+    doc.setFontSize(14);
+    doc.text("Cari Ekstresi", 40, 40);
+
+    doc.setFontSize(11);
+    doc.text(`Cari: ${seciliCari?.ad || ""}`, 40, 60);
+    doc.text(`Tarih Aralığı: ${dateFrom} - ${dateTo}`, 40, 78);
+
+    const body = [
+      ...rows.map((r) => [
+        fmtDate(r.tarih),
+        r.aciklama || "-",
+        tl(r.borc),
+        tl(r.alacak),
+        tl(r.bakiye),
+      ]),
+      ["", "TOPLAM", tl(toplamBorc), tl(toplamAlacak), tl(sonBakiye)],
+    ];
+
+    autoTable(doc, {
+      startY: 100,
+      head: [["Tarih", "Açıklama", "Borç", "Alacak", "Bakiye"]],
+      body,
+
+      styles: {
+        fontSize: 10,
+        cellPadding: 6,
+        overflow: "linebreak",
+        halign: "right",
+      },
+
+      headStyles: {
+        halign: "center",
+      },
+
+      columnStyles: {
+        0: { halign: "center", cellWidth: 80 },
+        1: { halign: "left", cellWidth: 200 },
+        2: { halign: "right", cellWidth: 80 },
+        3: { halign: "right", cellWidth: 80 },
+        4: { halign: "right", cellWidth: 80 },
+      },
+
+      margin: { left: 40, right: 40 },
+    });
+
+    doc.save(`cari-ekstre-${seciliCari?.ad || "cari"}.pdf`);
+  } catch (err) {
+    console.error("PDF oluşturma hatası:", err);
+    alert("PDF oluşturulamadı. Konsolu kontrol et.");
+  }
+};
+
+
   return (
-    <div className="p-6 space-y-4">
-      <h1 className="text-2xl font-bold text-orange-600 text-center">
-        📄 Cari Ekstresi
-      </h1>
+    <div className="p-6">
+      <h1 className="text-xl font-bold mb-4">📄 Cari Ekstresi</h1>
 
-      <div className="bg-white p-4 rounded-xl shadow grid grid-cols-12 gap-3">
-        <select
-          className="input col-span-4"
-          value={seciliCariId}
-          onChange={(e) => setSeciliCariId(e.target.value)}
+      {/* Filtreler */}
+      <div className="flex flex-wrap gap-2 items-end bg-white border rounded p-3 mb-4">
+        <div className="min-w-[280px]">
+          <label className="text-xs text-gray-500">Cari</label>
+          <select
+            className="w-full border rounded px-3 py-2"
+            value={accountId}
+            onChange={(e) => setAccountId(e.target.value)}
+          >
+            {cariler.map((c) => (
+              <option key={c._id} value={c._id}>
+                {c.ad}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="text-xs text-gray-500">Başlangıç</label>
+          <input
+            type="date"
+            className="border rounded px-3 py-2"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+          />
+        </div>
+
+        <div>
+          <label className="text-xs text-gray-500">Bitiş</label>
+          <input
+            type="date"
+            className="border rounded px-3 py-2"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+          />
+        </div>
+
+        <button
+          onClick={fetchEkstre}
+          className="bg-orange-500 text-white px-4 py-2 rounded"
         >
-          <option value="">Cari Seç</option>
-          {cariler.map((c) => (
-            <option key={c._id} value={c._id}>
-              {c.ad}
-            </option>
-          ))}
-        </select>
-
-        <input
-          type="date"
-          className="input col-span-3"
-          value={dateFrom}
-          onChange={(e) => setDateFrom(e.target.value)}
-        />
-        <input
-          type="date"
-          className="input col-span-3"
-          value={dateTo}
-          onChange={(e) => setDateTo(e.target.value)}
-        />
-
-        <button onClick={fetchEkstre} className="btn-primary col-span-2">
           🔍 Getir
         </button>
       </div>
 
-      <div className="grid grid-cols-12 gap-4">
-        <Card title="Bakiye" value={tl(bakiye)} />
+      {/* Özet */}
+      <div className="bg-white border rounded p-4 mb-3">
+        <div className="text-sm text-gray-500 text-center">Bakiye</div>
+        <div className="text-2xl font-bold text-center">{tl(sonBakiye)}</div>
       </div>
 
-      <div className="flex gap-2">
-        <button className="btn-gray" onClick={exportExcel}>
+      {/* Aksiyonlar */}
+      <div className="flex gap-2 mb-3">
+        <button
+          onClick={exportExcel}
+          className="bg-gray-100 border px-4 py-2 rounded"
+          disabled={!computedRows.length}
+        >
           📥 Excel
         </button>
-        <button className="btn-gray" onClick={exportPDF}>
-          📄 PDF
-        </button>
+
+        <button
+  onClick={openPDF}
+  className="bg-gray-100 border px-4 py-2 rounded"
+  disabled={!rows.length}
+>
+  🧾 PDF
+</button>
+
       </div>
 
-      <div className="bg-white rounded-xl shadow overflow-x-auto">
+      {/* Tablo */}
+      <div className="bg-white border rounded overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-orange-100">
             <tr>
-              <th className="px-3 py-2 text-left">Tarih</th>
-              <th className="px-3 py-2 text-left">Açıklama</th>
-              <th className="px-3 py-2 text-right">Borç</th>
-              <th className="px-3 py-2 text-right">Alacak</th>
-              <th className="px-3 py-2 text-right">Bakiye</th>
+              <th className="text-left p-2">Tarih</th>
+              <th className="text-left p-2">Açıklama</th>
+              <th className="text-right p-2">Borç</th>
+              <th className="text-right p-2">Alacak</th>
+              <th className="text-right p-2">Bakiye</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, i) => (
-              <tr key={row._id || i} className="border-b">
-                <td className="px-3 py-2">
-                  {row.tarih
-                    ? new Date(row.tarih).toLocaleDateString("tr-TR")
-                    : "-"}
-                </td>
-                <td className="px-3 py-2">{row.aciklama || "-"}</td>
-                <td className="px-3 py-2 text-right">{tl(row.borc)}</td>
-                <td className="px-3 py-2 text-right">{tl(row.alacak)}</td>
-                <td className="px-3 py-2 text-right font-bold">
-                  {tl(row.bakiye)}
-                </td>
+            {computedRows.map((r, i) => (
+              <tr key={i} className="border-t">
+                <td className="p-2">{fmtDate(r.tarih)}</td>
+                <td className="p-2">{r.aciklama || "-"}</td>
+                <td className="p-2 text-right">{tl(r.borc)}</td>
+                <td className="p-2 text-right">{tl(r.alacak)}</td>
+                <td className="p-2 text-right font-medium">{tl(r.bakiye)}</td>
               </tr>
             ))}
+
+            {!!computedRows.length && (
+              <tr className="border-t bg-orange-50">
+                <td className="p-2 font-bold" colSpan={2}>
+                  TOPLAM
+                </td>
+                <td className="p-2 text-right font-bold text-red-600">
+                  {tl(toplamBorc)}
+                </td>
+                <td className="p-2 text-right font-bold text-green-600">
+                  {tl(toplamAlacak)}
+                </td>
+                <td className="p-2 text-right font-bold">{tl(sonBakiye)}</td>
+              </tr>
+            )}
+
+            {!computedRows.length && (
+              <tr>
+                <td className="p-4 text-center text-gray-500" colSpan={5}>
+                  Kayıt yok.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
-    </div>
-  );
-}
-
-function Card({ title, value }) {
-  return (
-    <div className="col-span-12 bg-white rounded-xl shadow p-4 text-center">
-      <p className="text-gray-500 text-xs">{title}</p>
-      <p className="text-2xl font-bold">{value}</p>
     </div>
   );
 }
