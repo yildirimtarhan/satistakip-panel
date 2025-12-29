@@ -1,156 +1,121 @@
-import PDFDocument from "pdfkit";
-import fs from "fs";
-import path from "path";
+import dbConnect from "@/lib/dbConnect";
+import Cari from "@/models/Cari";
+import Transaction from "@/models/Transaction";
 import jwt from "jsonwebtoken";
-import clientPromise from "@/lib/mongodb";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 export default async function handler(req, res) {
+  if (req.method !== "GET") {
+    return res.status(405).json({ message: "Sadece GET desteklenir" });
+  }
+
   try {
     // 🔐 TOKEN
-   
-function getTokenFromCookie(req) {
-  const cookie = req.headers.cookie || "";
-  const match = cookie.match(/token=([^;]+)/);
-  return match ? match[1] : null;
-}
+    const auth = req.headers.authorization;
+    if (!auth) {
+      return res.status(401).json({ message: "Yetkisiz" });
+    }
 
-const token = getTokenFromCookie(req);
+    const token = auth.split(" ")[1];
+    jwt.verify(token, process.env.JWT_SECRET);
 
-if (!token) {
-  return res.status(401).json({ message: "Token yok" });
-}
-
-let decoded;
-try {
-  decoded = jwt.verify(token, process.env.JWT_SECRET);
-} catch {
-  return res.status(401).json({ message: "Geçersiz token" });
-}
-
+    // 🔌 DB
+    await dbConnect();
 
     const { accountId, start, end } = req.query;
     if (!accountId || !start || !end) {
-      return res.status(400).json({ message: "Eksik parametre" });
+      return res.status(400).json({ message: "Parametre eksik" });
     }
 
-    // 🗄️ DB
-    const client = await clientPromise;
-    const db = client.db();
+    // 📄 Cari
+    const cari = await Cari.findById(accountId);
+    if (!cari) {
+      return res.status(404).json({ message: "Cari bulunamadı" });
+    }
 
-    const cari = await db.collection("cariler").findOne({ _id: accountId });
-    const rows = await db
-      .collection("cariTransactions")
-      .find({
-        accountId,
-        tarih: { $gte: new Date(start), $lte: new Date(end) },
-      })
-      .sort({ tarih: 1 })
-      .toArray();
+    // 📄 Hareketler
+    const rows = await Transaction.find({
+      accountId,
+      date: {
+        $gte: new Date(start),
+        $lte: new Date(end),
+      },
+    }).sort({ date: 1 });
 
-    // 📄 PDF
-    const doc = new PDFDocument({
-      size: "A4",
-      margin: 40,
-    });
+    // 🧾 PDF
+    const doc = new jsPDF("landscape");
 
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      `inline; filename="cari-ekstre-${cari?.ad || "cari"}.pdf"`
-    );
+    doc.setFontSize(14);
+    doc.text("CARİ EKSTRESİ", 14, 15);
 
-    doc.pipe(res);
+    doc.setFontSize(10);
+    doc.text(`Cari: ${cari.name}`, 14, 23);
+    doc.text(`Tarih: ${start} - ${end}`, 14, 29);
 
-    // 🔤 FONT
-    const fontPath = path.join(
-      process.cwd(),
-      "public/fonts/Roboto-Regular.ttf"
-    );
-    doc.registerFont("Roboto", fontPath);
-    doc.font("Roboto");
-
-    // 🧾 BAŞLIK
-    doc.fontSize(14).text("Cari Ekstresi", { align: "left" });
-    doc.moveDown(0.5);
-    doc.fontSize(10).text(`Cari: ${cari?.ad || "-"}`);
-    doc.text(`Tarih Aralığı: ${start} - ${end}`);
-    doc.moveDown(1);
-
-    // 📊 TABLO HEADER
-    const startY = doc.y;
-    const col = {
-      tarih: 40,
-      aciklama: 110,
-      borc: 300,
-      alacak: 380,
-      bakiye: 460,
-    };
-
-    doc.fontSize(10).fillColor("black");
-    doc.text("Tarih", col.tarih, startY);
-    doc.text("Açıklama", col.aciklama, startY);
-    doc.text("Borç", col.borc, startY, { width: 60, align: "right" });
-    doc.text("Alacak", col.alacak, startY, { width: 60, align: "right" });
-    doc.text("Bakiye", col.bakiye, startY, { width: 60, align: "right" });
-
-    doc.moveDown(0.5);
-    doc.moveTo(40, doc.y).lineTo(550, doc.y).stroke();
-    doc.moveDown(0.5);
-
+    let bakiye = 0;
     let toplamBorc = 0;
     let toplamAlacak = 0;
-    let bakiye = 0;
 
-    // 📄 SATIRLAR
-    rows.forEach((r) => {
-      toplamBorc += r.borc || 0;
-      toplamAlacak += r.alacak || 0;
-      bakiye += (r.borc || 0) - (r.alacak || 0);
+    const tableRows = rows.map((r) => {
+      let borc = 0;
+      let alacak = 0;
 
-      doc.text(
-        new Date(r.tarih).toLocaleDateString("tr-TR"),
-        col.tarih,
-        doc.y
-      );
-      doc.text(r.aciklama || "-", col.aciklama, doc.y);
-      doc.text((r.borc || 0).toLocaleString("tr-TR"), col.borc, doc.y, {
-        width: 60,
-        align: "right",
-      });
-      doc.text((r.alacak || 0).toLocaleString("tr-TR"), col.alacak, doc.y, {
-        width: 60,
-        align: "right",
-      });
-      doc.text(bakiye.toLocaleString("tr-TR"), col.bakiye, doc.y, {
-        width: 60,
-        align: "right",
-      });
+      // ✅ BORÇ / ALACAK AYRIMI (EN KRİTİK KISIM)
+      if (r.type === "tahsilat") {
+        alacak = Number(r.amount || 0);
+        bakiye -= alacak;
+        toplamAlacak += alacak;
+      } else if (r.type === "odeme") {
+        borc = Number(r.amount || 0);
+        bakiye += borc;
+        toplamBorc += borc;
+      } else {
+        // eski satış / alış kayıtları
+        borc = Number(r.borc || 0);
+        alacak = Number(r.alacak || 0);
+        bakiye += borc - alacak;
+        toplamBorc += borc;
+        toplamAlacak += alacak;
+      }
 
-      doc.moveDown(0.4);
+      return [
+        new Date(r.date).toLocaleDateString("tr-TR"),
+        r.note || r.description || "-",
+        borc ? borc.toLocaleString("tr-TR", { minimumFractionDigits: 2 }) : "0,00",
+        alacak
+          ? alacak.toLocaleString("tr-TR", { minimumFractionDigits: 2 })
+          : "0,00",
+        bakiye.toLocaleString("tr-TR", { minimumFractionDigits: 2 }),
+      ];
+    });
+
+    autoTable(doc, {
+      startY: 36,
+      head: [["Tarih", "Açıklama", "Borç", "Alacak", "Bakiye"]],
+      body: tableRows,
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [255, 165, 0] },
     });
 
     // 🔢 TOPLAM
-    doc.moveDown(0.5);
-    doc.moveTo(40, doc.y).lineTo(550, doc.y).stroke();
-    doc.moveDown(0.5);
+    const y = doc.lastAutoTable.finalY + 8;
+    doc.setFontSize(10);
+    doc.text(`Toplam Borç: ${toplamBorc.toLocaleString("tr-TR", { minimumFractionDigits: 2 })}`, 14, y);
+    doc.text(
+      `Toplam Alacak: ${toplamAlacak.toLocaleString("tr-TR", { minimumFractionDigits: 2 })}`,
+      80,
+      y
+    );
+    doc.text(`Bakiye: ${bakiye.toLocaleString("tr-TR", { minimumFractionDigits: 2 })}`, 150, y);
 
-    doc.fontSize(10).text("TOPLAM", col.aciklama, doc.y);
-    doc.text(toplamBorc.toLocaleString("tr-TR"), col.borc, doc.y, {
-      width: 60,
-      align: "right",
-    });
-    doc.text(toplamAlacak.toLocaleString("tr-TR"), col.alacak, doc.y, {
-      width: 60,
-      align: "right",
-    });
-    doc.text(bakiye.toLocaleString("tr-TR"), col.bakiye, doc.y, {
-      width: 60,
-      align: "right",
-    });
+    const pdf = doc.output("arraybuffer");
 
-    doc.end();
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", "inline; filename=cari-ekstre.pdf");
+    return res.send(Buffer.from(pdf));
   } catch (err) {
-    console.error("PDF Hatası:", err);
-    res.status(500).json({ message: "PDF oluşturulamadı" });
+    console.error("❌ EKSTRE PDF ERROR:", err);
+    return res.status(500).json({ message: "PDF oluşturulamadı" });
   }
 }

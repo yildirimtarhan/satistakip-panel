@@ -71,14 +71,42 @@ export default function CariTahsilatPage() {
   };
 
   // CARİ BAKİYE
-  const loadBalance = async (id) => {
-    const res = await fetch(`/api/accounts/balance?id=${id}`, {
-      headers: { Authorization: `Bearer ${token}` },
+  // 🧮 CARİ BAKİYE YÜKLE
+const loadBalance = async (id) => {
+  if (!id || !token) {
+    setBalance(0);
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/cari/balance?id=${id}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
     });
 
     const data = await res.json();
-    setBalance(data?.balance ?? 0);
-  };
+
+    if (!res.ok) {
+      console.error("Bakiye alınamadı:", data);
+      setBalance(0);
+      return;
+    }
+
+    // API balance mı, bakiye mi dönüyor → ikisini de yakala
+    const val =
+      typeof data.balance === "number"
+        ? data.balance
+        : typeof data.bakiye === "number"
+        ? data.bakiye
+        : 0;
+
+    setBalance(val);
+  } catch (err) {
+    console.error("Bakiye fetch hatası:", err);
+    setBalance(0);
+  }
+};
 
   // TOKEN GELİNCE VERİLERİ ÇEK
   useEffect(() => {
@@ -89,27 +117,27 @@ export default function CariTahsilatPage() {
   }, [token]);
 
   // FORM GÖNDER
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async () => {
+  setLoading(true);
 
-    if (!form.accountId || !form.amount) {
-      alert("Cari ve tutar alanı zorunludur!");
-      return;
-    }
+  // 🔁 type dönüşümü (ÇOK ÖNEMLİ)
+  const payload = {
+    ...form,
+    type: form.type === "tahsilat" ? "collection" : "payment",
+    amount: Number(form.amount),
+  };
 
-    setLoading(true);
-
+  try {
     const res = await fetch("/api/tahsilat", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(form),
+      body: JSON.stringify(payload),
     });
 
     const data = await res.json();
-
     setLoading(false);
 
     if (!res.ok) {
@@ -119,17 +147,23 @@ export default function CariTahsilatPage() {
 
     alert("Başarıyla kaydedildi!");
 
+    // 🔄 Form reset
     setForm({
       accountId: "",
-      type: "tahsilat",
+      type: "tahsilat", // UI için aynı kalsın
       paymentMethod: "nakit",
       amount: "",
       note: "",
     });
 
     loadList();
-    loadBalance(form.accountId);
-  };
+    loadBalance(payload.accountId);
+  } catch (err) {
+    setLoading(false);
+    alert("Sunucu hatası");
+    console.error(err);
+  }
+};
 
   // PDF MAKBUZ
   const generatePdf = (t) => {
