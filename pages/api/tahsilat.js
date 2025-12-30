@@ -1,8 +1,7 @@
-// pages/api/tahsilat.js
-import jwt from "jsonwebtoken";
 import dbConnect from "@/lib/mongodb";
-import Transaction from "@/models/Transaction";
+import jwt from "jsonwebtoken";
 import Cari from "@/models/Cari";
+import Transaction from "@/models/Transaction";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -10,29 +9,40 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 🔐 TOKEN
+    await dbConnect();
+
+    /* =======================
+       🔐 TOKEN
+    ======================= */
     const auth = req.headers.authorization;
-    if (!auth?.startsWith("Bearer ")) {
+    if (!auth) {
       return res.status(401).json({ message: "Token yok" });
     }
 
-    const token = auth.split(" ")[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    const userId = decoded.userId || decoded.id;
-    if (!userId) {
+    const token = auth.replace("Bearer ", "");
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch {
       return res.status(401).json({ message: "Geçersiz token" });
     }
 
-    await dbConnect();
+    const userId = decoded.id || decoded._id;
+    const companyId = decoded.companyId || decoded.firmaId || null;
 
+    if (!userId) {
+      return res.status(401).json({ message: "Kullanıcı bulunamadı" });
+    }
+
+    /* =======================
+       📥 BODY
+    ======================= */
     const {
       accountId,
-      type,           // "tahsilat" | "odeme"
-      amount,
+      type, // "tahsilat" | "odeme"
       paymentMethod,
+      amount,
       note,
-      date,
     } = req.body;
 
     if (!accountId || !type || !amount) {
@@ -40,41 +50,63 @@ export default async function handler(req, res) {
     }
 
     if (!["tahsilat", "odeme"].includes(type)) {
-      return res.status(400).json({ message: "Geçersiz işlem tipi" });
+      return res.status(400).json({ message: "Geçersiz işlem türü" });
     }
 
-    const cari = await Cari.findOne({ _id: accountId, userId });
+    const tutar = Number(amount);
+    if (isNaN(tutar) || tutar <= 0) {
+      return res.status(400).json({ message: "Geçersiz tutar" });
+    }
+
+    /* =======================
+       🧾 CARİ BUL
+    ======================= */
+    const cari = await Cari.findOne({
+      _id: accountId,
+      ...(companyId ? { companyId } : {}),
+    });
+
     if (!cari) {
       return res.status(404).json({ message: "Cari bulunamadı" });
     }
 
-    const tutar = Number(amount);
-    let bakiye = cari.balance || 0;
+    /* =======================
+       💰 BAKİYE HESABI
+       tahsilat → borç AZALIR
+       ödeme    → borç ARTAR
+    ======================= */
+    const bakiyeDegisim = type === "tahsilat" ? -tutar : tutar;
 
-    if (type === "tahsilat") bakiye -= tutar;
-    else bakiye += tutar;
+    cari.bakiye = Number(cari.bakiye || 0) + bakiyeDegisim;
+    cari.updatedAt = new Date();
+    await cari.save();
 
+    /* =======================
+       📚 EKSTRE (Transaction)
+    ======================= */
     const trx = await Transaction.create({
       userId,
+      companyId,
       accountId,
-      type,
-      amount: tutar,
+      type,                 // tahsilat | odeme
       paymentMethod,
-      note,
-      date: date ? new Date(date) : new Date(),
+      amount: tutar,
+      currency: "TRY",
+      date: new Date(),
+      note: note || "",
     });
-
-    cari.balance = bakiye;
-    await cari.save();
 
     return res.status(200).json({
       success: true,
+      message: "İşlem kaydedildi",
+      bakiye: cari.bakiye,
       transaction: trx,
-      balance: bakiye,
     });
-
   } catch (err) {
-    console.error("TAHSİLAT API ERROR:", err);
-    return res.status(500).json({ message: "Sunucu hatası" });
+    console.error("❌ TAHSİLAT API HATASI:", err);
+    return res.status(500).json({
+      message: "Tahsilat/Ödeme kaydedilemedi",
+      error: err.message,
+    });
   }
 }

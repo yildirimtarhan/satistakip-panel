@@ -62,20 +62,25 @@ export default function UrunAlis() {
 
   // 💱 Kur çek (TCMB)
   const fetchRates = async () => {
-    setLoadingRates(true);
-    try {
-      const r = await fetch("/api/rates/tcmb");
-      const data = await r.json();
-      if (r.ok && data?.rates) {
-        setRates(data.rates);
-      } else {
-        alert("Kur alınamadı");
-      }
-    } catch (err) {
-      console.error("Kur hatası:", err);
+  setLoadingRates(true);
+  try {
+    const r = await fetch("/api/rates/tcmb");
+    const data = await r.json();
+
+    if (data?.USD?.rateSell || data?.EUR?.rateSell) {
+      setRates({
+        USD: data.USD?.rateSell || 0,
+        EUR: data.EUR?.rateSell || 0,
+      });
+    } else {
+      console.warn("Kur yok, manuel girilecek");
     }
-    setLoadingRates(false);
-  };
+  } catch {
+    console.warn("Kur servisi çalışmıyor");
+  }
+  setLoadingRates(false);
+};
+
 
   useEffect(() => {
     fetchRates();

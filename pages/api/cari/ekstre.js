@@ -1,105 +1,124 @@
 import dbConnect from "@/lib/mongodb";
+import jwt from "jsonwebtoken";
 import Transaction from "@/models/Transaction";
 import Cari from "@/models/Cari";
-import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
-    return res.status(405).json({ message: "GET only" });
+    return res.status(405).json({ message: "Sadece GET desteklenir" });
   }
 
   try {
     await dbConnect();
 
-    // 🔐 TOKEN
-    const auth = req.headers.authorization || "";
-    const token = auth.replace("Bearer ", "");
-    if (!token) {
+    /* =======================
+       🔐 TOKEN
+    ======================= */
+    const auth = req.headers.authorization;
+    if (!auth) {
       return res.status(401).json({ message: "Token yok" });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const isAdmin = decoded.role === "admin";
-    const userId = String(decoded.id || decoded._id);
+    const token = auth.replace("Bearer ", "");
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch {
+      return res.status(401).json({ message: "Geçersiz token" });
+    }
 
+    const userId = decoded.id || decoded._id;
+    const companyId = decoded.companyId || decoded.firmaId || null;
+
+    /* =======================
+       📥 PARAMS
+    ======================= */
     const { accountId, start, end } = req.query;
     if (!accountId) {
       return res.status(400).json({ message: "accountId zorunlu" });
     }
 
-    const accountObjectId = new mongoose.Types.ObjectId(accountId);
+    const startDate = start ? new Date(start) : new Date("1970-01-01");
+    const endDate = end ? new Date(end) : new Date();
+    endDate.setHours(23, 59, 59, 999);
 
-    // 🧾 Cari kontrol
-    const cari = await Cari.findById(accountObjectId).lean();
+    /* =======================
+       🧾 CARİ
+    ======================= */
+    const cari = await Cari.findOne({
+      _id: accountId,
+      ...(companyId ? { companyId } : {}),
+    });
+
     if (!cari) {
       return res.status(404).json({ message: "Cari bulunamadı" });
     }
 
-    // 🔐 Yetki
-    if (!isAdmin && String(cari.userId) !== userId) {
-      return res.status(403).json({ message: "Yetkisiz" });
-    }
+    /* =======================
+       📚 TRANSACTIONS
+    ======================= */
+    const txs = await Transaction.find({
+      accountId: new mongoose.Types.ObjectId(accountId),
+      date: { $gte: startDate, $lte: endDate },
+      ...(companyId ? { companyId } : {}),
+    }).sort({ date: 1 });
 
-    // 🔎 FİLTRE
-    const filter = {
-      userId: String(cari.userId), // 🔥 tenant izolasyonu
-      accountId: accountObjectId,
-    };
-
-    if (start || end) {
-      filter.date = {};
-      if (start) filter.date.$gte = new Date(start);
-      if (end) {
-        const e = new Date(end);
-        e.setHours(23, 59, 59, 999);
-        filter.date.$lte = e;
-      }
-    }
-
-    const txs = await Transaction.find(filter).sort({ date: 1 }).lean();
-
+    /* =======================
+       🧮 EKSTRE OLUŞTUR
+    ======================= */
     let bakiye = 0;
-    let toplamBorc = 0;
-    let toplamAlacak = 0;
+    const rows = [];
 
-    const rows = txs.map((t) => {
-      const tutar = Number(t.totalTRY || 0);
-
+    for (const t of txs) {
       let borc = 0;
       let alacak = 0;
 
-      if (t.type === "sale" || t.type === "purchase") {
-        borc = tutar;
-        toplamBorc += borc;
+      if (
+        t.type === "sale" ||
+        t.type === "purchase" ||
+        t.type === "odeme"
+      ) {
+        borc = Number(t.totalTRY || t.amount || 0);
       }
 
-      if (t.type === "payment" || t.type === "collection") {
-        alacak = tutar;
-        toplamAlacak += alacak;
+      if (t.type === "tahsilat") {
+        alacak = Number(t.totalTRY || t.amount || 0);
       }
 
-      bakiye += borc - alacak;
+      bakiye = bakiye + borc - alacak;
 
-      return {
-        _id: t._id,
+      rows.push({
         tarih: t.date,
-        aciklama: t.note || "",
+        aciklama:
+          t.type === "tahsilat"
+            ? "Tahsilat"
+            : t.type === "odeme"
+            ? "Ödeme"
+            : t.type === "sale"
+            ? "Satış"
+            : t.type === "purchase"
+            ? "Alış"
+            : t.type,
         borc,
         alacak,
         bakiye,
-      };
-    });
+        _id: t._id,
+      });
+    }
 
-    return res.json({
-      success: true,
+    return res.status(200).json({
+      cari: {
+        _id: cari._id,
+        ad: cari.ad,
+      },
       rows,
-      bakiye,
-      toplamBorc,
-      toplamAlacak,
     });
   } catch (err) {
-    console.error("🔥 CARİ EKSTRE ERROR:", err);
-    return res.status(500).json({ message: "Cari ekstre alınamadı" });
+    console.error("❌ EKSTRE API HATASI:", err);
+    return res.status(500).json({
+      message: "Cari ekstre alınamadı",
+      error: err.message,
+    });
   }
 }
