@@ -5,12 +5,12 @@ import { useRouter } from "next/router";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import RequireAuth from "@/components/RequireAuth";
 import Cookies from "js-cookie";
+import { CompanyProvider } from "@/context/CompanyContext";
 
 export default function App({ Component, pageProps }) {
   const router = useRouter();
   const isDashboard = router.pathname.startsWith("/dashboard");
 
-  // 🔁 Token yenileme - COOKIE versiyonu
   async function refreshTokenIfNeeded() {
     const token = Cookies.get("token");
     if (!token) return;
@@ -20,7 +20,6 @@ export default function App({ Component, pageProps }) {
       const exp = payload.exp * 1000;
       const now = Date.now();
 
-      // Token bitimine < 1 gün varsa yenile
       if (exp - now < 24 * 60 * 60 * 1000) {
         const res = await fetch("/api/auth/refresh", {
           method: "POST",
@@ -49,17 +48,17 @@ export default function App({ Component, pageProps }) {
     return () => clearInterval(interval);
   }, []);
 
-  // Dashboard sayfalarını sar
   if (isDashboard) {
     return (
-      <RequireAuth cookieMode={true}> 
-        <DashboardLayout>
-          <Component {...pageProps} />
-        </DashboardLayout>
+      <RequireAuth cookieMode={true}>
+        <CompanyProvider>
+          <DashboardLayout>
+            <Component {...pageProps} />
+          </DashboardLayout>
+        </CompanyProvider>
       </RequireAuth>
     );
   }
 
-  // Public sayfalar
   return <Component {...pageProps} />;
 }

@@ -48,15 +48,17 @@ export default async function handler(req, res) {
 
     // 🔥 JWT oluştur
     const token = jwt.sign(
-      {
-        userId: user._id,
-        email: user.email,
-        phone: user.phone,
-        role: user.role,
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
+  {
+    userId: user._id,
+    companyId: user.companyId, // 🔥 SADECE BU SATIR EKLENDİ
+    email: user.email,
+    phone: user.phone,
+    role: user.role,
+  },
+  process.env.JWT_SECRET,
+  { expiresIn: "7d" }
+);
+
 
     return res.status(200).json({
       message: "Giriş başarılı",
