@@ -1,18 +1,33 @@
 "use client";
-import { useState, useEffect } from "react";
+
+import { useEffect, useMemo, useState } from "react";
 import Cookies from "js-cookie";
-import { jsPDF } from "jspdf";
+import RequireAuth from "@/components/RequireAuth";
+
+function safeDecode(token) {
+  try {
+    const payload = token.split(".")[1];
+    return JSON.parse(atob(payload));
+  } catch {
+    return null;
+  }
+}
 
 export default function UrunAlis() {
+  const [token, setToken] = useState("");
+
+  const [role, setRole] = useState(null);
   const [cariler, setCariler] = useState([]);
   const [urunler, setUrunler] = useState([]);
+
   const [cariId, setCariId] = useState("");
+
   const [rates, setRates] = useState({ TRY: 1, USD: 0, EUR: 0 });
   const [manualRates, setManualRates] = useState({ USD: "", EUR: "" });
   const [loadingRates, setLoadingRates] = useState(false);
-  const [token, setToken] = useState("");
 
-  // Üst bilgi (belge başlığı)
+  const [saving, setSaving] = useState(false);
+
   const [header, setHeader] = useState({
     tarih: "",
     belgeNo: "",
@@ -20,736 +35,552 @@ export default function UrunAlis() {
     aciklama: "",
   });
 
-  const emptyRow = {
-    barkod: "",
-    productId: "",
-    ad: "",
-    adet: 1,
-    fiyat: 0,
-    kdv: 20,
-    currency: "TRY",
-  };
+  const emptyRow = useMemo(
+    () => ({
+      productId: "",
+      barkod: "",
+      ad: "",
+      adet: 1,
+      fiyat: 0,
+      currency: "TRY", // TRY | USD | EUR
+    }),
+    []
+  );
 
-  const [rows, setRows] = useState([emptyRow]);
+  const [rows, setRows] = useState([{ ...emptyRow }]);
 
-  // 🔐 Token
+  // Token + role
   useEffect(() => {
-    const t =
-      Cookies.get("token") || localStorage.getItem("token") || "";
-    if (t) setToken(t);
+    const t = Cookies.get("token") || localStorage.getItem("token") || "";
+    setToken(t);
+
+    const decoded = t ? safeDecode(t) : null;
+    setRole(decoded?.role || null);
   }, []);
 
-  // 📥 Cari + Ürünler (YENİ: /api/products/list kullanıyoruz)
+  // Cariler
+  const loadCariler = async (t) => {
+    const res = await fetch("/api/cari", {
+      headers: { Authorization: `Bearer ${t}` },
+    });
+    const data = await res.json();
+    setCariler(Array.isArray(data) ? data : data?.cariler || []);
+  };
+
+  // Ürünler
+  const loadUrunler = async (t) => {
+    const res = await fetch("/api/products/list", {
+      headers: { Authorization: `Bearer ${t}` },
+    });
+    const data = await res.json();
+    // bazı projelerde {products: []} döner
+    const list = Array.isArray(data) ? data : data?.products || [];
+    setUrunler(list);
+  };
+
+  // TCMB kurları
+  const loadRates = async () => {
+    try {
+      setLoadingRates(true);
+      const res = await fetch("/api/rates/tcmb");
+      const data = await res.json();
+      // beklenen: { TRY:1, USD:x, EUR:y } veya { usd, eur }
+      const USD = Number(data?.USD || data?.usd || 0);
+      const EUR = Number(data?.EUR || data?.eur || 0);
+      setRates({ TRY: 1, USD, EUR });
+    } catch (e) {
+      console.error("Kur çekme hatası:", e);
+    } finally {
+      setLoadingRates(false);
+    }
+  };
+
   useEffect(() => {
     if (!token) return;
-
-    // Cariler
-    fetch("/api/cari", {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => r.json())
-      .then((d) => setCariler(Array.isArray(d) ? d : []))
-      .catch((e) => console.error("Cari listesi hatası:", e));
-
-    // Ürünler (Yeni Product modeli)
-    fetch("/api/products/list", {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => r.json())
-      .then((d) => setUrunler(Array.isArray(d) ? d : []))
-      .catch((e) => console.error("Ürün listesi hatası:", e));
+    loadCariler(token);
+    loadUrunler(token);
+    loadRates();
   }, [token]);
 
-  // 💱 Kur çek (TCMB)
-  const fetchRates = async () => {
-  setLoadingRates(true);
-  try {
-    const r = await fetch("/api/rates/tcmb");
-    const data = await r.json();
+  const getFx = (currency) => {
+    if (currency === "TRY") return 1;
 
-    if (data?.USD?.rateSell || data?.EUR?.rateSell) {
-      setRates({
-        USD: data.USD?.rateSell || 0,
-        EUR: data.EUR?.rateSell || 0,
-      });
-    } else {
-      console.warn("Kur yok, manuel girilecek");
-    }
-  } catch {
-    console.warn("Kur servisi çalışmıyor");
-  }
-  setLoadingRates(false);
-};
+    const m =
+      currency === "USD"
+        ? Number(manualRates.USD || 0)
+        : Number(manualRates.EUR || 0);
 
+    if (m && m > 0) return m;
 
-  useEffect(() => {
-    fetchRates();
-  }, []);
-
-  
-
-  // 🔍 Barkoddan ürün bul (barcode + barkod destekli)
-  const handleBarkod = (i, val) => {
-    const copy = [...rows];
-    copy[i].barkod = val;
-
-    const urun = Array.isArray(urunler)
-      ? urunler.find((u) => {
-          const b =
-            (u.barcode || u.barkod || "").toString().trim();
-          return b === val.toString().trim();
-        })
-      : null;
-
-    if (urun) {
-      copy[i].productId = urun._id;
-      copy[i].ad = urun.name || urun.ad || "";
-      // Fiyat & KDV eşleştirme (yeni + eski alanlar)
-      copy[i].fiyat =
-        urun.priceTl ??
-        urun.alisFiyati ??
-        0;
-      copy[i].kdv =
-        urun.vatRate ??
-        urun.kdvOrani ??
-        20;
-      copy[i].currency = "TRY"; // Product model TL bazlı, alış satırında PB yönetiyoruz
-    }
-
-    setRows(copy);
+    const r =
+      currency === "USD"
+        ? Number(rates.USD || 0)
+        : Number(rates.EUR || 0);
+    return r && r > 0 ? r : 1;
   };
 
-  // 🔍 Ürün adından bul (name + ad)
-  const handleUrunAd = (i, val) => {
-    const copy = [...rows];
-    copy[i].ad = val;
-
-    const urun = Array.isArray(urunler)
-      ? urunler.find(
-          (x) =>
-            x.name === val ||
-            x.ad === val
-        )
-      : null;
-
-    if (urun) {
-      copy[i].productId = urun._id;
-      copy[i].barkod = urun.barcode || urun.barkod || "";
-      copy[i].fiyat =
-        urun.priceTl ??
-        urun.alisFiyati ??
-        0;
-      copy[i].kdv =
-        urun.vatRate ??
-        urun.kdvOrani ??
-        20;
-      copy[i].currency = "TRY";
-    }
-
-    setRows(copy);
+  const lineTotalTRY = (r) => {
+    const qty = Number(r.adet || 0);
+    const price = Number(r.fiyat || 0);
+    const fx = getFx(r.currency || "TRY");
+    return qty * price * fx;
   };
+
+  const toplamTRY = useMemo(() => {
+    return rows.reduce((sum, r) => sum + lineTotalTRY(r), 0);
+  }, [rows, rates, manualRates]);
+
+  const updateHeader = (k, v) => setHeader((p) => ({ ...p, [k]: v }));
 
   const updateRow = (i, field, value) => {
     const copy = [...rows];
-    copy[i][field] = value;
+    copy[i] = { ...copy[i], [field]: value };
     setRows(copy);
   };
 
-  const addRow = () => setRows([...rows, { ...emptyRow }]);
-  const removeRow = (i) =>
-    setRows(rows.filter((_, idx) => idx !== i));
+  const addRow = () => setRows((p) => [...p, { ...emptyRow }]);
+  const removeRow = (i) => setRows((p) => p.filter((_, idx) => idx !== i));
 
-  const rowTL = (r) => {
-  return Number(r.adet || 0) * Number(r.fiyat || 0);
-};
+  const onSelectProduct = (i, productId) => {
+    const p = urunler.find((x) => String(x._id) === String(productId));
+    if (!p) {
+      updateRow(i, "productId", "");
+      return;
+    }
+    updateRow(i, "productId", p._id);
+    updateRow(i, "ad", p.ad || p.name || "");
+    updateRow(i, "barkod", p.barkod || p.barcode || "");
+  };
 
+  const onBarcodeBlur = (i) => {
+    const b = String(rows[i]?.barkod || "").trim();
+    if (!b) return;
+    const p = urunler.find((x) => String(x.barkod || x.barcode || "") === b);
+    if (p) {
+      onSelectProduct(i, p._id);
+    }
+  };
 
-
-  const toplamTL = () =>
-    rows.reduce(
-      (sum, r) =>
-        sum + (isNaN(rowTL(r)) ? 0 : rowTL(r)),
-      0
-    );
-
-  
-  
-// 💾 Kaydet (B mimarisi – FINAL)
-const handleSave = async () => {
-  if (!cariId) {
-    alert("⚠️ Tedarikçi seçin");
-    return;
-  }
-  if (!token) {
-    alert("⚠️ Giriş yapınız");
-    return;
-  }
-
-  try {
-    const items = [];
-
-    for (const r of rows) {
-      if (!r.ad && !r.barkod) continue;
-
-      let productId = r.productId;
-
-      // Ürün yoksa oluştur (MEVCUT DAVRANIŞ KORUNDU)
-      if (!productId && r.ad.trim() !== "") {
-        const res = await fetch("/api/products/add", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            name: r.ad,
-            barcode: r.barkod || "",
-            barkod: r.barkod || "",
-            priceTl: Number(r.fiyat || 0),
-            vatRate: Number(r.kdv || 20),
-            stock: 0,
-          }),
-        });
-
-        const created = await res.json();
-        if (created?.product?._id) {
-          productId = created.product._id;
-        }
-      }
-
-      if (!productId) continue;
-
-      // 🔑 BACKEND İLE BİREBİR UYUMLU ITEM
-      items.push({
-        productId,
-        quantity: Number(r.adet),
-        unitPrice: Number(r.fiyat),
-        currency: r.currency || "TRY",
-        fxRate:
-          r.currency === "USD"
-            ? Number(manualRates.USD || rates.USD || 1)
-            : r.currency === "EUR"
-            ? Number(manualRates.EUR || rates.EUR || 1)
-            : 1,
-      });
+  const handleSave = async () => {
+    if (role === "admin") {
+      alert("Admin alış işlemi yapamaz. Normal kullanıcı ile giriş yapın.");
+      return;
     }
 
-    if (items.length === 0) {
+    if (!cariId) {
+      alert("⚠️ Tedarikçi (Cari) seçin");
+      return;
+    }
+
+    if (!token) {
+      alert("⚠️ Giriş yapınız");
+      return;
+    }
+
+    // Satırları normalize et
+    const normalizedRows = rows
+      .map((r) => ({
+        ...r,
+        adet: Number(r.adet || 0),
+        fiyat: Number(r.fiyat || 0),
+        barkod: String(r.barkod || "").trim(),
+        ad: String(r.ad || "").trim(),
+        currency: r.currency || "TRY",
+      }))
+      .filter((r) => (r.productId || r.ad || r.barkod) && r.adet > 0);
+
+    if (normalizedRows.length === 0) {
       alert("⚠️ Alış kalemi yok");
       return;
     }
 
-    // 🔥 TEK MERKEZ API – FINAL PAYLOAD
-    const res = await fetch("/api/purchases/create", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        accountId: cariId,                 // ✅ DÜZELTİLDİ
-        invoiceDate: header.tarih || null, // ✅ EKLENDİ
-        invoiceNo: header.belgeNo || "",   // ✅ EKLENDİ
-        orderNo: header.siparisNo || "",   // ✅ EKLENDİ
-        note: header.aciklama || "",
-        items,
-      }),
-    });
+    try {
+      setSaving(true);
 
-    const data = await res.json();
+      const items = [];
 
-    if (!res.ok) {
-      alert(data.message || "Alış kaydedilemedi");
-      return;
-    }
+      for (let idx = 0; idx < normalizedRows.length; idx++) {
+        const r = normalizedRows[idx];
+        let productId = r.productId;
 
-    alert("✅ Ürün alışı başarıyla kaydedildi!");
-    setRows([{ ...emptyRow }]);
+        // ✅ Barkod girildiyse otomatik ürün eşleştir
+        if (!productId && r.barkod) {
+          const found = urunler.find(
+            (x) =>
+              String(x.barkod || x.barcode || "").trim() ===
+              String(r.barkod).trim()
+          );
+          if (found?._id) productId = found._id;
+        }
 
-  } catch (err) {
-    console.error("Alış kaydetme hatası:", err);
-    alert("Alış kaydedilirken hata oluştu");
-  }
-};
+        // Ürün seçilmemiş ama isim girilmişse ürün oluştur (MEVCUT DAVRANIŞI KORU)
+        if (!productId && r.ad) {
+          const resAdd = await fetch("/api/products/add", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              name: r.ad,
+              ad: r.ad,
+              barcode: r.barkod || "",
+              barkod: r.barkod || "",
+              priceTl: Number(r.fiyat || 0),
+              satisFiyati: Number(r.fiyat || 0),
+            }),
+          });
 
+          const created = await resAdd.json();
+          productId = created?.product?._id || created?._id || "";
+        }
 
-  // 🧾 PDF – Ürün Alış Fişi (A4 Dikey)
-  const handlePdf = () => {
-    if (!rows.length) {
-      alert("Liste boş");
-      return;
-    }
+        // 🔒 Stabilite: productId hala yoksa KAYDI DURDUR (sessiz continue yok)
+        if (!productId) {
+          alert(
+            `⚠️ ${idx + 1}. satırda ürün eşleşmedi.\n` +
+              `- Ürün seçin VEYA ürün adı girin.\n` +
+              `- Barkod: ${r.barkod || "-"}`
+          );
+          return;
+        }
 
-    const doc = new jsPDF("p", "mm", "a4");
+        const fx = getFx(r.currency || "TRY");
+        const total = Number(r.adet) * Number(r.fiyat) * fx;
 
-// 🔤 Roboto fontları PUBLIC üzerinden yükle
-doc.addFont("/fonts/Roboto-Regular.ttf", "Roboto", "normal");
-doc.addFont("/fonts/Roboto-Bold.ttf", "Roboto", "bold");
-
-// Varsayılan font
-doc.setFont("Roboto", "normal");
-
-
-
-
-
-    // Başlık
-    doc.setFont("Roboto", "bold");
-doc.setFontSize(16);
-doc.text("ÜRÜN ALIŞ FİŞİ", 105, 15, { align: "center" });
-doc.setFont("Roboto", "normal");
-
-
-    // Üst bilgiler
-    doc.setFontSize(10);
-    let y = 25;
-
-    const cari = cariler.find(
-      (c) => c._id === cariId
-    );
-
-    doc.text(
-      `Tedarikçi : ${
-        cari ? cari.ad : "-"
-      }`,
-      10,
-      y
-    );
-    y += 6;
-    doc.text(
-      `Tarih     : ${
-        header.tarih || "-"
-      }`,
-      10,
-      y
-    );
-    y += 6;
-    doc.text(
-      `Fatura No : ${
-        header.belgeNo || "-"
-      }`,
-      10,
-      y
-    );
-    doc.text(
-      `Sipariş No : ${
-        header.siparisNo || "-"
-      }`,
-      110,
-      y
-    );
-    y += 6;
-    doc.text(
-      `Açıklama  : ${
-        header.aciklama || "-"
-      }`,
-      10,
-      y
-    );
-    y += 10;
-
-    // Tablo başlığı
-    const colX = [
-      10, 25, 70, 110, 135, 155, 180,
-    ];
-    doc.setFontSize(9);
-
-    doc.setFillColor(230, 230, 230);
-    doc.rect(10, y - 5, 190, 7, "F");
-
-    const headTitles = [
-      "#",
-      "Barkod",
-      "Ürün",
-      "Adet",
-      "Fiyat",
-      "KDV",
-      "Tutar (TL)",
-    ];
-
-    headTitles.forEach((txt, idx) => {
-      doc.text(txt, colX[idx], y - 1);
-    });
-
-    y += 4;
-
-    // Satırlar
-    rows.forEach((r, index) => {
-      if (y > 270) {
-        doc.addPage();
-        y = 20;
+        items.push({
+          productId,
+          quantity: Number(r.adet),
+          unitPrice: Number(r.fiyat),
+          currency: r.currency || "TRY",
+          fxRate: fx,
+          total, // TRY toplam
+        });
       }
 
-      const lineY = y + 5;
-      const tl = rowTL(r);
+      if (items.length === 0) {
+        alert("⚠️ Alış kalemi yok");
+        return;
+      }
 
-      doc.text(
-        String(index + 1),
-        colX[0],
-        lineY
-      );
-      doc.text(
-        r.barkod || "-",
-        colX[1],
-        lineY
-      );
-      doc.text(
-        (r.ad || "").substring(0, 30),
-        colX[2],
-        lineY
-      );
-      doc.text(
-        String(r.adet || 0),
-        colX[3],
-        lineY,
-        { align: "right" }
-      );
-      doc.text(
-        `${Number(
-          r.fiyat || 0
-        ).toFixed(2)} ${r.currency}`,
-        colX[4],
-        lineY,
-        { align: "right" }
-      );
-      doc.text(
-        `%${r.kdv}`,
-        colX[5],
-        lineY,
-        { align: "right" }
-      );
-      doc.text(
-        `₺${Number(tl).toFixed(2)}`,
-        colX[6],
-        lineY,
-        { align: "right" }
-      );
+      // 🔥 TEK MERKEZ API – FINAL PAYLOAD
+      const res = await fetch("/api/purchases/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          accountId: cariId,
+          invoiceDate: header.tarih ? new Date(header.tarih).toISOString() : null,
+          invoiceNo: header.belgeNo || "",
+          orderNo: header.siparisNo || "",
+          note: header.aciklama || "",
+          items,
+        }),
+      });
 
-      y += 6;
-    });
+      const data = await res.json();
 
-    // Genel toplam
-   doc.setFont("Roboto", "bold");
-doc.text(
-  `GENEL TOPLAM: ₺${toplamTL().toFixed(2)}`,
-  200,
-  y,
-  { align: "right" }
-);
-doc.setFont("Roboto", "normal");
+      if (!res.ok) {
+        alert(data.message || "Alış kaydedilemedi");
+        return;
+      }
 
-
-    doc.save(
-      `urun-alis-${Date.now()}.pdf`
-    );
+      alert("✅ Ürün alışı başarıyla kaydedildi!");
+      setRows([{ ...emptyRow }]);
+      setHeader({ tarih: "", belgeNo: "", siparisNo: "", aciklama: "" });
+      setCariId("");
+    } catch (err) {
+      console.error("Alış kaydetme hatası:", err);
+      alert(err.message || "Alış kaydedilirken hata oluştu");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  // ================== JSX ==================
   return (
-    <div className="p-6 space-y-4">
-      <h2 className="text-xl font-bold">
-        📦 Ürün Alışı
-      </h2>
-
-      {/* Üst bilgi + Kur kartı */}
-      <div className="bg-white rounded border p-3 space-y-3 text-sm">
-        <div className="flex flex-wrap gap-3">
-          <select
-            className="border rounded px-2 py-1 min-w-[180px]"
-            value={cariId}
-            onChange={(e) =>
-              setCariId(e.target.value)
-            }
-          >
-            <option value="">
-              Tedarikçi Seç *
-            </option>
-            {cariler.map((c) => (
-              <option
-                key={c._id}
-                value={c._id}
-              >
-                {c.ad}
-              </option>
-            ))}
-          </select>
-
-          <input
-            type="date"
-            className="border rounded px-2 py-1"
-            value={header.tarih}
-            onChange={(e) =>
-              setHeader((h) => ({
-                ...h,
-                tarih: e.target.value,
-              }))
-            }
-          />
-
-          <input
-            className="border rounded px-2 py-1"
-            placeholder="Fatura No"
-            value={header.belgeNo}
-            onChange={(e) =>
-              setHeader((h) => ({
-                ...h,
-                belgeNo: e.target.value,
-              }))
-            }
-          />
-
-          <input
-            className="border rounded px-2 py-1"
-            placeholder="Sipariş No"
-            value={header.siparisNo}
-            onChange={(e) =>
-              setHeader((h) => ({
-                ...h,
-                siparisNo: e.target.value,
-              }))
-            }
-          />
-
-          <input
-            className="border rounded px-2 py-1 flex-1 min-w-[200px]"
-            placeholder="Açıklama"
-            value={header.aciklama}
-            onChange={(e) =>
-              setHeader((h) => ({
-                ...h,
-                aciklama: e.target.value,
-              }))
-            }
-          />
+    <RequireAuth>
+      <div className="p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-semibold">Ürün Alış</h1>
+          <div className="text-sm text-gray-600">
+            Toplam (₺):{" "}
+            <b>
+              {Number(toplamTRY || 0).toLocaleString("tr-TR", {
+                minimumFractionDigits: 2,
+              })}
+            </b>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <b>Kur:</b>
-          {loadingRates
-            ? "Yükleniyor..."
-            : `USD ₺${rates.USD} | EUR ₺${rates.EUR}`}
-          <button
-            onClick={fetchRates}
-            className="px-2 py-1 bg-gray-100 border rounded"
-          >
-            Güncelle
-          </button>
+        {/* Admin uyarı */}
+        {role === "admin" && (
+          <div className="p-3 border rounded bg-yellow-50 text-sm">
+            ⚠️ Admin ile alış yapılmaz. Normal kullanıcı ile giriş yapın.
+          </div>
+        )}
 
-          <span className="ml-4">
-            USD:
+        {/* Üst Bilgi */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 border rounded p-4">
+          <div>
+            <label className="text-sm text-gray-600">Tedarikçi (Cari)</label>
+            <select
+              value={cariId}
+              onChange={(e) => setCariId(e.target.value)}
+              className="w-full border rounded px-2 py-2"
+            >
+              <option value="">Seçiniz</option>
+              {cariler.map((c) => (
+                <option key={c._id} value={c._id}>
+                  {c.unvan ||
+                    c.firmaAdi ||
+                    c.ad ||        // 👈 BUNU EKLE
+                    c.title ||
+                    c.adSoyad ||
+                    c.name ||
+                    c.email ||
+                    c._id}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-sm text-gray-600">Tarih</label>
             <input
-              className="border rounded px-1 w-20 ml-1"
+              type="date"
+              value={header.tarih}
+              onChange={(e) => updateHeader("tarih", e.target.value)}
+              className="w-full border rounded px-2 py-2"
+            />
+          </div>
+
+          <div>
+            <label className="text-sm text-gray-600">Fatura No</label>
+            <input
+              value={header.belgeNo}
+              onChange={(e) => updateHeader("belgeNo", e.target.value)}
+              className="w-full border rounded px-2 py-2"
+              placeholder="Fatura No"
+            />
+          </div>
+
+          <div>
+            <label className="text-sm text-gray-600">Sipariş No</label>
+            <input
+              value={header.siparisNo}
+              onChange={(e) => updateHeader("siparisNo", e.target.value)}
+              className="w-full border rounded px-2 py-2"
+              placeholder="Sipariş No"
+            />
+          </div>
+
+          <div className="md:col-span-4">
+            <label className="text-sm text-gray-600">Açıklama</label>
+            <input
+              value={header.aciklama}
+              onChange={(e) => updateHeader("aciklama", e.target.value)}
+              className="w-full border rounded px-2 py-2"
+              placeholder="Not / açıklama"
+            />
+          </div>
+        </div>
+
+        {/* Kur */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 border rounded p-4">
+          <div className="text-sm text-gray-700">
+            <div className="font-semibold mb-1">TCMB Kur</div>
+            <div>USD: {rates.USD ? rates.USD : "-"} </div>
+            <div>EUR: {rates.EUR ? rates.EUR : "-"}</div>
+            <button
+              onClick={loadRates}
+              disabled={loadingRates}
+              className="mt-2 px-3 py-2 border rounded hover:bg-gray-50 disabled:opacity-60"
+            >
+              {loadingRates ? "Yükleniyor..." : "Kurları Yenile"}
+            </button>
+          </div>
+
+          <div>
+            <label className="text-sm text-gray-600">Manuel USD</label>
+            <input
               value={manualRates.USD}
               onChange={(e) =>
-                setManualRates((m) => ({
-                  ...m,
-                  USD: e.target.value,
-                }))
+                setManualRates((p) => ({ ...p, USD: e.target.value }))
               }
+              className="w-full border rounded px-2 py-2"
+              placeholder="Boşsa TCMB"
             />
-          </span>
+          </div>
 
-          <span>
-            EUR:
+          <div>
+            <label className="text-sm text-gray-600">Manuel EUR</label>
             <input
-              className="border rounded px-1 w-20 ml-1"
               value={manualRates.EUR}
               onChange={(e) =>
-                setManualRates((m) => ({
-                  ...m,
-                  EUR: e.target.value,
-                }))
+                setManualRates((p) => ({ ...p, EUR: e.target.value }))
               }
+              className="w-full border rounded px-2 py-2"
+              placeholder="Boşsa TCMB"
             />
-          </span>
+          </div>
+
+          <div className="text-sm text-gray-600">
+            <div className="font-semibold mb-1">Not</div>
+            <div>
+              Satır toplamları TRY hesaplanır:
+              <br />
+              <span className="text-gray-500">
+                total = adet × fiyat × fxRate
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Satırlar */}
+        <div className="border rounded p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="font-semibold">Alış Kalemleri</div>
+            <button
+              onClick={addRow}
+              className="px-3 py-2 border rounded hover:bg-gray-50"
+            >
+              + Satır Ekle
+            </button>
+          </div>
+
+          <div className="overflow-auto">
+            <table className="w-full text-sm border">
+              <thead className="bg-gray-100">
+                <tr>
+                  <th className="border px-2 py-1">Ürün</th>
+                  <th className="border px-2 py-1">Barkod</th>
+                  <th className="border px-2 py-1 text-right">Adet</th>
+                  <th className="border px-2 py-1 text-right">Fiyat</th>
+                  <th className="border px-2 py-1">Para</th>
+                  <th className="border px-2 py-1 text-right">Kur</th>
+                  <th className="border px-2 py-1 text-right">Toplam ₺</th>
+                  <th className="border px-2 py-1"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => {
+                  const fx = getFx(r.currency || "TRY");
+                  const totalTry = lineTotalTRY(r);
+                  return (
+                    <tr key={i}>
+                      <td className="border px-2 py-1 min-w-[240px]">
+                        <select
+                          value={r.productId}
+                          onChange={(e) => onSelectProduct(i, e.target.value)}
+                          className="w-full border rounded px-2 py-1"
+                        >
+                          <option value="">(Seç / Yoksa isim gir)</option>
+                          {urunler.map((u) => (
+                            <option key={u._id} value={u._id}>
+                              {(u.ad || u.name || "-") +
+                                (u.sku ? ` (${u.sku})` : "")}
+                            </option>
+                          ))}
+                        </select>
+
+                        <input
+                          className="mt-1 w-full border rounded px-2 py-1"
+                          placeholder="Ürün adı (seçmezsen oluşturur)"
+                          value={r.ad}
+                          onChange={(e) => updateRow(i, "ad", e.target.value)}
+                        />
+                      </td>
+
+                      <td className="border px-2 py-1 min-w-[160px]">
+                        <input
+                          value={r.barkod}
+                          onChange={(e) => updateRow(i, "barkod", e.target.value)}
+                          onBlur={() => onBarcodeBlur(i)}
+                          className="w-full border rounded px-2 py-1"
+                          placeholder="Barkod"
+                        />
+                      </td>
+
+                      <td className="border px-2 py-1 text-right min-w-[90px]">
+                        <input
+                          type="number"
+                          value={r.adet}
+                          onChange={(e) => updateRow(i, "adet", e.target.value)}
+                          className="w-full border rounded px-2 py-1 text-right"
+                          min="0"
+                        />
+                      </td>
+
+                      <td className="border px-2 py-1 text-right min-w-[120px]">
+                        <input
+                          type="number"
+                          value={r.fiyat}
+                          onChange={(e) => updateRow(i, "fiyat", e.target.value)}
+                          className="w-full border rounded px-2 py-1 text-right"
+                          min="0"
+                        />
+                      </td>
+
+                      <td className="border px-2 py-1 min-w-[90px]">
+                        <select
+                          value={r.currency || "TRY"}
+                          onChange={(e) => updateRow(i, "currency", e.target.value)}
+                          className="w-full border rounded px-2 py-1"
+                        >
+                          <option value="TRY">TRY</option>
+                          <option value="USD">USD</option>
+                          <option value="EUR">EUR</option>
+                        </select>
+                      </td>
+
+                      <td className="border px-2 py-1 text-right min-w-[90px]">
+                        {fx.toLocaleString("tr-TR", { maximumFractionDigits: 4 })}
+                      </td>
+
+                      <td className="border px-2 py-1 text-right min-w-[120px]">
+                        {Number(totalTry || 0).toLocaleString("tr-TR", {
+                          minimumFractionDigits: 2,
+                        })}
+                      </td>
+
+                      <td className="border px-2 py-1 text-center w-[60px]">
+                        <button
+                          onClick={() => removeRow(i)}
+                          className="px-2 py-1 border rounded hover:bg-gray-50"
+                          title="Satırı sil"
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex items-center justify-end gap-3">
+            <div className="text-sm text-gray-600">
+              Toplam (₺):{" "}
+              <b>
+                {Number(toplamTRY || 0).toLocaleString("tr-TR", {
+                  minimumFractionDigits: 2,
+                })}
+              </b>
+            </div>
+
+            <button
+              onClick={handleSave}
+              disabled={saving || role === "admin"}
+              className="bg-green-600 text-white px-4 py-2 rounded disabled:opacity-60"
+            >
+              {saving ? "Kaydediliyor..." : "Kaydet ✅"}
+            </button>
+          </div>
         </div>
       </div>
-
-      {/* Satır tablosu */}
-      <table className="w-full border text-xs">
-        <thead className="bg-gray-100">
-          <tr>
-            <th className="p-1 border">
-              Barkod
-            </th>
-            <th className="p-1 border">
-              Ürün
-            </th>
-            <th className="p-1 border">
-              Adet
-            </th>
-            <th className="p-1 border">
-              Fiyat
-            </th>
-            <th className="p-1 border">
-              PB
-            </th>
-            <th className="p-1 border">
-              KDV
-            </th>
-            <th className="p-1 border">
-              TL
-            </th>
-            <th className="p-1 border w-8"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr
-              key={i}
-              className="border-t"
-            >
-              <td className="p-1 border">
-                <input
-                  className="input w-full"
-                  value={r.barkod}
-                  onChange={(e) =>
-                    handleBarkod(
-                      i,
-                      e.target.value
-                    )
-                  }
-                />
-              </td>
-              <td className="p-1 border">
-                <input
-                  list="urunList"
-                  className="input w-full"
-                  value={r.ad}
-                  onChange={(e) =>
-                    handleUrunAd(
-                      i,
-                      e.target.value
-                    )
-                  }
-                />
-              </td>
-              <td className="p-1 border">
-                <input
-                  className="input w-16"
-                  value={r.adet}
-                  onChange={(e) =>
-                    updateRow(
-                      i,
-                      "adet",
-                      e.target.value
-                    )
-                  }
-                />
-              </td>
-              <td className="p-1 border">
-                <input
-                  className="input w-20"
-                  value={r.fiyat}
-                  onChange={(e) =>
-                    updateRow(
-                      i,
-                      "fiyat",
-                      e.target.value
-                    )
-                  }
-                />
-              </td>
-              <td className="p-1 border">
-                <select
-                  className="input"
-                  value={r.currency}
-                  onChange={(e) =>
-                    updateRow(
-                      i,
-                      "currency",
-                      e.target.value
-                    )
-                  }
-                >
-                  <option>TRY</option>
-                  <option>USD</option>
-                  <option>EUR</option>
-                </select>
-              </td>
-              <td className="p-1 border">
-                <select
-                  className="input w-16"
-                  value={r.kdv}
-                  onChange={(e) =>
-                    updateRow(
-                      i,
-                      "kdv",
-                      e.target.value
-                    )
-                  }
-                >
-                  {[0, 1, 8, 10, 20].map(
-                    (k) => (
-                      <option
-                        key={k}
-                        value={k}
-                      >
-                        %{k}
-                      </option>
-                    )
-                  )}
-                </select>
-              </td>
-              <td className="p-1 border text-right">
-                ₺
-                {Number(
-                  rowTL(r) || 0
-                ).toFixed(2)}
-              </td>
-              <td className="p-1 border text-center">
-                <button
-                  className="text-red-600"
-                  onClick={() =>
-                    removeRow(i)
-                  }
-                >
-                  ✖
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <datalist id="urunList">
-        {Array.isArray(urunler) &&
-          urunler.map((u) => (
-            <option
-              key={u._id}
-              value={u.name || u.ad}
-            />
-          ))}
-      </datalist>
-
-      {/* Alt butonlar */}
-      <div className="flex items-center gap-3 mt-2">
-        <button
-          onClick={addRow}
-          className="bg-gray-200 px-3 py-1 rounded"
-        >
-          + Satır
-        </button>
-
-        <span className="ml-auto font-semibold">
-          Toplam: ₺
-          {toplamTL().toFixed(2)}
-        </span>
-
-        <button
-          onClick={handlePdf}
-          className="bg-blue-600 text-white px-4 py-2 rounded"
-        >
-          🧾 PDF
-        </button>
-
-        <button
-          onClick={handleSave}
-          className="bg-green-600 text-white px-4 py-2 rounded"
-        >
-          Kaydet ✅
-        </button>
-      </div>
-    </div>
+    </RequireAuth>
   );
 }

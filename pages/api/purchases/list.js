@@ -1,57 +1,48 @@
-// 📁 pages/api/purchases/list.js
 import dbConnect from "@/lib/dbConnect";
-import jwt from "jsonwebtoken";
 import Transaction from "@/models/Transaction";
-import Cari from "@/models/Cari";
+import Cari from "@/models/Cari"; // 🔴 MUTLAKA OLMALI
+import jwt from "jsonwebtoken";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
-    return res.status(405).json({ message: "Sadece GET desteklenir" });
+    return res.status(405).json({ message: "Method Not Allowed" });
   }
 
   try {
     await dbConnect();
 
-    // 🔐 Token
-    const auth = req.headers.authorization || "";
-    if (!auth.startsWith("Bearer ")) {
-      return res.status(401).json({ message: "Token gerekli" });
+    // 🔐 TOKEN
+    const auth = req.headers.authorization;
+    if (!auth) {
+      return res.status(401).json({ message: "Yetkisiz" });
     }
 
     const token = auth.split(" ")[1];
-    let decoded;
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch {
-      return res.status(401).json({ message: "Geçersiz token" });
-    }
+    const userId = decoded.userId || decoded.id || decoded._id;
+    const companyId = decoded.companyId || null;
 
-    const { role, companyId } = decoded;
-
-    // 🔍 FİLTRE
+    // 🔍 FILTER
     const filter = {
-  type: "purchase",
-  companyId: decoded.companyId, // 🔥 HER ZAMAN
-};
+      userId,
+      type: "purchase", // 👈 SADECE ALIŞLAR
+    };
 
-
-    // user → sadece kendi firması
-    if (role !== "admin") {
+    if (companyId) {
       filter.companyId = companyId;
     }
 
-    // 📥 Alışları çek
-    const list = await Transaction.find(filter)
-      .populate("accountId", "ad")
-      .sort({ date: -1 })
+    const purchases = await Transaction.find(filter)
+      .populate("accountId", "unvan ad firmaAdi email")
+      .sort({ date: -1, createdAt: -1 })
       .lean();
 
-    return res.status(200).json(list);
+    return res.status(200).json(purchases);
   } catch (err) {
     console.error("PURCHASE LIST ERROR:", err);
     return res.status(500).json({
-      message: "Alışlar alınamadı",
+      message: "Alışlar getirilemedi",
       error: err.message,
     });
   }
