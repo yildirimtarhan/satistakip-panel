@@ -1,53 +1,44 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Cookies from "js-cookie";
+import Link from "next/link";
 import RequireAuth from "@/components/RequireAuth";
 
 export default function AlislarPage() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const token = Cookies.get("token") || localStorage.getItem("token");
+  useEffect(() => {
+    load();
+  }, []);
 
-  const fetchPurchases = async () => {
+  const load = async () => {
     try {
-      setLoading(true);
-
-      const res = await fetch("/api/purchases/list", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
+      const res = await fetch("/api/purchases/list");
       const data = await res.json();
-
-      // ✅ Sadece alış (purchase) olanları al
-      const purchases = Array.isArray(data)
-        ? data.filter((x) => x.type === "purchase")
-        : [];
-
-      setList(purchases);
+      setList(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.error("Alış listesi hata:", err);
+      console.error("Alışlar yüklenemedi:", err);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    if (token) fetchPurchases();
-  }, [token]);
+  const calcTotal = (items = []) =>
+    items.reduce(
+      (sum, i) => sum + Number(i.quantity || 0) * Number(i.price || 0),
+      0
+    );
+
+  if (loading) return <div className="p-6">Yükleniyor…</div>;
 
   return (
     <RequireAuth>
       <div className="p-6">
         <h1 className="text-xl font-semibold mb-4">Alışlar</h1>
 
-        {loading ? (
-          <div>Yükleniyor...</div>
-        ) : list.length === 0 ? (
-          <div className="text-gray-500">Kayıt bulunamadı</div>
+        {list.length === 0 ? (
+          <div>Kayıt bulunamadı</div>
         ) : (
           <table className="w-full border text-sm">
             <thead className="bg-gray-100">
@@ -56,36 +47,47 @@ export default function AlislarPage() {
                 <th className="border px-2 py-1">Cari</th>
                 <th className="border px-2 py-1">Açıklama</th>
                 <th className="border px-2 py-1 text-right">Toplam (₺)</th>
+                <th className="border px-2 py-1 text-center">Detay</th>
               </tr>
             </thead>
             <tbody>
-              {list.map((p) => (
-                <tr key={p._id}>
-                  <td className="border px-2 py-1">
-                    {p.date
-                      ? new Date(p.date).toLocaleDateString("tr-TR")
-                      : "-"}
-                  </td>
-
-                  <td className="border px-2 py-1">
-                    {p.account?.unvan ||
-                      p.account?.firmaAdi ||
-                      p.account?.ad ||
-                      p.account?.name ||
-                      "-"}
-                  </td>
-
-                  <td className="border px-2 py-1">
-                    {p.description || "Alış"}
-                  </td>
-
-                  <td className="border px-2 py-1 text-right">
-                    {Number(p.amount || 0).toLocaleString("tr-TR", {
-                      minimumFractionDigits: 2,
-                    })}
-                  </td>
-                </tr>
-              ))}
+              {list.map((p) => {
+                const total = calcTotal(p.items);
+                return (
+                  <tr
+                    key={p._id}
+                    className="hover:bg-gray-50"
+                  >
+                    <td className="border px-2 py-1">
+                      {p.date
+                        ? new Date(p.date).toLocaleDateString("tr-TR")
+                        : "-"}
+                    </td>
+                    <td className="border px-2 py-1">
+                      {p.accountId?.unvan ||
+                        p.accountId?.ad ||
+                        p.accountId?.email ||
+                        "-"}
+                    </td>
+                    <td className="border px-2 py-1">
+                      {p.description || "Alış"}
+                    </td>
+                    <td className="border px-2 py-1 text-right">
+                      {total.toLocaleString("tr-TR", {
+                        minimumFractionDigits: 2,
+                      })}
+                    </td>
+                    <td className="border px-2 py-1 text-center">
+                      <Link
+                        href={`/dashboard/alislar/${p._id}`}
+                        className="text-blue-600 hover:underline"
+                      >
+                        Gör
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}

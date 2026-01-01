@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import Cookies from "js-cookie";
 import RequireAuth from "@/components/RequireAuth";
 
 export default function AlisDetayPage() {
@@ -11,113 +10,85 @@ export default function AlisDetayPage() {
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [canceling, setCanceling] = useState(false);
 
-  const token =
-    Cookies.get("token") || localStorage.getItem("token");
-
-  // 🔹 DETAYI ÇEK
   useEffect(() => {
-    if (!id || !token) return;
+    if (id) load();
+  }, [id]);
 
-    const fetchDetail = async () => {
-      try {
-        setLoading(true);
-
-        const res = await fetch(`/api/purchases/${id}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.message);
-
-        setData(json);
-      } catch (err) {
-        console.error("Alış detay hata:", err);
-        alert(err.message || "Alış detayı alınamadı");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchDetail();
-  }, [id, token]);
-
-  // 🔴 ALIŞ İPTAL
-  const handleCancel = async () => {
-    if (!confirm("Bu alış iptal edilecek. Emin misiniz?")) return;
-
+  const load = async () => {
     try {
-      setCanceling(true);
-
-      const res = await fetch("/api/purchases/cancel", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ purchaseId: id }),
-      });
-
+      const res = await fetch(`/api/purchases/${id}`);
       const json = await res.json();
-      if (!res.ok) throw new Error(json.message);
 
-      alert("✅ Alış iptal edildi");
-      router.push("/dashboard/alislar");
+      if (!res.ok) {
+        alert(json.message || "Alış bulunamadı");
+        return;
+      }
+
+      setData(json);
     } catch (err) {
-      alert(err.message || "İptal sırasında hata oluştu");
+      console.error("Alış detay hata:", err);
     } finally {
-      setCanceling(false);
+      setLoading(false);
     }
   };
 
-  if (loading) return <div className="p-6">Yükleniyor...</div>;
-  if (!data) return <div className="p-6">Kayıt bulunamadı</div>;
+  const items = Array.isArray(data?.items) ? data.items : [];
 
-  const isCancelled = data.status === "cancelled";
+  const total = items.reduce(
+    (sum, i) => sum + Number(i.quantity || 0) * Number(i.price || 0),
+    0
+  );
+
+  const cancelPurchase = async () => {
+    if (!confirm("Bu alış iptal edilsin mi?")) return;
+
+    const res = await fetch(`/api/purchases/${id}`, {
+      method: "DELETE",
+    });
+
+    if (res.ok) {
+      alert("Alış iptal edildi");
+      router.push("/dashboard/alislar");
+    } else {
+      const j = await res.json();
+      alert(j.message || "İptal edilemedi");
+    }
+  };
+
+  if (loading) return <div className="p-6">Yükleniyor…</div>;
+  if (!data) return <div className="p-6">Alış bulunamadı</div>;
 
   return (
     <RequireAuth>
-      <div className="p-6 space-y-6">
-        {/* ÜST BİLGİ */}
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-xl font-semibold">Alış Detayı</h1>
-            <div className="text-sm text-gray-600">
-              Cari: <b>{data.accountId?.unvan}</b>
-            </div>
-            <div className="text-sm text-gray-600">
-              Tarih:{" "}
-              {new Date(data.invoiceDate).toLocaleDateString("tr-TR")}
-            </div>
-            {data.invoiceNo && (
-              <div className="text-sm text-gray-600">
-                Fatura No: {data.invoiceNo}
-              </div>
-            )}
-            {isCancelled && (
-              <div className="mt-1 text-sm font-semibold text-red-600">
-                ❌ Bu alış iptal edilmiştir
-              </div>
-            )}
-          </div>
-
-          {/* İPTAL BUTONU */}
-          {!isCancelled && (
-            <button
-              onClick={handleCancel}
-              disabled={canceling}
-              className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-60"
-            >
-              {canceling ? "İptal Ediliyor..." : "Alışı İptal Et"}
-            </button>
-          )}
+      <div className="p-6">
+        <div className="flex justify-between mb-4">
+          <h1 className="text-xl font-semibold">Alış Detayı</h1>
+          <button
+            onClick={cancelPurchase}
+            className="bg-red-600 text-white px-4 py-2 rounded"
+          >
+            Alış İptal Et
+          </button>
         </div>
 
-        {/* ÜRÜN TABLOSU */}
-        <table className="w-full border text-sm">
+        <div className="mb-4 text-sm">
+          <div>
+            <b>Cari:</b>{" "}
+            {data.accountId?.unvan ||
+              data.accountId?.ad ||
+              data.accountId?.email ||
+              "-"}
+          </div>
+          <div>
+            <b>Tarih:</b>{" "}
+            {data.date
+              ? new Date(data.date).toLocaleDateString("tr-TR")
+              : "-"}
+          </div>
+        </div>
+
+        <table className="w-full border text-sm mb-4">
           <thead className="bg-gray-100">
             <tr>
               <th className="border px-2 py-1">Ürün</th>
@@ -128,52 +99,45 @@ export default function AlisDetayPage() {
             </tr>
           </thead>
           <tbody>
-            {data.items.map((i, idx) => (
-              <tr key={idx}>
-                <td className="border px-2 py-1">
-                  {i.productId?.ad || "-"}
-                </td>
-                <td className="border px-2 py-1">
-                  {i.productId?.barkod || "-"}
-                </td>
-                <td className="border px-2 py-1 text-right">
-                  {i.quantity}
-                </td>
-                <td className="border px-2 py-1 text-right">
-                  {Number(i.unitPrice).toLocaleString("tr-TR", {
-                    minimumFractionDigits: 2,
-                  })}
-                </td>
-                <td className="border px-2 py-1 text-right">
-                  {Number(i.total).toLocaleString("tr-TR", {
-                    minimumFractionDigits: 2,
-                  })}
+            {items.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={5}
+                  className="border px-2 py-4 text-center text-gray-500"
+                >
+                  Alış kalemi yok
                 </td>
               </tr>
-            ))}
+            ) : (
+              items.map((i, idx) => (
+                <tr key={idx}>
+                  <td className="border px-2 py-1">
+                    {i.productId?.name || "-"}
+                  </td>
+                  <td className="border px-2 py-1">{i.barcode || "-"}</td>
+                  <td className="border px-2 py-1 text-right">
+                    {i.quantity}
+                  </td>
+                  <td className="border px-2 py-1 text-right">
+                    {Number(i.price).toLocaleString("tr-TR")}
+                  </td>
+                  <td className="border px-2 py-1 text-right">
+                    {(i.quantity * i.price).toLocaleString("tr-TR")}
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
 
-        {/* TOPLAM */}
-        <div className="text-right font-semibold text-lg">
+        <div className="text-right font-semibold">
           Genel Toplam:{" "}
-          {Number(data.totalTRY || data.total).toLocaleString("tr-TR", {
-            minimumFractionDigits: 2,
-          })}{" "}
-          ₺
+          {total.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ₺
         </div>
 
-        {/* NOT */}
-        {data.note && (
-          <div className="text-sm text-gray-700">
-            <b>Not:</b> {data.note}
-          </div>
-        )}
-
-        {/* GERİ */}
         <button
           onClick={() => router.push("/dashboard/alislar")}
-          className="px-4 py-2 border rounded hover:bg-gray-50"
+          className="mt-4 px-4 py-2 border rounded"
         >
           ← Listeye Dön
         </button>
