@@ -1,4 +1,4 @@
-// 📁 /pages/api/urunler/index.js
+// 📁 /pages/api/urunler/index.js  ✅ FINAL – MULTI TENANT
 import dbConnect from "@/lib/mongodb";
 import Product from "@/models/Product";
 import jwt from "jsonwebtoken";
@@ -8,54 +8,82 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
 
   try {
-    await dbConnect(); // MongoDB bağlan
+    await dbConnect();
 
-    // 🔐 Token kontrolü
+    // 🔐 TOKEN KONTROL
     const auth = req.headers.authorization;
-    if (!auth) return res.status(401).json({ message: "Token eksik" });
+    if (!auth) {
+      return res.status(401).json({ message: "Token eksik" });
+    }
 
     const token = auth.split(" ")[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // ------------------------------------
-    // 📌 GET — Ürün Listele
-    // ------------------------------------
+    /**
+     * decoded içeriği varsayımı:
+     * {
+     *   userId,
+     *   companyId,
+     *   role: "admin" | "user"
+     * }
+     */
+
+    if (!decoded.companyId) {
+      return res.status(401).json({ message: "Firma bilgisi yok" });
+    }
+
+    // =====================================================
+    // 📌 GET — ÜRÜN LİSTELE (MULTI TENANT)
+    // =====================================================
     if (req.method === "GET") {
-      const list = await Product.find({});
+      const filter = {
+        companyId: decoded.companyId,
+      };
+
+      // Satış ekranı için opsiyonel stok filtresi
+      if (req.query.onlyInStock === "true") {
+        filter.stock = { $gt: 0 };
+      }
+
+      const list = await Product.find(filter).sort({ createdAt: -1 });
+
       return res.status(200).json(list);
     }
 
-    // ------------------------------------
-    // 📌 POST — Ürün Ekle
-    // ------------------------------------
+    // =====================================================
+    // 📌 POST — ÜRÜN EKLE
+    // =====================================================
     if (req.method === "POST") {
       const b = req.body || {};
 
-      if (!b.ad || !b.satisFiyati)
-        return res.status(400).json({ message: "Ürün adı ve satış fiyatı gerekli" });
+      if (!b.name || !b.price) {
+        return res
+          .status(400)
+          .json({ message: "Ürün adı ve satış fiyatı gerekli" });
+      }
 
       const newDoc = await Product.create({
-        ad: b.ad,
-        barkod: b.barkod || "",
+        name: b.name,
+        barcode: b.barcode || "",
         sku: b.sku || "",
-        marka: b.marka || "",
-        kategori: b.kategori || "",
-        aciklama: b.aciklama || "",
-        birim: b.birim || "Adet",
+        brand: b.brand || "",
+        category: b.category || "",
+        description: b.description || "",
+        unit: b.unit || "Adet",
 
-        resimUrl: b.resimUrl || "",
-        varyantlar: b.varyantlar || [],
+        images: b.images || [],
+        variants: b.variants || [],
 
-        alisFiyati: Number(b.alisFiyati || 0),
-        satisFiyati: Number(b.satisFiyati),
-        stok: Number(b.stok || 0),
-        stokUyari: Number(b.stokUyari || 0),
+        purchasePrice: Number(b.purchasePrice || 0),
+        price: Number(b.price),
+        stock: Number(b.stock || 0),
+        stockAlert: Number(b.stockAlert || 0),
 
-        paraBirimi: b.paraBirimi || "TRY",
-        kdvOrani: Number(b.kdvOrani || 20),
+        currency: b.currency || "TRY",
+        vatRate: Number(b.vatRate || 20),
 
-        n11CategoryId: b.n11CategoryId || null,
-        n11ProductId: null, // N11 tarafı ayrı endpoint’te güncellenecek
+        companyId: decoded.companyId,
+        createdBy: decoded.userId,
       });
 
       return res.status(201).json({
@@ -64,27 +92,40 @@ export default async function handler(req, res) {
       });
     }
 
-    // ------------------------------------
-    // 📌 PUT — Ürün Güncelle
-    // ------------------------------------
+    // =====================================================
+    // 📌 PUT — ÜRÜN GÜNCELLE
+    // =====================================================
     if (req.method === "PUT") {
       const { id } = req.query;
-      await Product.findByIdAndUpdate(id, req.body);
+
+      await Product.findOneAndUpdate(
+        { _id: id, companyId: decoded.companyId },
+        req.body,
+        { new: true }
+      );
+
       return res.status(200).json({ message: "Ürün güncellendi" });
     }
 
-    // ------------------------------------
-    // 📌 DELETE — Ürün Sil
-    // ------------------------------------
+    // =====================================================
+    // 📌 DELETE — ÜRÜN SİL
+    // =====================================================
     if (req.method === "DELETE") {
       const { id } = req.query;
-      await Product.findByIdAndDelete(id);
+
+      await Product.findOneAndDelete({
+        _id: id,
+        companyId: decoded.companyId,
+      });
+
       return res.status(200).json({ message: "Ürün silindi" });
     }
 
     return res.status(405).json({ message: "Method Not Allowed" });
   } catch (err) {
     console.error("🔥 Ürün API Hatası:", err);
-    return res.status(500).json({ message: "Sunucu hatası", error: err.message });
+    return res
+      .status(500)
+      .json({ message: "Sunucu hatası", error: err.message });
   }
 }

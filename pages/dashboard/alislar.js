@@ -14,7 +14,13 @@ export default function AlislarPage() {
 
   const load = async () => {
     try {
-      const res = await fetch("/api/purchases/list");
+      const token = localStorage.getItem("token") || "";
+
+      const res = await fetch("/api/purchases/list", {
+        cache: "no-store",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
       const data = await res.json();
       setList(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -25,10 +31,7 @@ export default function AlislarPage() {
   };
 
   const calcTotal = (items = []) =>
-    items.reduce(
-      (sum, i) => sum + Number(i.quantity || 0) * Number(i.price || 0),
-      0
-    );
+    items.reduce((sum, i) => sum + Number(i.total || 0), 0);
 
   if (loading) return <div className="p-6">Yükleniyor…</div>;
 
@@ -54,28 +57,18 @@ export default function AlislarPage() {
               {list.map((p) => {
                 const total = calcTotal(p.items);
                 return (
-                  <tr
-                    key={p._id}
-                    className="hover:bg-gray-50"
-                  >
+                  <tr key={p._id} className="hover:bg-gray-50">
                     <td className="border px-2 py-1">
-                      {p.date
-                        ? new Date(p.date).toLocaleDateString("tr-TR")
-                        : "-"}
+                      {p.date ? new Date(p.date).toLocaleDateString("tr-TR") : "-"}
                     </td>
                     <td className="border px-2 py-1">
-                      {p.accountId?.unvan ||
-                        p.accountId?.ad ||
-                        p.accountId?.email ||
-                        "-"}
+                      {p.accountId?.unvan || p.accountId?.ad || p.accountId?.email || "-"}
                     </td>
                     <td className="border px-2 py-1">
                       {p.description || "Alış"}
                     </td>
                     <td className="border px-2 py-1 text-right">
-                      {total.toLocaleString("tr-TR", {
-                        minimumFractionDigits: 2,
-                      })}
+                      {total.toLocaleString("tr-TR", { minimumFractionDigits: 2 })}
                     </td>
                     <td className="border px-2 py-1 text-center">
                       <Link

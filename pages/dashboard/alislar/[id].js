@@ -17,14 +17,18 @@ export default function AlisDetayPage() {
 
   const load = async () => {
     try {
-      const res = await fetch(`/api/purchases/${id}`);
-      const json = await res.json();
+      const token = localStorage.getItem("token") || "";
 
+      const res = await fetch(`/api/purchases/${id}`, {
+        cache: "no-store",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const json = await res.json();
       if (!res.ok) {
         alert(json.message || "Alış bulunamadı");
         return;
       }
-
       setData(json);
     } catch (err) {
       console.error("Alış detay hata:", err);
@@ -34,25 +38,47 @@ export default function AlisDetayPage() {
   };
 
   const items = Array.isArray(data?.items) ? data.items : [];
+  const total = items.reduce((sum, i) => sum + Number(i.total || 0), 0);
 
-  const total = items.reduce(
-    (sum, i) => sum + Number(i.quantity || 0) * Number(i.price || 0),
-    0
-  );
+  // ✅ PDF İNDİR (DOĞRU YERDE)
+  const downloadPdf = () => {
+    const token = localStorage.getItem("token") || "";
+    if (!token) {
+      alert("Oturum bulunamadı");
+      return;
+    }
+    window.open(`/api/purchases/${id}/pdf?token=${token}`, "_blank");
+  };
 
+  // ✅ ALIŞ İPTAL
   const cancelPurchase = async () => {
-    if (!confirm("Bu alış iptal edilsin mi?")) return;
+    if (
+      !confirm(
+        "Bu alış iptal edilsin mi?\n(Stok geri alınacak ve cari ters kayıt işlenecek)"
+      )
+    )
+      return;
 
-    const res = await fetch(`/api/purchases/${id}`, {
-      method: "DELETE",
-    });
+    try {
+      const token = localStorage.getItem("token") || "";
 
-    if (res.ok) {
-      alert("Alış iptal edildi");
-      router.push("/dashboard/alislar");
-    } else {
-      const j = await res.json();
-      alert(j.message || "İptal edilemedi");
+      const res = await fetch(`/api/purchases/${id}`, {
+        method: "DELETE",
+        cache: "no-store",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const j = await res.json().catch(() => ({}));
+
+      if (res.ok) {
+        alert(j.message || "Alış iptal edildi");
+        router.push("/dashboard/alislar");
+      } else {
+        alert(j.message || "İptal edilemedi");
+      }
+    } catch (e) {
+      alert("İptal sırasında hata oluştu");
+      console.error(e);
     }
   };
 
@@ -64,12 +90,22 @@ export default function AlisDetayPage() {
       <div className="p-6">
         <div className="flex justify-between mb-4">
           <h1 className="text-xl font-semibold">Alış Detayı</h1>
-          <button
-            onClick={cancelPurchase}
-            className="bg-red-600 text-white px-4 py-2 rounded"
-          >
-            Alış İptal Et
-          </button>
+
+          <div className="flex gap-2">
+            <button
+              onClick={downloadPdf}
+              className="bg-blue-600 text-white px-4 py-2 rounded"
+            >
+              PDF İndir
+            </button>
+
+            <button
+              onClick={cancelPurchase}
+              className="bg-red-600 text-white px-4 py-2 rounded"
+            >
+              Alış İptal Et
+            </button>
+          </div>
         </div>
 
         <div className="mb-4 text-sm">
@@ -114,15 +150,17 @@ export default function AlisDetayPage() {
                   <td className="border px-2 py-1">
                     {i.productId?.name || "-"}
                   </td>
-                  <td className="border px-2 py-1">{i.barcode || "-"}</td>
+                  <td className="border px-2 py-1">
+                    {i.productId?.barcode || "-"}
+                  </td>
                   <td className="border px-2 py-1 text-right">
                     {i.quantity}
                   </td>
                   <td className="border px-2 py-1 text-right">
-                    {Number(i.price).toLocaleString("tr-TR")}
+                    {Number(i.unitPrice || 0).toLocaleString("tr-TR")}
                   </td>
                   <td className="border px-2 py-1 text-right">
-                    {(i.quantity * i.price).toLocaleString("tr-TR")}
+                    {Number(i.total || 0).toLocaleString("tr-TR")}
                   </td>
                 </tr>
               ))
@@ -132,7 +170,10 @@ export default function AlisDetayPage() {
 
         <div className="text-right font-semibold">
           Genel Toplam:{" "}
-          {total.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ₺
+          {total.toLocaleString("tr-TR", {
+            minimumFractionDigits: 2,
+          })}{" "}
+          ₺
         </div>
 
         <button

@@ -168,36 +168,58 @@ export default function CariEkstrePage() {
   };
 
   /**
-   * ✅ PDF (SERVER SIDE) - TOKEN'LI AÇ
-   * Not: window.open() header gönderemez. Bu yüzden fetch ile PDF alıp blob açıyoruz.
-   */
-  const openPDF = async () => {
-    if (!accountId) return;
-    try {
-      const url = `/api/cari/ekstre-pdf?accountId=${accountId}&start=${dateFrom}&end=${dateTo}`;
+ * ✅ PDF (SERVER SIDE) - TOKEN'LI AÇ
+ * Not: window.open header gönderemez.
+ * Bu yüzden fetch + blob kullanıyoruz.
+ */
+const openPDF = async () => {
+  if (!accountId || !dateFrom || !dateTo) {
+    alert("Cari ve tarih aralığı seçilmelidir.");
+    return;
+  }
 
-      const res = await fetch(url, {
-        method: "GET",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+  if (!token) {
+    alert("Oturum bulunamadı. Lütfen tekrar giriş yapın.");
+    return;
+  }
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        console.error("PDF API hata:", err);
-        alert(err?.message || "PDF oluşturulamadı. Konsolu kontrol et.");
-        return;
-      }
+  try {
+    const url = `/api/cari/ekstre-pdf?accountId=${accountId}&start=${dateFrom}&end=${dateTo}`;
 
-      const blob = await res.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-      window.open(blobUrl, "_blank");
-      // İstersen 30 sn sonra revoke edebilirsin:
-      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 30000);
-    } catch (e) {
-      console.error("PDF açılamadı:", e);
-      alert("PDF oluşturulamadı. Konsolu kontrol et.");
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      console.error("PDF API HTTP Hata:", res.status);
+      alert("PDF oluşturulamadı. Yetki veya sunucu hatası.");
+      return;
     }
-  };
+
+    const blob = await res.blob();
+
+    if (!blob || blob.size === 0) {
+      alert("PDF boş döndü.");
+      return;
+    }
+
+    const pdfBlob = new Blob([blob], { type: "application/pdf" });
+    const blobUrl = window.URL.createObjectURL(pdfBlob);
+
+    window.open(blobUrl, "_blank");
+
+    // Bellek temizliği
+    setTimeout(() => {
+      window.URL.revokeObjectURL(blobUrl);
+    }, 30000);
+  } catch (err) {
+    console.error("PDF oluşturma hatası:", err);
+    alert("PDF oluşturulurken hata oluştu. Konsolu kontrol et.");
+  }
+};
 
   return (
     <RequireAuth>
