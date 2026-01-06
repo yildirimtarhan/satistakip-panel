@@ -27,11 +27,23 @@ export default async function handler(req, res) {
       return res.status(401).json({ message: "Geçersiz token" });
     }
 
-    const userId = decoded.id || decoded._id;
+    // ✅ Senin standart JWT alanların: { userId, companyId, role }
+    const role = decoded.role || "user";
+    const userId = decoded.userId || decoded.id || decoded._id;
     const companyId = decoded.companyId || decoded.firmaId || null;
 
     if (!userId) {
       return res.status(401).json({ message: "Kullanıcı bulunamadı" });
+    }
+
+    // ✅ Senin kuralın: Admin ERP işlemi yapamaz (tahsilat ERP işlemidir)
+    if (role === "admin") {
+      return res.status(403).json({ message: "Admin ERP işlemi yapamaz" });
+    }
+
+    // ✅ User için companyId zorunlu (multi-tenant izolasyon)
+    if (!companyId) {
+      return res.status(401).json({ message: "Firma bilgisi yok (companyId)" });
     }
 
     /* =======================
@@ -54,16 +66,16 @@ export default async function handler(req, res) {
     }
 
     const tutar = Number(amount);
-    if (isNaN(tutar) || tutar <= 0) {
+    if (!Number.isFinite(tutar) || tutar <= 0) {
       return res.status(400).json({ message: "Geçersiz tutar" });
     }
 
     /* =======================
-       🧾 CARİ BUL
+       🧾 CARİ BUL (multi-tenant kilit)
     ======================= */
     const cari = await Cari.findOne({
       _id: accountId,
-      ...(companyId ? { companyId } : {}),
+      companyId, // ✅ user sadece kendi firmasındaki cariye işlem yapabilir
     });
 
     if (!cari) {
@@ -83,17 +95,19 @@ export default async function handler(req, res) {
 
     /* =======================
        📚 EKSTRE (Transaction)
+       source: "manual" -> kullanıcı girişi (senin kilit kuralına uygun)
     ======================= */
     const trx = await Transaction.create({
       userId,
       companyId,
       accountId,
-      type,                 // tahsilat | odeme
+      type, // tahsilat | odeme
       paymentMethod,
       amount: tutar,
       currency: "TRY",
       date: new Date(),
       note: note || "",
+      source: "manual",
     });
 
     return res.status(200).json({
