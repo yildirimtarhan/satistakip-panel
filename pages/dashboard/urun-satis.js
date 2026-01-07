@@ -44,29 +44,10 @@ async function apiGet(url, token) {
   if (!res.ok) {
     throw new Error(data?.message || `${res.status} ${res.statusText}`);
   }
+
   return data;
 }
 
-async function apiPost(url, token, body) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(body || {}),
-  });
-
-  let data = null;
-  try {
-    data = await res.json();
-  } catch {}
-
-  if (!res.ok) {
-    throw new Error(data?.message || `${res.status} ${res.statusText}`);
-  }
-  return data;
-}
 
 function cariDisplayName(c) {
   return (
@@ -194,6 +175,7 @@ export default function UrunSatisPage() {
   const [saleNo, setSaleNo] = useState("");
 
   // ui state
+  const [successMsg, setSuccessMsg] = useState("");
   const [query, setQuery] = useState("");
   const [barcodeInput, setBarcodeInput] = useState("");
   const [errMsg, setErrMsg] = useState("");
@@ -296,6 +278,29 @@ export default function UrunSatisPage() {
       }
     })();
   }, [token, accountId]);
+
+  async function apiPost(url, token, body) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {}
+
+  if (!res.ok) {
+    throw new Error(data?.message || `${res.status} ${res.statusText}`);
+  }
+
+  return data;
+}
+
 
   // derived: filtered products
   const filteredProducts = useMemo(() => {
@@ -442,6 +447,7 @@ export default function UrunSatisPage() {
     return saved;
   };
 
+
   const handleSave = async (withPdf) => {
     try {
       setSaving(true);
@@ -476,6 +482,9 @@ export default function UrunSatisPage() {
       setErrMsg(e?.message || "Satış kaydedilemedi");
     } finally {
       setSaving(false);
+    // ✅ BAŞARILI
+  setSuccessMsg("✅ Satış başarıyla kaydedildi");
+
     }
   };
 
@@ -499,6 +508,13 @@ export default function UrunSatisPage() {
           {errMsg}
         </div>
       ) : null}
+
+      {successMsg && (
+  <div className="alert alert-success py-2">
+    {successMsg}
+  </div>
+)}
+
 
       {/* ÜST FORM */}
       <div className="mb-4 rounded-lg border bg-white p-4">
