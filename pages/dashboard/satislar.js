@@ -1,38 +1,45 @@
+// /pages/dashboard/satislar.js
 "use client";
 
 import { useEffect, useState } from "react";
 import RequireAuth from "@/components/RequireAuth";
 import Cookies from "js-cookie";
 
-const fmt = (n) =>
-  Number(n || 0).toLocaleString("tr-TR", { maximumFractionDigits: 2 });
+const fmt = (n) => Number(n || 0).toLocaleString("tr-TR", { maximumFractionDigits: 2 });
 
 export default function Satislar() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
-  const token =
-    Cookies.get("token") || localStorage.getItem("token") || "";
+  const token = Cookies.get("token") || localStorage.getItem("token") || "";
 
   useEffect(() => {
-    load();
-  }, []);
+    if (!token) return;
+    loadSales();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   // =========================
   // SATIŞLARI YÜKLE
   // =========================
-  async function load() {
+  async function loadSales() {
     try {
       setLoading(true);
+      setErr("");
+
       const res = await fetch("/api/reports/sales", {
         headers: { Authorization: `Bearer ${token}` },
       });
+
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Rapor alınamadı");
-      setRows(data);
+      if (!res.ok) throw new Error(data?.message || "Rapor alınamadı");
+
+      const list = Array.isArray(data?.records) ? data.records : [];
+      setRows(list);
     } catch (e) {
-      setErr(e.message);
+      setErr(e?.message || "Satışlar yüklenemedi");
+      setRows([]);
     } finally {
       setLoading(false);
     }
@@ -42,11 +49,11 @@ export default function Satislar() {
   // PDF AÇ
   // =========================
   function openPdf(saleNo) {
-    window.open(`/api/sales/pdf?saleNo=${saleNo}`, "_blank");
+    window.open(`/api/sales/pdf?saleNo=${encodeURIComponent(saleNo)}`, "_blank");
   }
 
   // =========================
-  // ✅ SATIŞ İPTAL / İADE
+  // SATIŞ İPTAL
   // =========================
   async function cancelSale(saleNo) {
     if (
@@ -70,32 +77,27 @@ export default function Satislar() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "İptal başarısız");
+      if (!res.ok) throw new Error(data?.message || "İptal başarısız");
 
       alert("Satış başarıyla iptal edildi");
-      load(); // 🔁 listeyi yenile
+      loadSales();
     } catch (e) {
-      alert(e.message || "Satış iptal edilemedi");
+      alert(e?.message || "Satış iptal edilemedi");
     }
   }
 
-  // =========================
-  // JSX
-  // =========================
   return (
     <RequireAuth>
       <div className="p-4 space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-semibold">Satışlar</h1>
-          <div className="text-sm text-gray-500">
-            Toplam Kayıt: {rows.length}
-          </div>
+          <div className="text-sm text-gray-500">Toplam Kayıt: {rows.length}</div>
         </div>
 
         {loading && <div>Yükleniyor...</div>}
         {err && <div className="text-red-600">{err}</div>}
 
-        {!loading && !rows.length && (
+        {!loading && !rows.length && !err && (
           <div className="text-gray-500">Kayıt bulunamadı.</div>
         )}
 
@@ -111,21 +113,21 @@ export default function Satislar() {
                   <th className="p-2"></th>
                 </tr>
               </thead>
+
               <tbody>
-                {rows.map((r) => (
-                  <tr key={r.saleNo} className="border-t hover:bg-gray-50">
-                    <td className="p-2 font-mono">{r.saleNo}</td>
+                {rows.map((r, idx) => (
+                  <tr key={`${r.saleNo || "sale"}-${idx}`} className="border-t hover:bg-gray-50">
+                    <td className="p-2 font-mono">{r.saleNo || "-"}</td>
                     <td className="p-2">
-                      {new Date(r.date).toLocaleDateString("tr-TR")}
+                      {r?.date ? new Date(r.date).toLocaleDateString("tr-TR") : "-"}
                     </td>
-                    <td className="p-2">{r.accountName}</td>
-                    <td className="p-2 text-right font-semibold">
-                      {fmt(r.totalTRY)}
-                    </td>
+                    <td className="p-2">{r.accountName || "-"}</td>
+                    <td className="p-2 text-right font-semibold">{fmt(r.totalTRY)}</td>
                     <td className="p-2 text-right space-x-2">
                       <button
                         className="border px-2 py-1 rounded"
                         onClick={() => openPdf(r.saleNo)}
+                        disabled={!r.saleNo || r.saleNo === "-"}
                       >
                         PDF
                       </button>
@@ -133,9 +135,11 @@ export default function Satislar() {
                       <button
                         className="border px-2 py-1 rounded"
                         onClick={() =>
-                          (window.location.href =
-                            `/dashboard/urun-satis?saleNo=${r.saleNo}`)
+                          (window.location.href = `/dashboard/urun-satis?saleNo=${encodeURIComponent(
+                            r.saleNo || ""
+                          )}`)
                         }
+                        disabled={!r.saleNo || r.saleNo === "-"}
                       >
                         Düzelt
                       </button>
@@ -143,6 +147,7 @@ export default function Satislar() {
                       <button
                         className="border px-2 py-1 rounded text-red-600"
                         onClick={() => cancelSale(r.saleNo)}
+                        disabled={!r.saleNo || r.saleNo === "-"}
                       >
                         İptal
                       </button>

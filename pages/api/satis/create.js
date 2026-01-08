@@ -5,117 +5,121 @@ import { verifyToken } from "@/utils/auth";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ message: "Method not allowed" });
+    return res.status(405).json({ message: "Sadece POST" });
   }
 
   try {
     await dbConnect();
 
-    // 🔐 AUTH (MULTI-TENANT GÜVENLİ)
-    const user = await verifyToken(req);
-    const userId = user?.userId || user?.id;
-    if (!userId) {
+    // 🔐 TOKEN
+    const authHeader = req.headers.authorization || "";
+    const token = authHeader.replace("Bearer ", "");
+    const user = verifyToken(token);
+
+    if (!user?.userId) {
       return res.status(401).json({ message: "Yetkisiz" });
     }
 
-    // 📦 PAYLOAD
     const {
       accountId,
       date,
       currency = "TRY",
       fxRate = 1,
-      manualRate = false,
       paymentType = "open",
       partialPaymentTRY = 0,
       note = "",
-      saleNo,
-      items,
+      saleNo = "",
+      items = [],
     } = req.body;
 
-    // 🛑 ZORUNLU KONTROLLER
-    if (!accountId || !date || !Array.isArray(items) || items.length === 0) {
+    if (!accountId || !items.length) {
       return res.status(400).json({ message: "Eksik veri" });
     }
 
-    // 🔢 SATIŞ TOPLAMLARI
-    let totalTRY = 0;
+    // 🧮 TOPLAMLAR
+    let subTotal = 0;
+    let vatTotal = 0;
 
-    // 🧾 SATIŞ TRANSACTIONLARI
-    const saleTransactions = [];
+    const normalizedItems = items.map((i) => {
+      const qty = Number(i.quantity || 1);
+      const price = Number(i.unitPrice || 0);
+      const vatRate = Number(i.vatRate || 0);
 
-    for (const item of items) {
-      const qty = Number(item.quantity || 0);
-      const price = Number(item.unitPrice || 0);
-      const vatRate = Number(item.vatRate || 0);
+      const lineSub = qty * price;
+      const lineVat = lineSub * (vatRate / 100);
 
-      if (!item.productId || qty <= 0) continue;
+      subTotal += lineSub;
+      vatTotal += lineVat;
 
-      const lineTotal = qty * price * (1 + vatRate / 100);
-      const lineTRY = currency === "TRY" ? lineTotal : lineTotal * fxRate;
-
-      totalTRY += lineTRY;
-
-      saleTransactions.push({
-        accountId,
-        type: "sale",
-        description: "Satış",
-        productId: item.productId,
+      return {
+        productId: i.productId,
+        name: i.name,
+        barcode: i.barcode,
+        sku: i.sku,
         quantity: qty,
-        price,
+        unitPrice: price,
         vatRate,
-        currency,
-        fxRate,
-        debit: lineTRY,
-        credit: 0,
-        userId,
-        date,
-        note,
-        saleNo,
-      });
+        total: lineSub + lineVat,
+      };
+    });
 
-      // 📉 STOK DÜŞ
-      await Product.findByIdAndUpdate(item.productId, {
-        $inc: { stock: -qty },
-      });
-    }
+    const grandTotal = subTotal + vatTotal;
+    const totalTRY = currency === "TRY" ? grandTotal : grandTotal * fxRate;
 
-    if (!saleTransactions.length) {
-      return res.status(400).json({ message: "Satış kalemi yok" });
-    }
+    // 🧾 SATIŞ TRANSACTION (CARİ BORÇLANIR)
+    const saleTrx = await Transaction.create({
+      userId: user.userId,            // 🔴 ZORUNLU
+      createdBy: user.userId,
+      accountId,
+      direction: "borc",              // 🔴 SADECE borc / alacak
+      amount: totalTRY,
+      paymentMethod: paymentType,
+      note,
+      date: date ? new Date(date) : new Date(),
+      saleNo,
+      type: "sale",
+      currency,
+      fxRate,
+      totalTRY,
+    });
 
-    // 💾 SATIŞI YAZ
-    await Transaction.insertMany(saleTransactions);
-
-    // 💰 KISMİ TAHSİLAT
+    // 💰 KISMİ TAHSİLAT VARSA
     if (Number(partialPaymentTRY) > 0) {
       await Transaction.create({
+        userId: user.userId,
+        createdBy: user.userId,
         accountId,
+        direction: "alacak",           // 🔴 TAHSİLAT
+        amount: Number(partialPaymentTRY),
+        paymentMethod: paymentType,
+        note: "Kısmi tahsilat",
+        date: date ? new Date(date) : new Date(),
+        saleNo,
         type: "payment",
-        description: "Kısmi Tahsilat",
-        debit: 0,
-        credit: Number(partialPaymentTRY),
         currency: "TRY",
         fxRate: 1,
-        userId,
-        date,
-        note,
-        saleNo,
+        totalTRY: Number(partialPaymentTRY),
       });
     }
 
-    // ✅ OK
+    // 📦 STOK DÜŞ
+    for (const i of normalizedItems) {
+      if (i.productId) {
+        await Product.findByIdAndUpdate(i.productId, {
+          $inc: { stock: -i.quantity },
+        });
+      }
+    }
+
     return res.status(200).json({
       success: true,
-      message: "Satış başarıyla kaydedildi",
       saleNo,
-      totalTRY,
-      partialPaymentTRY: Number(partialPaymentTRY),
+      transactionId: saleTrx._id,
     });
-  } catch (err) {
-    console.error("SATIS CREATE ERROR:", err);
+  } catch (e) {
+    console.error("SATIS CREATE ERROR:", e);
     return res.status(500).json({
-      message: "Satış kaydedilemedi",
-      error: err.message,
+      message: e?.message || "Satış oluşturulamadı",
     });
   }
 }
