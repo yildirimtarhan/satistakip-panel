@@ -104,59 +104,61 @@ export default async function handler(req, res) {
     // =========================
     // 📊 AGGREGATE
     // =========================
-    const list = await Transaction.aggregate([
-      { $match: match },
+   const list = await Transaction.aggregate([
+  { $match: match },
 
-      // 🔗 Cari join
-      {
-        $lookup: {
-          from: "cari",
-          localField: "_accountObjId",
-          foreignField: "_id",
-          as: "cari",
-        },
-      },
-      { $unwind: { path: "$cari", preserveNullAndEmptyArrays: true } },
+  // 🔗 Cari join
+  {
+    $lookup: {
+      from: "caris",
+      localField: "accountId",
+      foreignField: "_id",
+      as: "cari",
+    },
+  },
+  { $unwind: { path: "$cari", preserveNullAndEmptyArrays: true } },
 
-      { $sort: { date: -1, createdAt: -1 } },
+  { $sort: { date: -1, createdAt: -1 } },
 
-      // normalize alanlar
-      {
-        $addFields: {
-          _saleNo: { $ifNull: ["$saleNo", "$refNo"] },
-          _accountName: {
-            $ifNull: [
-              "$cari.unvan",
+  // 🧠 Cari adı normalize (boş string güvenli)
+  {
+    $addFields: {
+      accountName: {
+        $cond: [
+          { $and: [{ $ne: ["$cari.unvan", null] }, { $ne: ["$cari.unvan", ""] }] },
+          "$cari.unvan",
+          {
+            $cond: [
+              { $and: [{ $ne: ["$cari.ad", null] }, { $ne: ["$cari.ad", ""] }] },
+              "$cari.ad",
               {
-                $ifNull: [
+                $cond: [
+                  { $and: [{ $ne: ["$cari.firmaAdi", null] }, { $ne: ["$cari.firmaAdi", ""] }] },
                   "$cari.firmaAdi",
-                  {
-                    $ifNull: [
-                      "$cari.ad",
-                      { $ifNull: ["$cari.name", "$cari.email"] },
-                    ],
-                  },
+                  { $ifNull: ["$cari.email", "-"] },
                 ],
               },
             ],
           },
-        },
+        ],
       },
+    },
+  },
 
-      // frontend projection
-      {
-        $project: {
-          _id: 1,
-          saleNo: { $ifNull: ["$_saleNo", "-"] },
-          date: 1,
-          currency: 1,
-          totalTRY: { $ifNull: ["$totalTRY", 0] },
-          paymentType: 1,
-          partialPaymentTRY: 1,
-          accountName: { $ifNull: ["$_accountName", "-"] },
-        },
-      },
-    ]);
+  // 🎯 Frontend projection
+  {
+    $project: {
+      _id: 1,
+      saleNo: { $ifNull: ["$saleNo", { $ifNull: ["$refNo", "-"] }] },
+      date: 1,
+      currency: 1,
+      totalTRY: { $ifNull: ["$totalTRY", { $ifNull: ["$grandTotal", 0] }] },
+      paymentType: 1,
+      partialPaymentTRY: 1,
+      accountName: 1,
+    },
+  },
+]);
 
     return res.status(200).json({
       total: list.length,
