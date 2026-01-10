@@ -15,9 +15,7 @@ export default async function handler(req, res) {
        🔐 TOKEN
     ======================= */
     const auth = req.headers.authorization;
-    if (!auth) {
-      return res.status(401).json({ message: "Token yok" });
-    }
+    if (!auth) return res.status(401).json({ message: "Token yok" });
 
     const token = auth.replace("Bearer ", "");
     let decoded;
@@ -27,35 +25,22 @@ export default async function handler(req, res) {
       return res.status(401).json({ message: "Geçersiz token" });
     }
 
-    // ✅ Senin standart JWT alanların: { userId, companyId, role }
-    const role = decoded.role || "user";
     const userId = decoded.userId || decoded.id || decoded._id;
-    const companyId = decoded.companyId || decoded.firmaId || null;
+    const companyId = decoded.companyId || null;
+    const role = decoded.role || "user";
 
     if (!userId) {
       return res.status(401).json({ message: "Kullanıcı bulunamadı" });
     }
 
-    // ✅ Senin kuralın: Admin ERP işlemi yapamaz (tahsilat ERP işlemidir)
     if (role === "admin") {
       return res.status(403).json({ message: "Admin ERP işlemi yapamaz" });
-    }
-
-    // ✅ User için companyId zorunlu (multi-tenant izolasyon)
-    if (!companyId) {
-      return res.status(401).json({ message: "Firma bilgisi yok (companyId)" });
     }
 
     /* =======================
        📥 BODY
     ======================= */
-    const {
-      accountId,
-      type, // "tahsilat" | "odeme"
-      paymentMethod,
-      amount,
-      note,
-    } = req.body;
+    const { accountId, type, paymentMethod, amount, note } = req.body;
 
     if (!accountId || !type || !amount) {
       return res.status(400).json({ message: "Zorunlu alanlar eksik" });
@@ -71,11 +56,11 @@ export default async function handler(req, res) {
     }
 
     /* =======================
-       🧾 CARİ BUL (multi-tenant kilit)
+       🧾 CARİ BUL (multi-tenant)
     ======================= */
     const cari = await Cari.findOne({
       _id: accountId,
-      companyId, // ✅ user sadece kendi firmasındaki cariye işlem yapabilir
+      ...(companyId ? { companyId } : { userId }),
     });
 
     if (!cari) {
@@ -83,36 +68,41 @@ export default async function handler(req, res) {
     }
 
     /* =======================
-       💰 BAKİYE HESABI
-       tahsilat → borç AZALIR
-       ödeme    → borç ARTAR
+       🔁 DIRECTION STANDARDI
+       tahsilat → alacak
+       ödeme    → borç
     ======================= */
-    const bakiyeDegisim = type === "tahsilat" ? -tutar : tutar;
+    const direction = type === "tahsilat" ? "alacak" : "borc";
 
-    cari.bakiye = Number(cari.bakiye || 0) + bakiyeDegisim;
+    /* =======================
+       💰 CARİ BAKİYE GÜNCELLE
+       bakiye = borç - alacak
+    ======================= */
+    const delta = direction === "alacak" ? -tutar : tutar;
+
+    cari.bakiye = Number(cari.bakiye || 0) + delta;
     cari.updatedAt = new Date();
     await cari.save();
 
     /* =======================
-       📚 EKSTRE (Transaction)
-       source: "manual" -> kullanıcı girişi (senin kilit kuralına uygun)
+       📚 TRANSACTION
     ======================= */
     const trx = await Transaction.create({
       userId,
       companyId,
       accountId,
-      type, // tahsilat | odeme
-      paymentMethod,
+      direction,
       amount: tutar,
       currency: "TRY",
-      date: new Date(),
+      paymentMethod: paymentMethod || "Nakit",
       note: note || "",
+      date: new Date(),
       source: "manual",
     });
 
     return res.status(200).json({
       success: true,
-      message: "İşlem kaydedildi",
+      message: "Tahsilat/Ödeme kaydedildi",
       bakiye: cari.bakiye,
       transaction: trx,
     });

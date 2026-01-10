@@ -48,13 +48,27 @@ export default async function handler(req, res) {
     const cari = await Cari.findById(accountObjectId).lean();
     if (!cari) return res.status(404).json({ message: "Cari bulunamadı" });
 
-    // User ise sadece kendi carisini görebilir
-    if (!admin && String(cari.userId || "") !== actorUserId) {
-      return res.status(403).json({ message: "Yetkisiz" });
-    }
+      // 🔐 Yetki kontrolü
+if (!admin) {
+  // cari.userId varsa user ile eşleşmeli
+  if (cari.userId && String(cari.userId) !== actorUserId) {
+    return res.status(403).json({ message: "Yetkisiz" });
+  }
+  // companyId varsa user bu firmaya ait olmalı (opsiyonel)
+  if (cari.companyId && String(cari.companyId) !== actorCompanyId) {
+    return res.status(403).json({ message: "Yetkisiz" });
+  }
+}
 
-    // Tenant: admin bile olsa hesaplama cari.userId üzerinden yapılır
-    const tenantUserId = String(cari.userId || actorUserId);
+// 🧮 Hesaplama hangi tenant üzerinden yapılacak?
+const tenantFilter = {};
+
+if (cari.companyId) {
+  tenantFilter.companyId = String(cari.companyId);
+} else {
+  tenantFilter.userId = String(cari.userId || actorUserId);
+}
+
 
     const txs = await Transaction.find({
       userId: tenantUserId,
