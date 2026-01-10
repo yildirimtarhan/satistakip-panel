@@ -11,9 +11,7 @@ export default async function handler(req, res) {
   try {
     await dbConnect();
 
-    /* =======================
-       🔐 TOKEN
-    ======================= */
+    // 🔐 TOKEN
     const auth = req.headers.authorization;
     if (!auth) return res.status(401).json({ message: "Token yok" });
 
@@ -29,18 +27,19 @@ export default async function handler(req, res) {
     const companyId = decoded.companyId || null;
     const role = decoded.role || "user";
 
-    if (!userId) {
-      return res.status(401).json({ message: "Kullanıcı bulunamadı" });
-    }
+    if (!userId) return res.status(401).json({ message: "Kullanıcı bulunamadı" });
 
+    // (senin mevcut kuralın)
     if (role === "admin") {
       return res.status(403).json({ message: "Admin ERP işlemi yapamaz" });
     }
 
-    /* =======================
-       📥 BODY
-    ======================= */
-    const { accountId, type, paymentMethod, amount, note } = req.body;
+    // 📥 BODY
+    const { accountId, type, amount, note, date } = req.body;
+
+    // method gönderen UI ile uyum: method || paymentMethod
+    const paymentMethod =
+      req.body.paymentMethod || req.body.method || "Nakit";
 
     if (!accountId || !type || !amount) {
       return res.status(400).json({ message: "Zorunlu alanlar eksik" });
@@ -55,9 +54,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ message: "Geçersiz tutar" });
     }
 
-    /* =======================
-       🧾 CARİ BUL (multi-tenant)
-    ======================= */
+    // 🧾 CARİ BUL (multi-tenant)
     const cari = await Cari.findOne({
       _id: accountId,
       ...(companyId ? { companyId } : { userId }),
@@ -67,37 +64,33 @@ export default async function handler(req, res) {
       return res.status(404).json({ message: "Cari bulunamadı" });
     }
 
-    /* =======================
-       🔁 DIRECTION STANDARDI
-       tahsilat → alacak
-       ödeme    → borç
-    ======================= */
+    // 🔁 STANDARD
+    // tahsilat → alacak
+    // ödeme    → borc
     const direction = type === "tahsilat" ? "alacak" : "borc";
+    const trxType = "payment"; // kritik
 
-    /* =======================
-       💰 CARİ BAKİYE GÜNCELLE
-       bakiye = borç - alacak
-    ======================= */
+    // 💰 (opsiyonel) cari.bakiye güncelle (mevcut sistemin bozulmaması için korundu)
+    // bakiye = borç - alacak
     const delta = direction === "alacak" ? -tutar : tutar;
-
     cari.bakiye = Number(cari.bakiye || 0) + delta;
     cari.updatedAt = new Date();
     await cari.save();
 
-    /* =======================
-       📚 TRANSACTION
-    ======================= */
+    // 📚 TRANSACTION
     const trx = await Transaction.create({
       userId,
-      companyId,
+      companyId: companyId || undefined,
       accountId,
+      type: trxType,
       direction,
       amount: tutar,
       currency: "TRY",
-      paymentMethod: paymentMethod || "Nakit",
+      paymentMethod,
       note: note || "",
-      date: new Date(),
+      date: date ? new Date(date) : new Date(),
       source: "manual",
+      createdBy: userId,
     });
 
     return res.status(200).json({

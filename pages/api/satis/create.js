@@ -20,6 +20,8 @@ export default async function handler(req, res) {
       return res.status(401).json({ message: "Yetkisiz" });
     }
 
+    const companyId = user.companyId || user.tenantId || null;
+
     const {
       accountId,
       date,
@@ -68,10 +70,11 @@ export default async function handler(req, res) {
 
     // 🧾 SATIŞ TRANSACTION (CARİ BORÇLANIR)
     const saleTrx = await Transaction.create({
-      userId: user.userId,            // 🔴 ZORUNLU
+      userId: user.userId,
+      companyId: companyId || undefined,
       createdBy: user.userId,
       accountId,
-      direction: "borc",              // 🔴 SADECE borc / alacak
+      direction: "borc",
       amount: totalTRY,
       paymentMethod: paymentType,
       note,
@@ -81,15 +84,17 @@ export default async function handler(req, res) {
       currency,
       fxRate,
       totalTRY,
+      items: normalizedItems,
     });
 
     // 💰 KISMİ TAHSİLAT VARSA
     if (Number(partialPaymentTRY) > 0) {
       await Transaction.create({
         userId: user.userId,
+        companyId: companyId || undefined,
         createdBy: user.userId,
         accountId,
-        direction: "alacak",           // 🔴 TAHSİLAT
+        direction: "alacak",
         amount: Number(partialPaymentTRY),
         paymentMethod: paymentType,
         note: "Kısmi tahsilat",

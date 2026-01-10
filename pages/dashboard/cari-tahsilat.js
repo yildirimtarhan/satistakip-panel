@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import Cookies from "js-cookie";
 import jsPDF from "jspdf";
 
-// ================= HELPERS =================
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
 const fmt = (n) =>
@@ -13,37 +12,31 @@ const fmt = (n) =>
     maximumFractionDigits: 2,
   });
 
-// ================= PAGE =================
 export default function CariTahsilatPage() {
-  // ================= AUTH =================
   const [token, setToken] = useState("");
 
-  // ================= DATA =================
   const [cariler, setCariler] = useState([]);
   const [balance, setBalance] = useState(0);
+  const [payments, setPayments] = useState([]);
 
-  // ================= FORM =================
   const [form, setForm] = useState({
     accountId: "",
     date: todayISO(),
     amount: "",
     type: "tahsilat", // tahsilat | odeme
-    method: "cash",   // cash | bank | kart
+    method: "cash", // cash | bank | kart
     note: "",
   });
 
-  // ================= UI =================
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [success, setSuccess] = useState("");
 
-  // ================= LOAD TOKEN =================
   useEffect(() => {
     const t = Cookies.get("token") || localStorage.getItem("token");
     if (t) setToken(t);
   }, []);
 
-  // ================= LOAD CARİLER =================
   useEffect(() => {
     if (!token) return;
 
@@ -60,7 +53,6 @@ export default function CariTahsilatPage() {
     })();
   }, [token]);
 
-  // ================= LOAD BALANCE =================
   const loadBalance = async (accountId) => {
     if (!accountId || !token) {
       setBalance(0);
@@ -72,13 +64,29 @@ export default function CariTahsilatPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
-      setBalance(data?.balance ?? data?.bakiye ?? 0);
+      setBalance(data?.bakiye ?? data?.balance ?? 0);
     } catch {
       setBalance(0);
     }
   };
 
-  // ================= SAVE =================
+  const loadPayments = async (accountId) => {
+    if (!accountId || !token) {
+      setPayments([]);
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/tahsilat/list?accountId=${accountId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setPayments(Array.isArray(data) ? data : []);
+    } catch {
+      setPayments([]);
+    }
+  };
+
   const save = async () => {
     if (!form.accountId) {
       setErr("Cari seçmelisin");
@@ -99,11 +107,10 @@ export default function CariTahsilatPage() {
         date: form.date,
         amount: Number(form.amount),
         type: form.type,
-        method: form.method,
+        // backend uyumu: paymentMethod bekliyor
+        paymentMethod: form.method,
         note: form.note,
-
-        // 🔴 KRİTİK: backend enum uyumu
-        direction: form.type === "tahsilat" ? "credit" : "debit",
+        // ❌ direction göndermiyoruz (backend kendi standardını uyguluyor: borc/alacak)
       };
 
       const res = await fetch("/api/tahsilat", {
@@ -120,16 +127,14 @@ export default function CariTahsilatPage() {
 
       setSuccess("✅ İşlem başarıyla kaydedildi");
 
-      // bakiye yenile
       await loadBalance(form.accountId);
+      await loadPayments(form.accountId);
 
-      // form reset
       setForm((f) => ({
         ...f,
         amount: "",
         note: "",
       }));
-
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -137,26 +142,21 @@ export default function CariTahsilatPage() {
     }
   };
 
-  // ================= PDF =================
   const generatePdf = () => {
     const doc = new jsPDF();
 
     doc.setFontSize(14);
-    doc.text(
-      form.type === "tahsilat" ? "TAHSİLAT MAKBUZU" : "ÖDEME MAKBUZU",
-      105,
-      20,
-      { align: "center" }
-    );
+    doc.text(form.type === "tahsilat" ? "TAHSİLAT MAKBUZU" : "ÖDEME MAKBUZU", 105, 20, {
+      align: "center",
+    });
+
+    const cari =
+      cariler.find((c) => c._id === form.accountId) || {};
 
     doc.setFontSize(10);
     doc.text(`Tarih: ${form.date}`, 10, 40);
     doc.text(
-      `Cari: ${
-        cariler.find((c) => c._id === form.accountId)?.unvan ||
-        cariler.find((c) => c._id === form.accountId)?.firmaAdi ||
-        "-"
-      }`,
+      `Cari: ${cari.unvan || cari.firmaAdi || cari.ad || cari.name || cari.email || "-"}`,
       10,
       50
     );
@@ -167,32 +167,25 @@ export default function CariTahsilatPage() {
       doc.text(`Not: ${form.note}`, 10, 80);
     }
 
-    doc.save(
-      `${form.type}-${Date.now()}.pdf`
-    );
+    doc.save(`${form.type}-${Date.now()}.pdf`);
   };
 
-  // ================= UI =================
   return (
     <div className="p-5">
       <h2 className="text-xl font-semibold mb-4">Cari Tahsilat / Ödeme</h2>
 
       {err && <div className="bg-red-100 text-red-700 p-2 mb-3">{err}</div>}
-      {success && (
-        <div className="bg-green-100 text-green-700 p-2 mb-3">
-          {success}
-        </div>
-      )}
+      {success && <div className="bg-green-100 text-green-700 p-2 mb-3">{success}</div>}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
         <select
           className="border p-2"
           value={form.accountId}
           onChange={(e) => {
             const id = e.target.value;
             setForm({ ...form, accountId: id });
-            loadBalance(id); // 🔥 ANINDA BAKİYE
+            loadBalance(id);
+            loadPayments(id);
           }}
         >
           <option value="">Cari Seç</option>
@@ -255,7 +248,7 @@ export default function CariTahsilatPage() {
             disabled={loading}
             className="bg-blue-600 text-white px-4 py-2"
           >
-            Kaydet
+            {loading ? "Kaydediliyor..." : "Kaydet"}
           </button>
 
           <button
@@ -267,6 +260,46 @@ export default function CariTahsilatPage() {
           </button>
         </div>
       </div>
+
+      {/* ✅ Tahsilat/Ödeme Geçmişi */}
+      {form.accountId && (
+        <div className="mt-8">
+          <h3 className="font-semibold mb-2">Tahsilat / Ödeme Geçmişi</h3>
+
+          {payments.length === 0 ? (
+            <div className="text-sm text-gray-500">Kayıt bulunamadı.</div>
+          ) : (
+            <div className="overflow-auto border">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-100">
+                    <th className="border p-2 text-left">Tarih</th>
+                    <th className="border p-2 text-left">Tür</th>
+                    <th className="border p-2 text-right">Tutar</th>
+                    <th className="border p-2 text-left">Yöntem</th>
+                    <th className="border p-2 text-left">Not</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payments.map((p) => (
+                    <tr key={p._id}>
+                      <td className="border p-2">
+                        {p.date ? new Date(p.date).toLocaleDateString("tr-TR") : "-"}
+                      </td>
+                      <td className="border p-2">
+                        {p.direction === "alacak" ? "Tahsilat" : "Ödeme"}
+                      </td>
+                      <td className="border p-2 text-right">{fmt(p.amount)} TRY</td>
+                      <td className="border p-2">{p.paymentMethod || "-"}</td>
+                      <td className="border p-2">{p.note || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

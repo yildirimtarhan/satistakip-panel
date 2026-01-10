@@ -35,8 +35,11 @@ export default async function handler(req, res) {
       return res.status(401).json({ message: "Geçersiz token" });
     }
 
-    const actorUserId = String(decoded?.id || decoded?._id || "");
+    const actorUserId = String(decoded?.id || decoded?.userId || decoded?._id || "");
+    const actorCompanyId = decoded?.companyId ? String(decoded.companyId) : "";
     const admin = isAdmin(decoded);
+
+    if (!actorUserId) return res.status(401).json({ message: "Geçersiz kullanıcı" });
 
     let accountObjectId;
     try {
@@ -48,30 +51,34 @@ export default async function handler(req, res) {
     const cari = await Cari.findById(accountObjectId).lean();
     if (!cari) return res.status(404).json({ message: "Cari bulunamadı" });
 
-      // 🔐 Yetki kontrolü
-if (!admin) {
-  // cari.userId varsa user ile eşleşmeli
-  if (cari.userId && String(cari.userId) !== actorUserId) {
-    return res.status(403).json({ message: "Yetkisiz" });
-  }
-  // companyId varsa user bu firmaya ait olmalı (opsiyonel)
-  if (cari.companyId && String(cari.companyId) !== actorCompanyId) {
-    return res.status(403).json({ message: "Yetkisiz" });
-  }
-}
+    // 🔐 Yetki kontrolü (admin değilse)
+    if (!admin) {
+      if (cari.companyId) {
+        // companyId'li cari ise user aynı company'de olmalı
+        if (!actorCompanyId) {
+          return res.status(403).json({ message: "Yetkisiz (kullanıcı companyId yok)" });
+        }
+        if (String(cari.companyId) !== actorCompanyId) {
+          return res.status(403).json({ message: "Yetkisiz (tenant)" });
+        }
+      } else {
+        // eski veri: companyId yoksa userId üzerinden
+        if (cari.userId && String(cari.userId) !== actorUserId) {
+          return res.status(403).json({ message: "Yetkisiz (user)" });
+        }
+      }
+    }
 
-// 🧮 Hesaplama hangi tenant üzerinden yapılacak?
-const tenantFilter = {};
-
-if (cari.companyId) {
-  tenantFilter.companyId = String(cari.companyId);
-} else {
-  tenantFilter.userId = String(cari.userId || actorUserId);
-}
-
+    // 🧮 Tenant filtresi (tek kaynak)
+    const tenantFilter = {};
+    if (cari.companyId) {
+      tenantFilter.companyId = String(cari.companyId);
+    } else {
+      tenantFilter.userId = String(cari.userId || actorUserId);
+    }
 
     const txs = await Transaction.find({
-      userId: tenantUserId,
+      ...tenantFilter,
       accountId: accountObjectId,
       direction: { $in: ["borc", "alacak"] },
     }).lean();

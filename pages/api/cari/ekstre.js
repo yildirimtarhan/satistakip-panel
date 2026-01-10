@@ -12,94 +12,71 @@ export default async function handler(req, res) {
   try {
     await dbConnect();
 
-    /* =======================
-       🔐 TOKEN
-    ======================= */
+    // 🔐 TOKEN
     const auth = req.headers.authorization;
-    if (!auth) {
-      return res.status(401).json({ message: "Token yok" });
-    }
+    if (!auth) return res.status(401).json({ message: "Token yok" });
 
     const token = auth.replace("Bearer ", "");
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch {
-      return res.status(401).json({ message: "Geçersiz token" });
-    }
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     const userId = decoded.id || decoded._id;
-    const companyId = decoded.companyId || decoded.firmaId || null;
+    const companyIdRaw = decoded.companyId || null;
+    const role = decoded.role || "user";
 
-    /* =======================
-       📥 PARAMS
-    ======================= */
+    // 📥 PARAMS
     const { accountId, start, end } = req.query;
     if (!accountId) {
       return res.status(400).json({ message: "accountId zorunlu" });
     }
 
+    const accountObjectId = new mongoose.Types.ObjectId(accountId);
+
     const startDate = start ? new Date(start) : new Date("1970-01-01");
     const endDate = end ? new Date(end) : new Date();
     endDate.setHours(23, 59, 59, 999);
 
-    /* =======================
-       🧾 CARİ
-    ======================= */
-    const cari = await Cari.findOne({
-      _id: accountId,
-      ...(companyId ? { companyId } : {}),
-    });
-
+    // 🧾 CARİ (SADE VE SAĞLAM)
+    const cari = await Cari.findById(accountObjectId);
     if (!cari) {
       return res.status(404).json({ message: "Cari bulunamadı" });
     }
 
-    /* =======================
-       📚 TRANSACTIONS
-    ======================= */
-    const txs = await Transaction.find({
-      accountId: new mongoose.Types.ObjectId(accountId),
+    // 🧠 TENANT FILTER (KRİTİK KISIM)
+    const trxFilter = {
+      accountId: accountObjectId,
       date: { $gte: startDate, $lte: endDate },
-      ...(companyId ? { companyId } : {}),
-    }).sort({ date: 1 });
+    };
 
-    /* =======================
-       🧮 EKSTRE OLUŞTUR
-    ======================= */
+    if (role !== "admin" && companyIdRaw) {
+      trxFilter.companyId = new mongoose.Types.ObjectId(companyIdRaw);
+    }
+
+    // 📚 TRANSACTIONS
+    const txs = await Transaction.find(trxFilter).sort({ date: 1 }).lean();
+
+    // 🧮 EKSTRE
     let bakiye = 0;
     const rows = [];
 
     for (const t of txs) {
-      let borc = 0;
-      let alacak = 0;
-
-      if (
-        t.type === "sale" ||
-        t.type === "purchase" ||
-        t.type === "odeme"
-      ) {
-        borc = Number(t.totalTRY || t.amount || 0);
-      }
-
-      if (t.type === "tahsilat") {
-        alacak = Number(t.totalTRY || t.amount || 0);
-      }
+      const amount = Number(t.amount || t.totalTRY || 0);
+      const borc = t.direction === "borc" ? amount : 0;
+      const alacak = t.direction === "alacak" ? amount : 0;
 
       bakiye = bakiye + borc - alacak;
 
       rows.push({
         tarih: t.date,
         aciklama:
-          t.type === "tahsilat"
-            ? "Tahsilat"
-            : t.type === "odeme"
-            ? "Ödeme"
-            : t.type === "sale"
+          t.type === "sale"
             ? "Satış"
             : t.type === "purchase"
             ? "Alış"
-            : t.type,
+            : t.direction === "alacak"
+            ? "Tahsilat"
+            : t.direction === "borc"
+            ? "Ödeme"
+            : "-",
         borc,
         alacak,
         bakiye,
@@ -108,11 +85,9 @@ export default async function handler(req, res) {
     }
 
     return res.status(200).json({
-      cari: {
-        _id: cari._id,
-        ad: cari.ad,
-      },
+      success: true,
       rows,
+      bakiye,
     });
   } catch (err) {
     console.error("❌ EKSTRE API HATASI:", err);
