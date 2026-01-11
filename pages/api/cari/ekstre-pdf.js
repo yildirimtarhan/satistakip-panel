@@ -1,5 +1,7 @@
-import dbConnect from "@/lib/dbConnect";
 import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
+import { connectToDatabase } from "@/lib/mongodb";
+
 import Transaction from "@/models/Transaction";
 import Cari from "@/models/Cari";
 
@@ -12,16 +14,19 @@ export default async function handler(req, res) {
       return res.status(405).end();
     }
 
-    await dbConnect();
+    // 🔐 AUTH
+    const authHeader = req.headers.authorization || "";
+    const token = authHeader.startsWith("Bearer ")
+      ? authHeader.split(" ")[1]
+      : null;
 
-    const auth = req.headers.authorization;
-    if (!auth) {
+    if (!token) {
       return res.status(401).end("Yetkisiz");
     }
 
-    const token = auth.split(" ")[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const userId = decoded.userId || decoded.id;
+    const userId = decoded.userId || decoded.id || decoded._id; // 👈 EKLENDİ
+    const companyId = decoded.companyId || null;
     const role = decoded.role || "user";
 
     const { accountId, start, end } = req.query;
@@ -29,79 +34,115 @@ export default async function handler(req, res) {
       return res.status(400).end("Parametre eksik");
     }
 
-    const cari = await Cari.findOne({ _id: accountId, userId }).lean();
+    const { db } = await connectToDatabase();
+
+    const accountObjectId = new mongoose.Types.ObjectId(accountId);
+
+    // 🧾 CARİ
+    const cari = await Cari.findById(accountObjectId).lean();
     if (!cari) {
       return res.status(404).end("Cari bulunamadı");
     }
 
-    const transactions = await Transaction.find({
-      userId,
-      accountId,
-      date: {
-        $gte: new Date(start),
-        $lte: new Date(end),
-      },
-    })
+    // 🏢 FİRMA AYARLARI (AYNI pages/api/settings/company.js KAYNAĞI)
+let company = {
+  name: "SatışTakip ERP",
+  taxOffice: "",
+  taxNo: "",
+  phone: "",
+  email: "",
+  address: "",
+  logo: null,
+};
+
+// ⚠️ Firma ayarları USER BAZLI tutuluyor
+if (userId) {
+  const companySettings = await db
+    .collection("company_settings")
+    .findOne({ userId });
+
+  if (companySettings) {
+    company = {
+      name: companySettings.firmaAdi || company.name,
+      taxOffice: companySettings.vergiDairesi || "",
+      taxNo: companySettings.vergiNo || "",
+      phone: companySettings.telefon || "",
+      email: companySettings.eposta || companySettings.email || "",
+      address: companySettings.adres || "",
+      logo: companySettings.logo || null,
+    };
+  }
+}
+
+    // 📅 TARİH
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    endDate.setHours(23, 59, 59, 999);
+
+    // 🔎 TRANSACTION FİLTRE (EKRANLA AYNI)
+    const trxFilter = {
+      accountId: accountObjectId,
+      date: { $gte: startDate, $lte: endDate },
+    };
+
+    if (role !== "admin" && companyId) {
+      trxFilter.companyId = new mongoose.Types.ObjectId(companyId);
+    }
+
+    const transactions = await Transaction.find(trxFilter)
       .sort({ date: 1 })
       .lean();
 
-    let balance = 0;
-    let totalDebit = 0;
-    let totalCredit = 0;
+    // 🧮 EKSTRE HESAPLARI
+    let bakiye = 0;
+    let totalBorc = 0;
+    let totalAlacak = 0;
 
     const rows = transactions.map((t) => {
-      let debit = 0;
-      let credit = 0;
-      let description = "";
+      const amount = Number(t.amount || t.totalTRY || 0);
+      const borc = t.direction === "borc" ? amount : 0;
+      const alacak = t.direction === "alacak" ? amount : 0;
 
-      switch (t.type) {
-        case "purchase":
-          debit = Number(t.amount || 0);
-          description = "Alış";
-          break;
-        case "sale":
-          credit = Number(t.amount || 0);
-          description = "Satış";
-          break;
-        case "payment":
-          credit = Number(t.amount || 0);
-          description = "Tahsilat";
-          break;
-        case "purchase_cancel":
-          description = "Alış İptali";
-          break;
-        default:
-          description = t.description || t.type || "-";
-      }
-
-      balance += debit - credit;
-      totalDebit += debit;
-      totalCredit += credit;
+      bakiye = bakiye + borc - alacak;
+      totalBorc += borc;
+      totalAlacak += alacak;
 
       return {
-        date: new Date(t.date).toLocaleDateString("tr-TR"),
-        description,
-        debit,
-        credit,
-        balance,
+        tarih: t.date,
+        aciklama:
+          t.type === "sale"
+            ? "Satış"
+            : t.type === "purchase"
+            ? "Alış"
+            : t.direction === "alacak"
+            ? "Tahsilat"
+            : t.direction === "borc"
+            ? "Ödeme"
+            : "-",
+        borc,
+        alacak,
+        bakiye,
       };
     });
 
-    // ✅ MERKEZİ PDF MOTOR – DOĞRU
+    // 📄 PDF
     const doc = createPdf(res, {
-      title: "CARİ EKSTRESİ",
-      subtitle: `${start} - ${end}`,
-      userRole: role,
-    });
+  title: "CARİ EKSTRESİ",
+  subtitle: `${start} - ${end}`,
+  userRole: role,
+  layout: "landscape", // ✅ EKLE
+});
+
 
     renderCariEkstrePdf(doc, {
-      cari: cari.unvan || cari.ad || "-",
+      company,
+      cari: cari.unvan || cari.firmaAdi || cari.ad || "-",
       start,
       end,
       rows,
-      totalDebit,
-      totalCredit,
-      balance,
+      totalBorc,
+      totalAlacak,
+      bakiye,
     });
 
     doc.end();
