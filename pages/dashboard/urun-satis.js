@@ -1,6 +1,11 @@
 // /pages/dashboard/urun-satis.js
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/router";
 import Cookies from "js-cookie";
+import { apiPut } from "@/utils/api";
+
+
+
 
 /**
  * ✅ Tailwind-only satış ekranı
@@ -57,16 +62,14 @@ async function apiPost(url, token, body) {
     body: JSON.stringify(body || {}),
   });
 
-  let data = null;
-  try {
-    data = await res.json();
-  } catch {}
-
   if (!res.ok) {
-    throw new Error(data?.message || `${res.status} ${res.statusText}`);
+    const err = await res.text();
+    throw new Error(err || "API Hatası");
   }
-  return data;
+
+  return await res.json(); // 🔥 BU SATIR ŞART
 }
+
 
 function cariDisplayName(c) {
   return (
@@ -174,6 +177,11 @@ async function buildSalePdf({ title, metaRows, items, totals, currency }) {
 
 // ---------- page ----------
 export default function UrunSatisPage() {
+    const router = useRouter();
+  const editSaleNo = router.query.saleNo || null;
+  const isEdit = Boolean(editSaleNo);
+
+
   // auth/token
   const [token, setToken] = useState("");
 
@@ -265,22 +273,50 @@ export default function UrunSatisPage() {
 
   // init
   useEffect(() => {
-    const t = Cookies.get("token") || localStorage.getItem("token") || "";
-    if (!t) return;
+  const t = Cookies.get("token") || localStorage.getItem("token") || "";
+  if (!t) return;
 
-    setToken(t);
+  setToken(t);
 
-    (async () => {
-      try {
-        setErrMsg("");
-        await loadCariler(t);
-        await loadProducts(t);
+  (async () => {
+    try {
+      setErrMsg("");
+      await loadCariler(t);
+      await loadProducts(t);
+
+      if (editSaleNo) {
+        // 🔥 SATIŞI GETİR (EDIT)
+        const data = await apiGet(`/api/sales/get?saleNo=${editSaleNo}`, t);
+
+        setSaleNo(data.saleNo);
+        setAccountId(data.accountId);
+        setDate(data.date?.slice(0, 10) || todayISO());
+        setCurrency(data.currency || "TRY");
+        setFxRate(data.fxRate || 1);
+        setPaymentType(data.paymentType || "acik");
+        setNote(data.note || "");
+
+        setCart(
+          (data.items || []).map((i) => ({
+            productId: i.productId,
+            name: i.name,
+            barcode: i.barcode || "",
+            sku: i.sku || "",
+            quantity: i.qty || 1,
+            unitPrice: i.unitPrice || 0,
+            vatRate: i.vatRate || 20,
+          }))
+        );
+      } else {
+        // 🆕 YENİ SATIŞ
         await getNextSaleNo(t);
-      } catch (e) {
-        setErrMsg(e?.message || "Veriler yüklenemedi");
       }
-    })();
-  }, []);
+    } catch (e) {
+      setErrMsg(e?.message || "Veriler yüklenemedi");
+    }
+  })();
+}, [editSaleNo]);
+
 
   // balance when cari changes
   useEffect(() => {
@@ -409,33 +445,68 @@ export default function UrunSatisPage() {
     if (!accountId) throw new Error("Cari seçiniz");
     if (!cart.length) throw new Error("Sepette ürün olmalı");
 
-    const payload = {
-      accountId,
-      date,
-      currency,
-      fxRate: safeNum(fxRate, 1),
-      manualRate: !!manualRate,
-      paymentType,
-      partialPaymentTRY: safeNum(partialPaymentTRY, 0),
-      note,
-      saleNo,
-      items: cart.map((x) => ({
-        productId: x.productId,
-        name: x.name,
-        barcode: x.barcode,
-        sku: x.sku,
-        quantity: safeNum(x.quantity, 1),
-        unitPrice: safeNum(x.unitPrice, 0),
-        vatRate: safeNum(x.vatRate, 20),
-      })),
+   const payload = {
+  saleNo,
+  accountId,
+  date,
+  currency,
+  fxRate: safeNum(fxRate, 1),
+  manualRate: !!manualRate,
+  paymentType,
+  partialPaymentTRY: safeNum(partialPaymentTRY, 0),
+  note,
+
+  // 🔥 ÜRÜN SATIRLARI (TOTAL DAHİL)
+  items: cart.map((x) => {
+    const qty = safeNum(x.quantity, 1);
+    const price = safeNum(x.unitPrice, 0);
+    const lineTotal = qty * price;
+
+    return {
+      productId: x.productId,
+      name: x.name,
+      barcode: x.barcode,
+      sku: x.sku,
+      quantity: qty,
+      unitPrice: price,
+      vatRate: safeNum(x.vatRate, 20),
+      total: lineTotal, // ❗ ÇOK ÖNEMLİ
     };
+  }),
+};
+
+// 🔥 GENEL TOPLAM (UPDATE İÇİN ŞART)
+payload.totalTRY = payload.items.reduce(
+  (sum, i) => sum + safeNum(i.total, 0),
+  0
+);
+
 
     // ✅ TEK KAYIT NOKTASI
     try {
   setErrMsg("");
   setSuccessMsg("");
 
-  const saved = await apiPost("/api/satis/create", token, payload);
+  let saved;
+
+if (isEdit) {
+  saved = await fetch(`/api/satis/update?saleNo=${editSaleNo}`, {
+  method: "PUT",
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
+  },
+  body: JSON.stringify(payload),
+});
+
+} else {
+  saved = await apiPost(
+    "/api/satis/create",
+    token,
+    payload
+  );
+}
+
 
   setSuccessMsg("✅ Satış başarıyla kaydedildi");
 

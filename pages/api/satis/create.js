@@ -1,6 +1,7 @@
 import dbConnect from "@/lib/dbConnect";
 import Transaction from "@/models/Transaction";
 import Product from "@/models/Product";
+import Cari from "@/models/Cari";
 import { verifyToken } from "@/utils/auth";
 
 export default async function handler(req, res) {
@@ -12,15 +13,12 @@ export default async function handler(req, res) {
     await dbConnect();
 
     // 🔐 TOKEN
-    const authHeader = req.headers.authorization || "";
-    const token = authHeader.replace("Bearer ", "");
+    const token = req.headers.authorization?.replace("Bearer ", "");
     const user = verifyToken(token);
 
     if (!user?.userId) {
       return res.status(401).json({ message: "Yetkisiz" });
     }
-
-    const companyId = user.companyId || user.tenantId || null;
 
     const {
       accountId,
@@ -30,12 +28,33 @@ export default async function handler(req, res) {
       paymentType = "open",
       partialPaymentTRY = 0,
       note = "",
-      saleNo = "",
+      saleNo,
       items = [],
     } = req.body;
 
-    if (!accountId || !items.length) {
+    if (!accountId || !items.length || !saleNo) {
       return res.status(400).json({ message: "Eksik veri" });
+    }
+
+    // 🚫 AYNI SALE NO (TENANT BAZLI)
+    const exists = await Transaction.findOne({
+      type: "sale",
+      saleNo,
+      userId: user.userId,
+      isDeleted: { $ne: true },
+    }).lean();
+
+    if (exists) {
+      return res
+        .status(409)
+        .json({ message: "Bu satış numarası zaten mevcut" });
+    }
+
+    // 🧾 CARİ SNAPSHOT
+    let accountName = "";
+    const cari = await Cari.findById(accountId).lean();
+    if (cari) {
+      accountName = cari.unvan || cari.firmaAdi || cari.ad || "";
     }
 
     // 🧮 TOPLAMLAR
@@ -66,41 +85,50 @@ export default async function handler(req, res) {
     });
 
     const grandTotal = subTotal + vatTotal;
-    const totalTRY = currency === "TRY" ? grandTotal : grandTotal * fxRate;
+    const totalTRY =
+      currency === "TRY" ? grandTotal : grandTotal * fxRate;
 
-    // 🧾 SATIŞ TRANSACTION (CARİ BORÇLANIR)
-    const saleTrx = await Transaction.create({
+    // 🧾 SATIŞ TRANSACTION
+    const saleTransaction = await Transaction.create({
       userId: user.userId,
-      companyId: companyId || undefined,
+      companyId: user.companyId || "",
       createdBy: user.userId,
+
+      type: "sale",
+      saleNo,
       accountId,
-      direction: "borc",
-      amount: totalTRY,
+      accountName,
+
+      date: date ? new Date(date) : new Date(),
       paymentMethod: paymentType,
       note,
-      date: date ? new Date(date) : new Date(),
-      saleNo,
-      type: "sale",
+
       currency,
       fxRate,
-      totalTRY,
       items: normalizedItems,
+      totalTRY,
+
+      direction: "borc",
+      amount: totalTRY,
     });
 
-    // 💰 KISMİ TAHSİLAT VARSA
+    // 💰 KISMİ TAHSİLAT
     if (Number(partialPaymentTRY) > 0) {
       await Transaction.create({
         userId: user.userId,
-        companyId: companyId || undefined,
+        companyId: user.companyId || "",
         createdBy: user.userId,
+
+        type: "payment",
+        saleNo,
         accountId,
+        accountName,
+
         direction: "alacak",
         amount: Number(partialPaymentTRY),
         paymentMethod: paymentType,
         note: "Kısmi tahsilat",
         date: date ? new Date(date) : new Date(),
-        saleNo,
-        type: "payment",
         currency: "TRY",
         fxRate: 1,
         totalTRY: Number(partialPaymentTRY),
@@ -119,7 +147,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       saleNo,
-      transactionId: saleTrx._id,
+      transactionId: saleTransaction._id,
     });
   } catch (e) {
     console.error("SATIS CREATE ERROR:", e);

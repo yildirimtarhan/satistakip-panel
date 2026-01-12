@@ -48,9 +48,42 @@ export default function Satislar() {
   // =========================
   // PDF AÇ
   // =========================
-  function openPdf(saleNo) {
-    window.open(`/api/sales/pdf?saleNo=${encodeURIComponent(saleNo)}`, "_blank");
+  // =========================
+// PDF AÇ (TOKEN İLE)
+// =========================
+
+// =========================
+// PDF AÇ (Authorization ile)
+// =========================
+async function openPdf(saleNo) {
+  try {
+    const res = await fetch(`/api/sales/pdf?saleNo=${encodeURIComponent(saleNo)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const blob = await res.blob();
+
+    if (!res.ok) {
+      // JSON mesajı varsa yakala
+      const text = await blob.text();
+      try {
+        const j = JSON.parse(text);
+        throw new Error(j?.message || "PDF üretilemedi");
+      } catch {
+        throw new Error(text || "PDF üretilemedi");
+      }
+    }
+
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank", "noopener,noreferrer");
+
+    // 1 dk sonra cleanup
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (e) {
+    alert(e?.message || "PDF üretilemedi");
   }
+}
+
 
   // =========================
   // SATIŞ İPTAL

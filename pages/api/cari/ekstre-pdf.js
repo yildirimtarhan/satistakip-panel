@@ -129,9 +129,10 @@ if (userId) {
     const doc = createPdf(res, {
   title: "CARİ EKSTRESİ",
   subtitle: `${start} - ${end}`,
-  userRole: role,
+  inline: true,
   layout: "landscape", // ✅ EKLE
 });
+
 
 
     renderCariEkstrePdf(doc, {

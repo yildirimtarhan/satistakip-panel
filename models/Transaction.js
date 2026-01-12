@@ -2,40 +2,73 @@ import mongoose from "mongoose";
 
 const TransactionSchema = new mongoose.Schema(
   {
-    // ✅ Multi-tenant (firma izolasyonu) — projende "userId" tenant gibi kullanılıyor
+    // 🔐 TENANT (projende tenant = userId)
     userId: { type: String, required: true },
 
-    // ✅ Kim oluşturdu (admin işlem girerse adminId burada dursun)
-    createdBy: { type: String, default: "" },
+    // 🔐 Opsiyonel companyId (create.js zaten yazıyor)
+    companyId: { type: String, default: "" },
 
-    // ✅ Cari (zorunlu)
-    accountId: { type: mongoose.Schema.Types.ObjectId, ref: "Cari", required: true },
+    // =========================
+    // 🔥 SNAPSHOT CARİ (PDF & RAPOR)
+    // =========================
+    accountId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Cari",
+      required: true,
+    },
+    accountName: { type: String, default: "" },
 
-    // ✅ Cari finans işlemleri (TAHSİLAT/ÖDEME)
-    direction: { type: String, enum: ["borc", "alacak"], default: "" }, // ödeme=borc, tahsilat=alacak
+    // =========================
+    // 📦 YENİ SATIŞ SÖZLEŞMESİ
+    // =========================
+    items: [
+      {
+        productId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Product",
+        },
+        name: String,
+        barcode: String,
+        sku: String,
+        quantity: Number,
+        unitPrice: Number,
+        vatRate: Number,
+        total: Number,
+      },
+    ],
+
+    // =========================
+    // 🧮 MUHASEBE
+    // =========================
+    direction: { type: String, enum: ["borc", "alacak"], default: "" },
     amount: { type: Number, default: 0 },
-    paymentMethod: { type: String, default: "nakit" }, // nakit|havale|kart
+    paymentMethod: { type: String, default: "nakit" },
     note: { type: String, default: "" },
 
-    // ✅ Tarih
+    // =========================
+    // 📅 GENEL
+    // =========================
     date: { type: Date, default: Date.now },
-
-    // -----------------------------
-    // ⬇️ ESKİ ALANLAR (bozulmasın diye KALDI)
     saleNo: { type: String, default: "" },
-    productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
-    type: { type: String, default: "" }, // "sale" | "purchase" vs (eski)
-    quantity: { type: Number, default: 0 },
-    unitPrice: { type: Number, default: 0 },
-    total: { type: Number, default: 0 },
+    type: { type: String, default: "" }, // sale | payment | purchase
     currency: { type: String, default: "TRY" },
     fxRate: { type: Number, default: 1 },
     totalTRY: { type: Number, default: 0 },
+
+    // =========================
+    // ⬇️ ESKİ ALANLAR (KALDI)
+    // =========================
+    productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
+    quantity: { type: Number, default: 0 },
+    unitPrice: { type: Number, default: 0 },
+    total: { type: Number, default: 0 },
     varyant: { type: String, default: "" },
-    // -----------------------------
   },
-  { timestamps: true } // createdAt/updatedAt otomatik
+  { timestamps: true }
 );
+
+// 🔎 Performans & tenant güvenliği
+TransactionSchema.index({ userId: 1, type: 1, saleNo: 1 });
 
 export default mongoose.models.Transaction ||
   mongoose.model("Transaction", TransactionSchema);

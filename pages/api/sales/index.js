@@ -1,39 +1,32 @@
-import clientPromise from "@/lib/mongodb";
-import { verifyToken } from "@/utils/auth";
+import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
+import Transaction from "@/models/Transaction";
 
 export default async function handler(req, res) {
-  const token = req.headers.authorization?.split(" ")[1];
-  const decoded = verifyToken(token);
-  if (!decoded) return res.status(401).json({ message: "Unauthorized" });
+  try {
+    const auth = req.headers.authorization || "";
+    const token = auth.startsWith("Bearer ") ? auth.split(" ")[1] : null;
+    if (!token) return res.status(401).json({ message: "Yetkisiz" });
 
-  const db = (await clientPromise).db();
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-  const match =
-    decoded.role === "admin"
-      ? { type: "sale", isDeleted: { $ne: true } }
-      : {
-          type: "sale",
-          userId: decoded.userId,
-          isDeleted: { $ne: true },
-        };
+    const filter = {
+      type: "sale",
+      isDeleted: { $ne: true },
+    };
 
-  const sales = await db
-    .collection("transactions")
-    .aggregate([
-      { $match: match },
-      {
-        $group: {
-          _id: "$saleNo",
-          saleNo: { $first: "$saleNo" },
-          date: { $first: "$date" },
-          accountId: { $first: "$accountId" },
-          currency: { $first: "$currency" },
-          totalTRY: { $sum: "$totalTRY" },
-        },
-      },
-      { $sort: { date: -1 } },
-    ])
-    .toArray();
+    if (decoded.role !== "admin" && decoded.companyId) {
+      filter.companyId = new mongoose.Types.ObjectId(decoded.companyId);
+    }
 
-  res.json(sales);
+    const sales = await Transaction.find(filter)
+      .select("saleNo date accountId accountName currency totalTRY")
+      .sort({ date: -1 })
+      .lean();
+
+    res.json(sales);
+  } catch (err) {
+    console.error("SALES INDEX ERROR:", err);
+    res.status(500).json({ message: "Satışlar alınamadı" });
+  }
 }

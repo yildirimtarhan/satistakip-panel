@@ -1,165 +1,141 @@
-// /pages/api/sales/pdf.js
 import dbConnect from "@/lib/dbConnect";
 import Transaction from "@/models/Transaction";
-import Cari from "@/models/Cari";
 import { verifyToken } from "@/utils/auth";
-
-import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
-import fs from "fs";
-import path from "path";
+import { connectToDatabase } from "@/lib/mongodb";
+import { createPdf } from "@/lib/pdf/PdfEngine";
 
 export default async function handler(req, res) {
+  if (req.method !== "GET") {
+    return res.status(405).end("Method Not Allowed");
+  }
+
   try {
-    // =========================
-    // 🔐 AUTH
-    // =========================
-    const authHeader = req.headers.authorization;
-    let token = authHeader?.startsWith("Bearer ")
-      ? authHeader.slice(7)
-      : null;
+    await dbConnect();
 
-    // 🍪 cookie fallback
-    if (!token && req.cookies?.token) {
-      token = req.cookies.token;
-    }
-
-    const tokenUser = verifyToken(token);
-    if (!tokenUser?.userId) {
-      return res.status(401).json({ message: "Yetkisiz" });
+    // 🔐 TOKEN
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    const user = verifyToken(token);
+    if (!user?.userId) {
+      return res.status(401).end("Yetkisiz");
     }
 
     const { saleNo } = req.query;
     if (!saleNo) {
-      return res.status(400).json({ message: "saleNo zorunlu" });
+      return res.status(400).end("saleNo gerekli");
     }
 
-    await dbConnect();
-
-    // =========================
     // 🔎 SATIŞ
-    // =========================
     const sale = await Transaction.findOne({
-      type: "sale",
       saleNo,
+      type: "sale",
+      userId: user.userId,
       isDeleted: { $ne: true },
-      ...(tokenUser.role !== "admin"
-        ? { companyId: tokenUser.companyId }
-        : {}),
     }).lean();
 
     if (!sale) {
-      return res.status(404).json({ message: "Satış bulunamadı" });
+      return res.status(404).end("Satış bulunamadı");
     }
 
-    // =========================
-    // 👤 CARİ
-    // =========================
-    let cari = null;
-    if (sale.accountId) {
-      cari = await Cari.findById(sale.accountId).lean();
-    }
+    // 🏢 FİRMA
+    const { db } = await connectToDatabase();
+    const company = await db
+      .collection("company_settings")
+      .findOne({ userId: user.userId });
 
     // =========================
-    // 📄 PDF
+    // 📄 PDF BAŞLANGIÇ
     // =========================
-    const doc = new jsPDF({
-      orientation: "landscape",
-      unit: "mm",
-      format: "a4",
+    const doc = createPdf(res, {
+      title: "Satış Fişi",
+      fileName: sale.saleNo,
     });
 
-    // 🔤 Font
-   // jsPDF varsayılan font
-doc.setFont("helvetica", "bold");
-doc.setFontSize(14);
-doc.text("SATIŞ FİŞİ", 10, y);
+    let y = 40;
 
-doc.setFont("helvetica", "normal");
-doc.setFontSize(10);
+    // =========================
+    // 🏢 HEADER
+    // =========================
+    doc.fontSize(14).text(company?.firmaAdi || "Firma", 40, y);
+    y += 16;
 
-    let y = 12;
-    doc.setFont("Roboto", "bold");
-    doc.setFontSize(14);
-    doc.text("SATIŞ FİŞİ", 10, y);
+    doc.fontSize(9).text(
+      `Vergi Dairesi: ${company?.vergiDairesi || "-"}   Vergi No: ${company?.vergiNo || "-"}`,
+      40,
+      y
+    );
 
-    doc.setFont("Roboto", "normal");
-    doc.setFontSize(10);
-    y += 8;
+    doc.fontSize(14).text("SATIŞ FİŞİ", 400, 40, { align: "right" });
+    doc.fontSize(9).text(sale.saleNo, 400, 58, { align: "right" });
 
-    doc.text(`Satış No: ${sale.saleNo}`, 10, y);
+    y += 18;
+    doc.moveTo(40, y).lineTo(550, y).stroke();
+    y += 15;
+
+    // =========================
+    // 👤 CARİ BİLGİ
+    // =========================
+    doc.fontSize(10).text(`Cari: ${sale.accountName || "—"}`, 40, y);
+    y += 14;
+
     doc.text(
       `Tarih: ${new Date(sale.date).toLocaleDateString("tr-TR")}`,
-      80,
-      y
-    );
-    y += 6;
-
-    doc.text(
-      `Cari: ${
-        cari?.unvan ||
-        cari?.firmaAdi ||
-        cari?.ad ||
-        cari?.name ||
-        "-"
-      }`,
-      10,
+      40,
       y
     );
 
-    doc.text(`Para Birimi: ${sale.currency || "TRY"}`, 80, y);
-    doc.text(`Kur: ${sale.fxRate || 1}`, 140, y);
+    y += 20;
+
+    // =========================
+    // 📦 TABLO BAŞLIK
+    // =========================
+    doc.rect(40, y, 510, 20).fill("#f2f2f2");
+    doc.fillColor("#000").fontSize(10);
+
+    doc.text("Ürün", 45, y + 6);
+    doc.text("Adet", 300, y + 6, { width: 50, align: "right" });
+    doc.text("Birim", 370, y + 6, { width: 60, align: "right" });
+    doc.text("Tutar", 460, y + 6, { width: 80, align: "right" });
+
+    y += 25;
+
+    // =========================
+    // 📄 ÜRÜNLER
+    // =========================
+    for (const item of sale.items || []) {
+      doc.text(item.name, 45, y);
+      doc.text(item.quantity, 300, y, { width: 50, align: "right" });
+      doc.text(item.unitPrice.toFixed(2), 370, y, { width: 60, align: "right" });
+      doc.text(item.total.toFixed(2), 460, y, { width: 80, align: "right" });
+      y += 16;
+    }
+
+    // =========================
+    // 🧮 TOPLAM
+    // =========================
+    y += 10;
+    doc.moveTo(350, y).lineTo(550, y).stroke();
     y += 10;
 
-    // =========================
-    // 📊 TABLO
-    // =========================
-    autoTable(doc, {
-      startY: y,
-      head: [["Ürün", "Adet", "Birim", "KDV %", "Toplam"]],
-      body: (sale.items || []).map((it) => {
-        const qty = Number(it.quantity || 0);
-        const price = Number(it.unitPrice || 0);
-        const vat = Number(it.vatRate || 0);
-        const lineTotal = qty * price * (1 + vat / 100);
-
-        return [
-          it.name || it.productName || "-",
-          qty,
-          price.toFixed(2),
-          vat,
-          lineTotal.toFixed(2),
-        ];
-      }),
-      styles: { fontSize: 9 },
-      headStyles: { fontStyle: "bold" },
-
-    });
-
-    const fy = doc.lastAutoTable.finalY + 10;
-    doc.setFont(undefined, "bold");
-    doc.text("GENEL TOPLAM:", 220, fy);
-    doc.text(
-      `${Number(sale.totalTRY || 0).toLocaleString("tr-TR")} ${
-        sale.currency || "TRY"
-      }`,
-      280,
-      fy,
+    doc.fontSize(12).text(
+      `GENEL TOPLAM: ${sale.totalTRY.toFixed(2)} TL`,
+      350,
+      y,
       { align: "right" }
     );
 
     // =========================
-    // 📤 RESPONSE
+    // 🔻 FOOTER
     // =========================
-    const pdf = doc.output("arraybuffer");
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      `inline; filename=satis-${sale.saleNo}.pdf`
+    doc.fontSize(8).fillColor("#666").text(
+      "Bu belge SatışTakip ERP tarafından oluşturulmuştur.",
+      40,
+      doc.page.height - 40,
+      { align: "center", width: 510 }
     );
-    res.send(Buffer.from(pdf));
+
+    doc.end();
   } catch (err) {
-    console.error("SALE PDF ERROR:", err);
-    res.status(500).json({ message: "PDF üretilemedi" });
+    console.error("PDF ERROR:", err);
+    return res.status(500).end("PDF oluşturulamadı");
   }
 }

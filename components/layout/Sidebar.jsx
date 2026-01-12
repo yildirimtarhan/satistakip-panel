@@ -131,6 +131,12 @@ export default function Sidebar() {
 
         <MenuItem href="/dashboard/urun-satis" icon="🛒" label="Ürün Satış" />
         <MenuItem href="/dashboard/satislar" icon="🧾" label="Satışlar" />
+        <MenuItem
+  href="/dashboard/satis-iade-iptal"
+  icon="🔄"
+  label="İade / İptaller"
+/>
+
         <MenuItem href="/dashboard/satis-raporlari" icon="📊" label="Satış Raporları" />
 
         <MenuItem href="/dashboard/teklifler" icon="📃" label="Teklif Formu" />
