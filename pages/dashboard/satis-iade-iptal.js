@@ -16,13 +16,27 @@ export default function SatisIadeIptal() {
       ...(end && { end }),
     });
 
-    fetch(`/api/sales/refunds?${qs}`)
-      .then((r) => r.json())
-      .then((d) => setRows(d || []))
+    const token = localStorage.getItem("token");
+
+    fetch(`/api/sales/refunds?${qs}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error("Yetkisiz");
+        return r.json();
+      })
+      .then((d) => {
+        setRows(Array.isArray(d) ? d : []);
+      })
+      .catch(() => setRows([]))
       .finally(() => setLoading(false));
   };
 
-  useEffect(loadData, []);
+  useEffect(() => {
+    loadData();
+  }, [type, start, end]);
 
   return (
     <div className="p-4">
@@ -111,6 +125,7 @@ export default function SatisIadeIptal() {
               </td>
             </tr>
           ))}
+
           {!rows.length && !loading && (
             <tr>
               <td colSpan={6} className="text-center p-4 text-gray-500">

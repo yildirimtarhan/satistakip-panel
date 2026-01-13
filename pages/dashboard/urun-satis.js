@@ -490,7 +490,7 @@ payload.totalTRY = payload.items.reduce(
   let saved;
 
 if (isEdit) {
-  saved = await fetch(`/api/satis/update?saleNo=${editSaleNo}`, {
+  saved = await fetch(`/api/sales/update?saleNo=${editSaleNo}`, {
   method: "PUT",
   headers: {
     "Content-Type": "application/json",

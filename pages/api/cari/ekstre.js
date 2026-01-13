@@ -35,13 +35,13 @@ export default async function handler(req, res) {
     const endDate = end ? new Date(end) : new Date();
     endDate.setHours(23, 59, 59, 999);
 
-    // 🧾 CARİ (SADE VE SAĞLAM)
+    // 🧾 CARİ
     const cari = await Cari.findById(accountObjectId);
     if (!cari) {
       return res.status(404).json({ message: "Cari bulunamadı" });
     }
 
-    // 🧠 TENANT FILTER (KRİTİK KISIM)
+    // 🧠 TENANT FILTER
     const trxFilter = {
       accountId: accountObjectId,
       date: { $gte: startDate, $lte: endDate },
@@ -52,7 +52,9 @@ export default async function handler(req, res) {
     }
 
     // 📚 TRANSACTIONS
-    const txs = await Transaction.find(trxFilter).sort({ date: 1 }).lean();
+    const txs = await Transaction.find(trxFilter)
+      .sort({ date: 1 })
+      .lean();
 
     // 🧮 EKSTRE
     let bakiye = 0;
@@ -67,16 +69,27 @@ export default async function handler(req, res) {
 
       rows.push({
         tarih: t.date,
+
+        // ✅ SADECE BU KISIM GENİŞLETİLDİ
         aciklama:
           t.type === "sale"
             ? "Satış"
+            : t.type === "sale_return"
+            ? "Satış İadesi"
+            : t.type === "sale_cancel"
+            ? "Satış İptali"
+            : t.type === "payment"
+            ? "Tahsilat"
             : t.type === "purchase"
             ? "Alış"
-            : t.direction === "alacak"
-            ? "Tahsilat"
+            : t.type === "expense"
+            ? "Gider"
             : t.direction === "borc"
             ? "Ödeme"
+            : t.direction === "alacak"
+            ? "Tahsilat"
             : "-",
+
         borc,
         alacak,
         bakiye,
