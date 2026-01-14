@@ -3,36 +3,45 @@ import jwt from "jsonwebtoken";
 import Transaction from "@/models/Transaction";
 
 export default async function handler(req, res) {
-  if (req.method !== "GET") return res.status(405).json({ message: "GET only" });
+  if (req.method !== "GET") {
+    return res.status(405).json({ message: "Method not allowed" });
+  }
 
   try {
     await dbConnect();
 
-    const auth = req.headers.authorization;
-    if (!auth) return res.status(401).json({ message: "Token yok" });
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) return res.status(401).json({ message: "Yetkisiz" });
 
-    const token = auth.replace("Bearer ", "");
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const userId = decoded.userId || decoded.id || decoded._id;
-    const companyId = decoded.companyId || null;
-    const role = decoded.role || "user";
+    const userId = decoded.userId;
+    const tenantId = decoded.tenantId || decoded.companyId || decoded.firmaId;
 
     const { accountId } = req.query;
-    if (!accountId) return res.status(400).json({ message: "accountId gerekli" });
 
-    const match = {
-      accountId,
-      type: "payment",
-    };
-
-    // admin değilse tenant filtre
-    if (role !== "admin") {
-      if (companyId) match.companyId = companyId;
-      else match.userId = userId;
+    if (!accountId) {
+      return res.status(400).json({ message: "accountId zorunlu" });
     }
 
+    // ✅ Liste filtresi
+    // B seçeneği: iptal edilenler de listede görünsün
+    const match = {
+      userId,
+      accountId,
+    };
+
+    // ✅ multi-tenant varsa ekle (bozmuyoruz)
+    if (tenantId) {
+      match.tenantId = tenantId;
+    }
+
+    // ✅ sadece tahsilat/ödeme kayıtları gelsin (sale vb gelmesin)
+    // Eğer senin sistemde type alanı farklıysa burayı genişletiriz
+    match.type = { $in: ["tahsilat", "odeme", "payment", "collection", "tahsilat_cancel"] };
+
     const list = await Transaction.find(match).sort({ date: -1 }).lean();
+
     return res.json(list);
   } catch (err) {
     console.error("TAHSILAT LIST ERROR:", err);

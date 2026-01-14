@@ -368,76 +368,99 @@ export default function CariTahsilat() {
         </div>
       </form>
 
-      {/* LİSTE */}
-      <div className="bg-white border rounded p-4">
-        <h2 className="font-bold mb-3">Tahsilat / Ödeme Geçmişi</h2>
+{/* LİSTE */}
+<div className="bg-white border rounded p-4">
+  <h2 className="font-bold mb-3">Tahsilat / Ödeme Geçmişi</h2>
 
-        {listLoading ? (
-          <div>Yükleniyor...</div>
+  {listLoading ? (
+    <div>Yükleniyor...</div>
+  ) : (
+    <table className="w-full border-collapse">
+      <thead>
+        <tr className="bg-gray-100">
+          <th className="border p-2 text-left">Tarih</th>
+          <th className="border p-2 text-left">Tür</th>
+          <th className="border p-2 text-left">Tutar</th>
+          <th className="border p-2 text-left">Yöntem</th>
+          <th className="border p-2 text-left">Not</th>
+          <th className="border p-2 text-center">PDF</th>
+          <th className="border p-2 text-center">İşlem</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {payments?.length === 0 ? (
+          <tr>
+            <td className="border p-2" colSpan={7}>
+              Kayıt yok
+            </td>
+          </tr>
         ) : (
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="bg-gray-100">
-                <th className="border p-2 text-left">Tarih</th>
-                <th className="border p-2 text-left">Tür</th>
-                <th className="border p-2 text-left">Tutar</th>
-                <th className="border p-2 text-left">Yöntem</th>
-                <th className="border p-2 text-left">Not</th>
-                <th className="border p-2 text-center">PDF</th>
-                <th className="border p-2 text-center">İşlem</th>
+          payments.map((p) => {
+            const isCancelled =
+              p?.isDeleted === true || p?.status === "cancelled";
+
+            return (
+              <tr
+                key={p._id}
+                className={isCancelled ? "bg-gray-100 text-gray-400" : ""}
+              >
+                <td className="border p-2">
+                  {p.date ? new Date(p.date).toLocaleDateString("tr-TR") : "-"}
+                </td>
+
+                <td className="border p-2">
+                  {p.direction === "alacak" ? "Tahsilat" : "Ödeme"}
+
+                  {/* ✅ İPTAL BADGE + TOOLTIP */}
+                  {isCancelled && (
+                    <span
+                      title={`İptal Nedeni: ${p?.cancelReason || "-"}`}
+                      className="ml-2 px-2 py-1 text-xs rounded bg-red-100 text-red-600 font-semibold"
+                    >
+                      İPTAL EDİLDİ
+                    </span>
+                  )}
+                </td>
+
+                <td className="border p-2">{fmt(p.amount)} TRY</td>
+
+                <td className="border p-2">
+                  {formatMethod(p.paymentMethod)}
+                </td>
+
+                <td className="border p-2">{p.note || "-"}</td>
+
+                <td className="border p-2 text-center">
+                  <button
+                    className="text-blue-600 underline"
+                    onClick={() => openPdfForPayment(p._id)}
+                  >
+                    PDF
+                  </button>
+                </td>
+
+                <td className="border p-2 text-center">
+                  <button
+                    disabled={isCancelled}
+                    className={`underline ${
+                      isCancelled
+                        ? "text-gray-400 cursor-not-allowed"
+                        : "text-red-600"
+                    }`}
+                    onClick={() => cancelPayment(p._id)}
+                  >
+                    {isCancelled ? "Geri Alındı" : "Geri Al"}
+                  </button>
+                </td>
               </tr>
-            </thead>
-
-            <tbody>
-              {payments?.length === 0 ? (
-                <tr>
-                  <td className="border p-2" colSpan={7}>
-                    Kayıt yok
-                  </td>
-                </tr>
-              ) : (
-                payments.map((p) => (
-                  <tr key={p._id}>
-                    <td className="border p-2">
-                      {p.date
-                        ? new Date(p.date).toLocaleDateString("tr-TR")
-                        : "-"}
-                    </td>
-
-                    <td className="border p-2">
-                      {p.direction === "alacak" ? "Tahsilat" : "Ödeme"}
-                    </td>
-
-                    <td className="border p-2">{fmt(p.amount)} TRY</td>
-
-                    <td className="border p-2">{formatMethod(p.paymentMethod)}</td>
-
-                    <td className="border p-2">{p.note || "-"}</td>
-
-                    <td className="border p-2 text-center">
-                      <button
-                        className="text-blue-600 underline"
-                        onClick={() => openPdfForPayment(p._id)}
-                      >
-                        PDF
-                      </button>
-                    </td>
-
-                    <td className="border p-2 text-center">
-                      <button
-                        className="text-red-600 underline"
-                        onClick={() => cancelPayment(p._id)}
-                      >
-                        Geri Al
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+            );
+          })
         )}
-      </div>
-    </div>
-  );
-}
+      </tbody>
+    </table>
+  )}
+</div>
+</div>
+ );
+ }

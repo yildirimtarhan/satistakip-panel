@@ -48,12 +48,14 @@ export default async function handler(req, res) {
 
     // ✅ Transaction bul (multi-tenant)
     const trx = await Transaction.findOne({
-      _id: id,
-      type: "payment",
-      ...(companyId ? { companyId } : { userId }),
-    }).lean();
+  _id: id,
+  ...(companyId ? { companyId } : { userId }),
+  direction: { $in: ["alacak", "borc"] },
+}).lean();
 
-    if (!trx) return res.status(404).json({ message: "Kayıt bulunamadı" });
+if (!trx) return res.status(404).json({ message: "Kayıt bulunamadı" });
+
+console.log("PDF REQUEST ID:", id, "companyId:", companyId, "userId:", userId);
 
     // ✅ Cari bul
     const cari = await Cari.findOne({

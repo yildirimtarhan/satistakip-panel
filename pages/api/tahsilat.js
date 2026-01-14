@@ -1,108 +1,207 @@
 import dbConnect from "@/lib/mongodb";
 import jwt from "jsonwebtoken";
-import Cari from "@/models/Cari";
+
 import Transaction from "@/models/Transaction";
+import Cari from "@/models/Cari";
+import { connectToDatabase } from "@/lib/mongodb";
+
+import { sendMail } from "@/lib/mail/sendMail";
 
 export default async function handler(req, res) {
+  await dbConnect();
+
   if (req.method !== "POST") {
-    return res.status(405).json({ message: "Sadece POST desteklenir" });
+    return res.status(405).json({ message: "Method not allowed" });
   }
 
   try {
-    await dbConnect();
+    // ✅ TOKEN
+    const token =
+      req.headers.authorization?.split(" ")[1] ||
+      req.query.token ||
+      req.body.token ||
+      "";
 
-    // 🔐 TOKEN
-    const auth = req.headers.authorization;
-    if (!auth) return res.status(401).json({ message: "Token yok" });
-
-    const token = auth.replace("Bearer ", "");
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch {
-      return res.status(401).json({ message: "Geçersiz token" });
+    if (!token) {
+      return res.status(401).json({ message: "Yetkisiz" });
     }
 
-    const userId = decoded.userId || decoded.id || decoded._id;
-    const companyId = decoded.companyId || null;
-    const role = decoded.role || "user";
+    let decoded = null;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({ message: "Token geçersiz" });
+    }
 
-    if (!userId) return res.status(401).json({ message: "Kullanıcı bulunamadı" });
-
-    // (senin mevcut kuralın)
-    if (role === "admin") {
-      return res.status(403).json({ message: "Admin ERP işlemi yapamaz" });
+    const userId = decoded?.userId;
+    if (!userId) {
+      return res.status(401).json({ message: "Yetkisiz" });
     }
 
     // 📥 BODY
-    const { accountId, type, amount, note, date } = req.body;
+    const {
+      accountId,
+      amount,
+      note,
+      date,
+      type: bodyType,
+      direction,
+    } = req.body;
 
-    // method gönderen UI ile uyum: method || paymentMethod
-    const paymentMethod =
-      req.body.paymentMethod || req.body.method || "Nakit";
+    // ✅ type yoksa direction'dan türet
+    const type =
+      bodyType ||
+      (direction === "alacak"
+        ? "tahsilat"
+        : direction === "borc"
+        ? "odeme"
+        : "");
+
+    // ✅ paymentMethod fix
+    const paymentMethod = req.body.paymentMethod || req.body.method || "cash";
 
     if (!accountId || !type || !amount) {
       return res.status(400).json({ message: "Zorunlu alanlar eksik" });
     }
 
-    if (!["tahsilat", "odeme"].includes(type)) {
-      return res.status(400).json({ message: "Geçersiz işlem türü" });
-    }
+    // ✅ Tarih fix
+    const trxDate = date ? new Date(date) : new Date();
 
-    const tutar = Number(amount);
-    if (!Number.isFinite(tutar) || tutar <= 0) {
-      return res.status(400).json({ message: "Geçersiz tutar" });
-    }
-
-    // 🧾 CARİ BUL (multi-tenant)
-    const cari = await Cari.findOne({
-      _id: accountId,
-      ...(companyId ? { companyId } : { userId }),
-    });
-
+    // ✅ Cari bul
+    const cari = await Cari.findById(accountId);
     if (!cari) {
       return res.status(404).json({ message: "Cari bulunamadı" });
     }
 
-    // 🔁 STANDARD
-    // tahsilat → alacak
-    // ödeme    → borc
-    const direction = type === "tahsilat" ? "alacak" : "borc";
-    const trxType = "payment"; // kritik
+    // ✅ Direction: Tahsilat = alacak, Ödeme = borc
+    const trxDirection = type === "tahsilat" ? "alacak" : "borc";
 
-    // 💰 (opsiyonel) cari.bakiye güncelle (mevcut sistemin bozulmaması için korundu)
-    // bakiye = borç - alacak
-    const delta = direction === "alacak" ? -tutar : tutar;
-    cari.bakiye = Number(cari.bakiye || 0) + delta;
-    cari.updatedAt = new Date();
-    await cari.save();
-
-    // 📚 TRANSACTION
+    // ✅ Transaction oluştur
     const trx = await Transaction.create({
       userId,
-      companyId: companyId || undefined,
       accountId,
-      type: trxType,
-      direction,
-      amount: tutar,
-      currency: "TRY",
+      type,
+      direction: trxDirection,
+      amount: Number(amount),
       paymentMethod,
       note: note || "",
-      date: date ? new Date(date) : new Date(),
-      source: "manual",
-      createdBy: userId,
+      date: trxDate,
+      status: "active",
+      isDeleted: false,
     });
 
+    // ✅ Cari bakiye güncelle
+    // Tahsilat: bakiye azalır (müşteri borcu düşer)
+    // Ödeme: bakiye artar (müşteriye ödeme yapıldıysa borç artar)
+    if (type === "tahsilat") {
+      cari.bakiye = Number(cari.bakiye || 0) - Number(amount);
+    } else {
+      cari.bakiye = Number(cari.bakiye || 0) + Number(amount);
+    }
+
+    await cari.save();
+
+    // ✅ MAİL (GERÇEK ZOHO) + BAKİYE + PDF LİNK
+    try {
+      let companyEmail = "";
+      try {
+        const { db } = await connectToDatabase();
+        const col = db.collection("company_settings");
+        const company = await col.findOne({ userId });
+        companyEmail = company?.eposta || "";
+      } catch (e) {
+        console.log("⚠️ company_settings okunamadı:", e.message);
+      }
+
+      if (companyEmail) {
+        const cariName =
+          cari?.unvan || cari?.firmaAdi || cari?.ad || cari?.name || "-";
+
+        const isTahsilat = type === "tahsilat";
+
+        const fmtMoney = (n) =>
+          Number(n || 0).toLocaleString("tr-TR", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          });
+
+        const pdfUrl = `${process.env.NEXT_PUBLIC_BASE_URL}/api/tahsilat/pdf?id=${trx._id}&token=${token}`;
+
+        await sendMail({
+          to: companyEmail,
+          subject: `✅ ${isTahsilat ? "Tahsilat" : "Ödeme"} Kaydedildi - ${cariName}`,
+          html: `
+            <div style="font-family:Arial,sans-serif;max-width:700px;margin:auto">
+              <h2 style="margin-bottom:5px;">
+                ${isTahsilat ? "Tahsilat" : "Ödeme"} Kaydı Oluşturuldu
+              </h2>
+              <p style="color:#666;margin-top:0;">SatışTakip ERP Bildirimi</p>
+
+              <table style="width:100%;border-collapse:collapse">
+                <tr>
+                  <td style="padding:6px;border-bottom:1px solid #eee"><b>Cari</b></td>
+                  <td style="padding:6px;border-bottom:1px solid #eee">${cariName}</td>
+                </tr>
+
+                <tr>
+                  <td style="padding:6px;border-bottom:1px solid #eee"><b>Tür</b></td>
+                  <td style="padding:6px;border-bottom:1px solid #eee">${isTahsilat ? "Tahsilat" : "Ödeme"}</td>
+                </tr>
+
+                <tr>
+                  <td style="padding:6px;border-bottom:1px solid #eee"><b>Tutar</b></td>
+                  <td style="padding:6px;border-bottom:1px solid #eee">${fmtMoney(amount)} TRY</td>
+                </tr>
+
+                <tr>
+                  <td style="padding:6px;border-bottom:1px solid #eee"><b>Ödeme Yöntemi</b></td>
+                  <td style="padding:6px;border-bottom:1px solid #eee">${paymentMethod}</td>
+                </tr>
+
+                <tr>
+                  <td style="padding:6px;border-bottom:1px solid #eee"><b>Tarih</b></td>
+                  <td style="padding:6px;border-bottom:1px solid #eee">${trxDate.toLocaleDateString("tr-TR")}</td>
+                </tr>
+
+                <tr>
+                  <td style="padding:6px;border-bottom:1px solid #eee"><b>Not</b></td>
+                  <td style="padding:6px;border-bottom:1px solid #eee">${note || "-"}</td>
+                </tr>
+
+                <tr>
+                  <td style="padding:6px;border-bottom:1px solid #eee"><b>Güncel Bakiye</b></td>
+                  <td style="padding:6px;border-bottom:1px solid #eee"><b>${fmtMoney(cari.bakiye)} TRY</b></td>
+                </tr>
+              </table>
+
+              <div style="margin-top:16px;">
+                <a href="${pdfUrl}"
+                  style="display:inline-block;padding:10px 14px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;">
+                  Makbuz PDF Aç
+                </a>
+              </div>
+
+              <p style="color:#888;margin-top:18px;font-size:12px">
+                Bu e-posta otomatik gönderilmiştir.
+              </p>
+            </div>
+          `,
+        });
+      }
+    } catch (mailErr) {
+      console.log("⚠️ Mail gönderilemedi:", mailErr.message);
+    }
+
+    // ✅ Response
     return res.status(200).json({
-      success: true,
-      message: "Tahsilat/Ödeme kaydedildi",
-      bakiye: cari.bakiye,
-      transaction: trx,
+      message: "Başarılı",
+      trx,
+      newBalance: cari.bakiye,
     });
   } catch (err) {
-    console.error("❌ TAHSİLAT API HATASI:", err);
+    console.error("TAHSILAT API ERROR:", err);
     return res.status(500).json({
-      message: "Tahsilat/Ödeme kaydedilemedi",
+      message: "Sunucu hatası",
       error: err.message,
     });
   }
