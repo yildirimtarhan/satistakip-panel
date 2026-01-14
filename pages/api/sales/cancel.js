@@ -2,6 +2,7 @@ import dbConnect from "@/lib/dbConnect";
 import Transaction from "@/models/Transaction";
 import User from "@/models/User";
 import { verifyToken } from "@/utils/auth";
+import mongoose from "mongoose";
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
@@ -37,14 +38,17 @@ export default async function handler(req, res) {
       return res.status(400).json({ message: "saleNo zorunlu" });
     }
 
-    // 🧩 Tenant match (Transaction şemasında companyId varsa)
+    // 🧩 Tenant match
     const tenantMatch = {};
     if (role !== "admin") {
-      if (companyId && "companyId" in (Transaction.schema?.paths || {})) tenantMatch.companyId = companyId;
-      else tenantMatch.userId = userId;
+      if (companyId && "companyId" in (Transaction.schema?.paths || {})) {
+        tenantMatch.companyId = companyId;
+      } else {
+        tenantMatch.userId = userId;
+      }
     }
 
-    // 1) Orijinal satış(lar)ı bul (bazı sistemlerde aynı saleNo ile birden çok satır olabilir)
+    // 1) Orijinal satış(lar)ı bul
     const saleDocs = await Transaction.find({
       ...tenantMatch,
       type: "sale",
@@ -57,7 +61,7 @@ export default async function handler(req, res) {
       return res.status(404).json({ message: "Satış bulunamadı veya zaten iptal edilmiş" });
     }
 
-    // 2) Zaten iptal kaydı var mı? (çift iptali engelle)
+    // 2) Zaten iptal kaydı var mı? (double cancel engeli)
     const existingCancel = await Transaction.findOne({
       ...tenantMatch,
       type: "sale_cancel",
@@ -68,17 +72,16 @@ export default async function handler(req, res) {
       return res.status(409).json({ message: "Bu satış daha önce iptal edilmiş" });
     }
 
-    // 3) Satış kayıtlarını “satışlar” listesinden düşürmek için işaretle
-    await Transaction.updateMany(
-      {
-        ...tenantMatch,
-        type: "sale",
-        saleNo,
-        direction: { $in: ["borc", "debit"] },
-      },
+    // ✅ Orijinal satış ID (ObjectId garanti)
+    const saleId = new mongoose.Types.ObjectId(saleDocs[0]._id);
+
+    // 3) Satış kaydını iptal/silindi işaretle
+    const updateResult = await Transaction.updateOne(
+      { _id: saleId },
       {
         $set: {
           isDeleted: true,
+          status: "cancelled",
           canceledAt: new Date(),
           canceledBy: userId,
           cancelReason: reason || "",
@@ -86,9 +89,19 @@ export default async function handler(req, res) {
       }
     );
 
-    // 4) İptal fişi kaydı oluştur (İade/İptaller menüsünde listelensin)
-    // Toplamı güvenli şekilde hesapla (ilk doc üzerinden)
+    console.log("✅ UPDATE RESULT:", updateResult);
+
+    // ✅ Kontrol (gerçekten güncellendi mi?)
+    const check = await Transaction.findById(saleId).lean();
+    console.log("✅ AFTER CANCEL UPDATE:", {
+      saleNo: check?.saleNo,
+      isDeleted: check?.isDeleted,
+      status: check?.status,
+    });
+
+    // 4) İptal fişi oluştur
     const first = saleDocs[0];
+
     const totalTRY =
       Number(first.totalTRY ?? first.grandTotal ?? first.total ?? first.amount ?? 0) || 0;
 
@@ -100,10 +113,9 @@ export default async function handler(req, res) {
       accountName: first.accountName || "",
 
       type: "sale_cancel",
-      // iptalde alacak yazılması mantıklı (satışın ters kaydı)
       direction: "alacak",
 
-      // Refunds ekranı "Belge" için saleNo bekliyor:
+      // ✅ Belge no standardı
       saleNo: saleNo,
       refSaleNo: saleNo,
 
@@ -118,6 +130,8 @@ export default async function handler(req, res) {
 
       items: first.items || [],
     });
+
+    console.log("✅ CANCEL RECEIPT CREATED:", String(cancelTx._id), "REF:", saleNo);
 
     return res.status(200).json({
       ok: true,

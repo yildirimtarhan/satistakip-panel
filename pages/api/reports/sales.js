@@ -37,8 +37,10 @@ export default async function handler(req, res) {
   direction: "borc",
   userId: userId,
 
-  // ✅ İPTAL EDİLENLERİ GİZLE
-  isCanceled: { $ne: true },
+ // ✅ İPTAL / SİLİNEN SATIŞLARI GİZLE
+isDeleted: { $ne: true },
+// ✅ Ekstra sağlamlaştırma (istersen)
+  status: { $ne: "cancelled" },
 };
 
 

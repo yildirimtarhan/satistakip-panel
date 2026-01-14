@@ -10,7 +10,10 @@ export default async function handler(req, res) {
     await dbConnect();
 
     const auth = req.headers.authorization || "";
-    const token = auth.replace("Bearer ", "");
+const headerToken = auth.replace("Bearer ", "");
+const queryToken = req.query.token || "";
+const token = headerToken || queryToken;
+
     const user = verifyToken(token);
 
     if (!user?.userId) {

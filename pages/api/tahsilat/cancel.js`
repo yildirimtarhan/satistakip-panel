@@ -1,0 +1,128 @@
+import dbConnect from "@/lib/mongodb";
+import jwt from "jsonwebtoken";
+import Transaction from "@/models/Transaction";
+import Cari from "@/models/Cari";
+
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ message: "Sadece POST desteklenir" });
+  }
+
+  try {
+    await dbConnect();
+
+    // 🔐 TOKEN
+    const auth = req.headers.authorization;
+    if (!auth) return res.status(401).json({ message: "Token yok" });
+
+    const token = auth.replace("Bearer ", "");
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch {
+      return res.status(401).json({ message: "Geçersiz token" });
+    }
+
+    const userId = decoded.userId || decoded.id || decoded._id;
+    const companyId = decoded.companyId || null;
+    const role = decoded.role || "user";
+
+    if (!userId) return res.status(401).json({ message: "Kullanıcı bulunamadı" });
+
+    // admin kuralın
+    if (role === "admin") {
+      return res.status(403).json({ message: "Admin ERP işlemi yapamaz" });
+    }
+
+    const { paymentId, reason } = req.body;
+    if (!paymentId) {
+      return res.status(400).json({ message: "paymentId gerekli" });
+    }
+
+    // ✅ Payment kaydını bul (tenant)
+    const payment = await Transaction.findOne({
+      _id: paymentId,
+      type: "payment",
+      ...(companyId ? { companyId } : { userId }),
+    });
+
+    if (!payment) {
+      return res.status(404).json({ message: "Ödeme kaydı bulunamadı" });
+    }
+
+    // ✅ Daha önce iptal edildiyse tekrar iptal etme
+    if (payment.status === "cancelled" || payment.isDeleted === true) {
+      return res.status(409).json({ message: "Bu ödeme zaten geri alınmış" });
+    }
+
+    // ✅ Cari bul
+    const cari = await Cari.findOne({
+      _id: payment.accountId,
+      ...(companyId ? { companyId } : { userId }),
+    });
+
+    if (!cari) {
+      return res.status(404).json({ message: "Cari bulunamadı" });
+    }
+
+    // ✅ Orijinal direction:
+    // alacak => tahsilat
+    // borc   => ödeme
+    const originalDirection = payment.direction;
+
+    // ✅ Ters yön
+    const reverseDirection = originalDirection === "alacak" ? "borc" : "alacak";
+
+    // ✅ Cari bakiye düzeltme (senin sistemin: bakiye = borç - alacak)
+    // create endpoint mantığı:
+    // alacak => -tutar
+    // borc   => +tutar
+    // iptal edince tam tersi uygulanmalı
+    const tutar = Number(payment.amount || 0);
+    const reverseDelta = originalDirection === "alacak" ? +tutar : -tutar;
+
+    cari.bakiye = Number(cari.bakiye || 0) + reverseDelta;
+    cari.updatedAt = new Date();
+    await cari.save();
+
+    // ✅ Orijinal kaydı iptal et
+    payment.isDeleted = true;
+    payment.status = "cancelled";
+    payment.cancelledAt = new Date();
+    payment.cancelledBy = userId;
+    payment.cancelReason = reason || "";
+    await payment.save();
+
+    // ✅ Ters fiş oluştur (iptal makbuzu)
+    const cancelTx = await Transaction.create({
+      userId,
+      companyId: companyId || undefined,
+      accountId: payment.accountId,
+      type: "payment_cancel",
+      direction: reverseDirection,
+      amount: tutar,
+      currency: payment.currency || "TRY",
+      paymentMethod: payment.paymentMethod || "",
+      note: `Geri alındı. Sebep: ${reason || "-"}`,
+      date: new Date(),
+      source: "cancel",
+      createdBy: userId,
+
+      refPaymentId: payment._id,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "✅ Ödeme geri alındı",
+      bakiye: cari.bakiye,
+      cancelledPayment: payment,
+      cancelReceipt: cancelTx,
+    });
+  } catch (err) {
+    console.error("❌ TAHSILAT CANCEL HATASI:", err);
+    return res.status(500).json({
+      message: "Ödeme geri alınamadı",
+      error: err.message,
+    });
+  }
+}

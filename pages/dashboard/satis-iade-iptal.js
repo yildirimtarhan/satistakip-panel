@@ -34,6 +34,60 @@ export default function SatisIadeIptal() {
       .finally(() => setLoading(false));
   };
 
+  const handleRevert = async (row) => {
+    try {
+      if (!confirm("Bu işlem geri alınsın mı?")) return;
+
+      const token = localStorage.getItem("token");
+
+      const res = await fetch("/api/sales/refunds-revert", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ id: row._id }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data?.message || "Geri alma başarısız");
+        return;
+      }
+
+      alert("İşlem geri alındı ✅");
+      loadData();
+    } catch (err) {
+      console.error("REVERT UI ERROR:", err);
+      alert("Geri alma sırasında hata oluştu");
+    }
+  };
+
+  const handlePdf = (row) => {
+    const token = localStorage.getItem("token");
+
+    // ✅ İADE PDF
+    if (row.type === "return") {
+      window.open(
+        `/api/sales/return-pdf?returnSaleNo=${row.saleNo}&token=${token}`,
+        "_blank"
+      );
+      return;
+    }
+
+    // ✅ İPTAL PDF
+    if (row.type === "cancel") {
+      window.open(
+        `/api/sales/cancel-pdf?saleNo=${row.saleNo}&token=${token}`,
+        "_blank"
+      );
+      return;
+    }
+
+    alert("PDF türü tanınamadı");
+  };
+
   useEffect(() => {
     loadData();
   }, [type, start, end]);
@@ -93,6 +147,7 @@ export default function SatisIadeIptal() {
               <td className="border p-2">
                 {new Date(r.date).toLocaleDateString("tr-TR")}
               </td>
+
               <td className="border p-2">
                 {r.type === "return" ? (
                   <span className="text-green-600 font-semibold">İADE</span>
@@ -100,28 +155,32 @@ export default function SatisIadeIptal() {
                   <span className="text-red-600 font-semibold">İPTAL</span>
                 )}
               </td>
+
               <td className="border p-2">{r.saleNo}</td>
               <td className="border p-2">{r.cari}</td>
+
               <td className="border p-2 text-right">
                 {Number(r.total).toLocaleString("tr-TR", {
                   minimumFractionDigits: 2,
                 })}{" "}
                 ₺
               </td>
+
+              {/* ✅ FINAL: Geri Al + PDF (Token'lı) */}
               <td className="border p-2 text-center">
-                {r.type === "return" && (
-                  <button
-                    className="text-blue-600 underline"
-                    onClick={() =>
-                      window.open(
-                        `/api/sales/return-pdf?returnSaleNo=${r.saleNo}`,
-                        "_blank"
-                      )
-                    }
-                  >
-                    PDF
-                  </button>
-                )}
+                <button
+                  className="text-red-600 underline mr-3"
+                  onClick={() => handleRevert(r)}
+                >
+                  Geri Al
+                </button>
+
+                <button
+                  className="text-blue-600 underline"
+                  onClick={() => handlePdf(r)}
+                >
+                  PDF
+                </button>
               </td>
             </tr>
           ))}
@@ -130,6 +189,14 @@ export default function SatisIadeIptal() {
             <tr>
               <td colSpan={6} className="text-center p-4 text-gray-500">
                 Kayıt bulunamadı
+              </td>
+            </tr>
+          )}
+
+          {loading && (
+            <tr>
+              <td colSpan={6} className="text-center p-4 text-gray-500">
+                Yükleniyor...
               </td>
             </tr>
           )}

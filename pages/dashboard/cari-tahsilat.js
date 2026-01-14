@@ -1,305 +1,443 @@
-"use client";
-
 import { useEffect, useState } from "react";
-import Cookies from "js-cookie";
-import jsPDF from "jspdf";
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
-
-const fmt = (n) =>
-  Number(n || 0).toLocaleString("tr-TR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-
-export default function CariTahsilatPage() {
-  const [token, setToken] = useState("");
-
-  const [cariler, setCariler] = useState([]);
+export default function CariTahsilat() {
+  const [cariList, setCariList] = useState([]);
+  const [selectedCari, setSelectedCari] = useState(null);
   const [balance, setBalance] = useState(0);
-  const [payments, setPayments] = useState([]);
 
   const [form, setForm] = useState({
     accountId: "",
-    date: todayISO(),
+    date: new Date().toISOString().slice(0, 10),
     amount: "",
-    type: "tahsilat", // tahsilat | odeme
-    method: "cash", // cash | bank | kart
+    direction: "alacak",
+    method: "cash",
     note: "",
   });
 
+  const [payments, setPayments] = useState([]);
+
+  const [token, setToken] = useState("");
   const [loading, setLoading] = useState(false);
+  const [listLoading, setListLoading] = useState(false);
+
   const [err, setErr] = useState("");
   const [success, setSuccess] = useState("");
 
+  // ✅ Token al
   useEffect(() => {
-    const t = Cookies.get("token") || localStorage.getItem("token");
+    const t = localStorage.getItem("token");
     if (t) setToken(t);
   }, []);
 
+  // ✅ Para format
+  const fmt = (n) =>
+    Number(n || 0).toLocaleString("tr-TR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+  // ✅ ödeme yöntemi yazısı
+  const formatMethod = (m) => {
+    if (m === "cash") return "Nakit";
+    if (m === "bank") return "Banka";
+    if (m === "kart") return "Kart";
+    if (m === "eft") return "EFT / Havale";
+    return m || "-";
+  };
+
+  // ✅ Cari Liste (token ile)
+  const loadCariList = async () => {
+    try {
+      const res = await fetch("/api/cari", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        console.log("❌ /api/cari error:", data);
+        setCariList([]);
+        return;
+      }
+
+      setCariList(Array.isArray(data) ? data : data?.cariList || []);
+    } catch (e) {
+      console.error("Cari load error:", e);
+      setCariList([]);
+    }
+  };
+
+  // ✅ token gelince carileri çek
   useEffect(() => {
     if (!token) return;
-
-    (async () => {
-      try {
-        const res = await fetch("/api/cari", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json();
-        setCariler(Array.isArray(data) ? data : data?.data || []);
-      } catch {
-        setCariler([]);
-      }
-    })();
+    loadCariList();
   }, [token]);
 
+  // ✅ Bakiye çek (token ile)
   const loadBalance = async (accountId) => {
-    if (!accountId || !token) {
+  if (!accountId) return;
+
+  try {
+    const res = await fetch(`/api/cari/balance?id=${accountId}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      cache: "no-store",
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      console.log("❌ /api/cari/balance error:", data);
       setBalance(0);
       return;
     }
 
-    try {
-      const res = await fetch(`/api/cari/balance?id=${accountId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      setBalance(data?.bakiye ?? data?.balance ?? 0);
-    } catch {
-      setBalance(0);
-    }
-  };
+   setBalance(data?.bakiye ?? data?.balance ?? 0);
+  } catch (e) {
+    console.error("Balance load error:", e);
+    setBalance(0);
+  }
+};
 
+
+  // ✅ Ödemeler/Tahsilatlar listesi çek (token ile)
   const loadPayments = async (accountId) => {
-    if (!accountId || !token) {
-      setPayments([]);
-      return;
-    }
+    if (!accountId) return;
 
+    setListLoading(true);
     try {
       const res = await fetch(`/api/tahsilat/list?accountId=${accountId}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        cache: "no-store",
       });
+
       const data = await res.json();
+
+      if (!res.ok) {
+        console.log("❌ /api/tahsilat/list error:", data);
+        setPayments([]);
+        return;
+      }
+
       setPayments(Array.isArray(data) ? data : []);
-    } catch {
+    } catch (e) {
+      console.error("Payment list error:", e);
       setPayments([]);
+    } finally {
+      setListLoading(false);
     }
   };
 
-  const save = async () => {
-    if (!form.accountId) {
-      setErr("Cari seçmelisin");
-      return;
-    }
-    if (!form.amount || Number(form.amount) <= 0) {
-      setErr("Tutar geçersiz");
-      return;
-    }
+  // ✅ Cari seçilince yükle (token hazırsa)
+  useEffect(() => {
+    if (!token) return;
+    if (!form.accountId) return;
 
-    setLoading(true);
+    console.log("✅ SELECTED ACCOUNT:", form.accountId);
+
+    loadBalance(form.accountId);
+    loadPayments(form.accountId);
+
+    const found = Array.isArray(cariList)
+      ? cariList.find((x) => x._id === form.accountId)
+      : null;
+
+    setSelectedCari(found || null);
+  }, [form.accountId, token, cariList]);
+
+  // ✅ Kaydet
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     setErr("");
     setSuccess("");
 
-    try {
-      const payload = {
-        accountId: form.accountId,
-        date: form.date,
-        amount: Number(form.amount),
-        type: form.type,
-        // backend uyumu: paymentMethod bekliyor
-        paymentMethod: form.method,
-        note: form.note,
-        // ❌ direction göndermiyoruz (backend kendi standardını uyguluyor: borc/alacak)
-      };
+    if (!token) return setErr("Token yok, tekrar giriş yap");
+    if (!form.accountId) return setErr("Cari seçmelisin");
+    if (!form.amount) return setErr("Tutar giriniz");
 
+    setLoading(true);
+
+    try {
       const res = await fetch("/api/tahsilat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          accountId: form.accountId,
+          amount: form.amount,
+          direction: form.direction,
+          method: form.method,
+          note: form.note,
+          date: form.date,
+        }),
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.message || "Kaydedilemedi");
+      if (!res.ok) throw new Error(data?.message || "İşlem başarısız");
 
-      setSuccess("✅ İşlem başarıyla kaydedildi");
+      setSuccess("✅ İşlem kaydedildi");
 
-      await loadBalance(form.accountId);
-      await loadPayments(form.accountId);
-
-      setForm((f) => ({
-        ...f,
+      setForm((prev) => ({
+        ...prev,
         amount: "",
         note: "",
       }));
-    } catch (e) {
-      setErr(e.message);
+
+      await loadBalance(form.accountId);
+      await loadPayments(form.accountId);
+    } catch (e2) {
+      setErr(e2.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const generatePdf = () => {
-    const doc = new jsPDF();
+  // ✅ PDF Aç (token ile)
+  const openPdfForPayment = (paymentId) => {
+    if (!token || !paymentId) return;
+    window.open(`/api/tahsilat/pdf?id=${paymentId}&token=${token}`, "_blank");
+  };
 
-    doc.setFontSize(14);
-    doc.text(form.type === "tahsilat" ? "TAHSİLAT MAKBUZU" : "ÖDEME MAKBUZU", 105, 20, {
-      align: "center",
-    });
+  // ✅ Geri Al
+  const cancelPayment = async (paymentId) => {
+    setErr("");
+    setSuccess("");
 
-    const cari =
-      cariler.find((c) => c._id === form.accountId) || {};
+    if (!token) return setErr("Token yok, tekrar giriş yap");
+    if (!paymentId) return setErr("Kayıt bulunamadı");
 
-    doc.setFontSize(10);
-    doc.text(`Tarih: ${form.date}`, 10, 40);
-    doc.text(
-      `Cari: ${cari.unvan || cari.firmaAdi || cari.ad || cari.name || cari.email || "-"}`,
-      10,
-      50
-    );
-    doc.text(`Tutar: ${fmt(form.amount)} TRY`, 10, 60);
-    doc.text(`Yöntem: ${form.method}`, 10, 70);
+    const ok = confirm("Bu ödeme geri alınacak. Emin misin?");
+    if (!ok) return;
 
-    if (form.note) {
-      doc.text(`Not: ${form.note}`, 10, 80);
+    try {
+      const reason = prompt("Geri alma sebebi (isteğe bağlı):") || "";
+
+      const res = await fetch("/api/tahsilat/cancel", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ paymentId, reason }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.message || "Geri alınamadı");
+
+      setSuccess("✅ Ödeme geri alındı");
+      await loadBalance(form.accountId);
+      await loadPayments(form.accountId);
+    } catch (e) {
+      setErr(e.message);
     }
-
-    doc.save(`${form.type}-${Date.now()}.pdf`);
   };
 
   return (
-    <div className="p-5">
-      <h2 className="text-xl font-semibold mb-4">Cari Tahsilat / Ödeme</h2>
+    <div className="p-6">
+      <h1 className="text-xl font-bold mb-4">Cari Tahsilat / Ödeme</h1>
 
-      {err && <div className="bg-red-100 text-red-700 p-2 mb-3">{err}</div>}
-      {success && <div className="bg-green-100 text-green-700 p-2 mb-3">{success}</div>}
+      {err && (
+        <div className="mb-3 p-2 bg-red-100 text-red-700 rounded">{err}</div>
+      )}
+      {success && (
+        <div className="mb-3 p-2 bg-green-100 text-green-700 rounded">
+          {success}
+        </div>
+      )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <select
-          className="border p-2"
-          value={form.accountId}
-          onChange={(e) => {
-            const id = e.target.value;
-            setForm({ ...form, accountId: id });
-            loadBalance(id);
-            loadPayments(id);
-          }}
-        >
-          <option value="">Cari Seç</option>
-          {cariler.map((c) => (
-            <option key={c._id} value={c._id}>
-              {c.unvan || c.firmaAdi || c.ad || c.email}
-            </option>
-          ))}
-        </select>
+      {/* FORM */}
+      <form
+        onSubmit={handleSubmit}
+        className="bg-white border rounded p-4 mb-6"
+      >
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="text-sm font-semibold">Cari</label>
+            <select
+              className="w-full border p-2 rounded"
+              value={form.accountId}
+  onChange={(e) => {
+    const id = e.target.value;
 
-        <div className="border p-2 bg-gray-50">
-          <div className="text-xs text-gray-500">Mevcut Bakiye</div>
-          <div className="font-semibold">{fmt(balance)} TRY</div>
+    setForm((prev) => ({ ...prev, accountId: id }));
+
+    // ✅ anında tetikle (useEffect beklemeden)
+    if (token && id) {
+      loadBalance(id);
+      loadPayments(id);
+    }
+  }}
+>
+              <option value="">Cari Seç</option>
+
+              {Array.isArray(cariList) &&
+                cariList.map((c) => (
+                  <option key={c._id} value={c._id}>
+                    {c.unvan || c.firmaAdi || c.ad || c.name || c.email || "-"}
+                  </option>
+                ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-sm font-semibold">Mevcut Bakiye</label>
+            <div className="w-full border p-2 rounded bg-gray-50">
+              {fmt(balance)} TRY
+            </div>
+          </div>
+
+          <div>
+            <label className="text-sm font-semibold">Tarih</label>
+            <input
+              type="date"
+              className="w-full border p-2 rounded"
+              value={form.date}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, date: e.target.value }))
+              }
+            />
+          </div>
+
+          <div>
+            <label className="text-sm font-semibold">Tutar</label>
+            <input
+              type="number"
+              className="w-full border p-2 rounded"
+              value={form.amount}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, amount: e.target.value }))
+              }
+            />
+          </div>
+
+          <div>
+            <label className="text-sm font-semibold">Tür</label>
+            <select
+              className="w-full border p-2 rounded"
+              value={form.direction}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, direction: e.target.value }))
+              }
+            >
+              <option value="alacak">Tahsilat</option>
+              <option value="borc">Ödeme</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-sm font-semibold">Yöntem</label>
+            <select
+              className="w-full border p-2 rounded"
+              value={form.method}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, method: e.target.value }))
+              }
+            >
+              <option value="cash">Nakit</option>
+              <option value="bank">Banka</option>
+              <option value="kart">Kart</option>
+            </select>
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="text-sm font-semibold">Not</label>
+            <textarea
+              className="w-full border p-2 rounded"
+              value={form.note}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, note: e.target.value }))
+              }
+            />
+          </div>
         </div>
 
-        <input
-          type="date"
-          className="border p-2"
-          value={form.date}
-          onChange={(e) => setForm({ ...form, date: e.target.value })}
-        />
-
-        <input
-          type="number"
-          className="border p-2"
-          placeholder="Tutar"
-          value={form.amount}
-          onChange={(e) => setForm({ ...form, amount: e.target.value })}
-        />
-
-        <select
-          className="border p-2"
-          value={form.type}
-          onChange={(e) => setForm({ ...form, type: e.target.value })}
-        >
-          <option value="tahsilat">Tahsilat</option>
-          <option value="odeme">Ödeme</option>
-        </select>
-
-        <select
-          className="border p-2"
-          value={form.method}
-          onChange={(e) => setForm({ ...form, method: e.target.value })}
-        >
-          <option value="cash">Nakit</option>
-          <option value="bank">Banka</option>
-          <option value="kart">Kart</option>
-        </select>
-
-        <textarea
-          className="border p-2 col-span-1 md:col-span-2"
-          placeholder="Not"
-          value={form.note}
-          onChange={(e) => setForm({ ...form, note: e.target.value })}
-        />
-
-        <div className="flex gap-2">
+        <div className="mt-4 flex gap-2">
           <button
-            onClick={save}
+            className="bg-blue-600 text-white px-4 py-2 rounded"
             disabled={loading}
-            className="bg-blue-600 text-white px-4 py-2"
           >
             {loading ? "Kaydediliyor..." : "Kaydet"}
           </button>
-
-          <button
-            type="button"
-            onClick={generatePdf}
-            className="bg-gray-600 text-white px-4 py-2"
-          >
-            PDF
-          </button>
         </div>
-      </div>
+      </form>
 
-      {/* ✅ Tahsilat/Ödeme Geçmişi */}
-      {form.accountId && (
-        <div className="mt-8">
-          <h3 className="font-semibold mb-2">Tahsilat / Ödeme Geçmişi</h3>
+      {/* LİSTE */}
+      <div className="bg-white border rounded p-4">
+        <h2 className="font-bold mb-3">Tahsilat / Ödeme Geçmişi</h2>
 
-          {payments.length === 0 ? (
-            <div className="text-sm text-gray-500">Kayıt bulunamadı.</div>
-          ) : (
-            <div className="overflow-auto border">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-100">
-                    <th className="border p-2 text-left">Tarih</th>
-                    <th className="border p-2 text-left">Tür</th>
-                    <th className="border p-2 text-right">Tutar</th>
-                    <th className="border p-2 text-left">Yöntem</th>
-                    <th className="border p-2 text-left">Not</th>
+        {listLoading ? (
+          <div>Yükleniyor...</div>
+        ) : (
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="border p-2 text-left">Tarih</th>
+                <th className="border p-2 text-left">Tür</th>
+                <th className="border p-2 text-left">Tutar</th>
+                <th className="border p-2 text-left">Yöntem</th>
+                <th className="border p-2 text-left">Not</th>
+                <th className="border p-2 text-center">PDF</th>
+                <th className="border p-2 text-center">İşlem</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {payments?.length === 0 ? (
+                <tr>
+                  <td className="border p-2" colSpan={7}>
+                    Kayıt yok
+                  </td>
+                </tr>
+              ) : (
+                payments.map((p) => (
+                  <tr key={p._id}>
+                    <td className="border p-2">
+                      {p.date
+                        ? new Date(p.date).toLocaleDateString("tr-TR")
+                        : "-"}
+                    </td>
+
+                    <td className="border p-2">
+                      {p.direction === "alacak" ? "Tahsilat" : "Ödeme"}
+                    </td>
+
+                    <td className="border p-2">{fmt(p.amount)} TRY</td>
+
+                    <td className="border p-2">{formatMethod(p.paymentMethod)}</td>
+
+                    <td className="border p-2">{p.note || "-"}</td>
+
+                    <td className="border p-2 text-center">
+                      <button
+                        className="text-blue-600 underline"
+                        onClick={() => openPdfForPayment(p._id)}
+                      >
+                        PDF
+                      </button>
+                    </td>
+
+                    <td className="border p-2 text-center">
+                      <button
+                        className="text-red-600 underline"
+                        onClick={() => cancelPayment(p._id)}
+                      >
+                        Geri Al
+                      </button>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {payments.map((p) => (
-                    <tr key={p._id}>
-                      <td className="border p-2">
-                        {p.date ? new Date(p.date).toLocaleDateString("tr-TR") : "-"}
-                      </td>
-                      <td className="border p-2">
-                        {p.direction === "alacak" ? "Tahsilat" : "Ödeme"}
-                      </td>
-                      <td className="border p-2 text-right">{fmt(p.amount)} TRY</td>
-                      <td className="border p-2">{p.paymentMethod || "-"}</td>
-                      <td className="border p-2">{p.note || "-"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
+                ))
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 }

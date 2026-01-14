@@ -25,7 +25,7 @@ export default async function handler(req, res) {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const userId = decoded.userId || decoded.id || decoded._id; // 👈 EKLENDİ
+    const userId = decoded.userId || decoded.id || decoded._id;
     const companyId = decoded.companyId || null;
     const role = decoded.role || "user";
 
@@ -44,42 +44,42 @@ export default async function handler(req, res) {
       return res.status(404).end("Cari bulunamadı");
     }
 
-    // 🏢 FİRMA AYARLARI (AYNI pages/api/settings/company.js KAYNAĞI)
-let company = {
-  name: "SatışTakip ERP",
-  taxOffice: "",
-  taxNo: "",
-  phone: "",
-  email: "",
-  address: "",
-  logo: null,
-};
-
-// ⚠️ Firma ayarları USER BAZLI tutuluyor
-if (userId) {
-  const companySettings = await db
-    .collection("company_settings")
-    .findOne({ userId });
-
-  if (companySettings) {
-    company = {
-      name: companySettings.firmaAdi || company.name,
-      taxOffice: companySettings.vergiDairesi || "",
-      taxNo: companySettings.vergiNo || "",
-      phone: companySettings.telefon || "",
-      email: companySettings.eposta || companySettings.email || "",
-      address: companySettings.adres || "",
-      logo: companySettings.logo || null,
+    // 🏢 FİRMA AYARLARI
+    let company = {
+      name: "SatışTakip ERP",
+      taxOffice: "",
+      taxNo: "",
+      phone: "",
+      email: "",
+      address: "",
+      logo: null,
     };
-  }
-}
+
+    // ⚠️ Firma ayarları USER BAZLI tutuluyor
+    if (userId) {
+      const companySettings = await db
+        .collection("company_settings")
+        .findOne({ userId });
+
+      if (companySettings) {
+        company = {
+          name: companySettings.firmaAdi || company.name,
+          taxOffice: companySettings.vergiDairesi || "",
+          taxNo: companySettings.vergiNo || "",
+          phone: companySettings.telefon || "",
+          email: companySettings.eposta || companySettings.email || "",
+          address: companySettings.adres || "",
+          logo: companySettings.logo || null,
+        };
+      }
+    }
 
     // 📅 TARİH
     const startDate = new Date(start);
     const endDate = new Date(end);
     endDate.setHours(23, 59, 59, 999);
 
-    // 🔎 TRANSACTION FİLTRE (EKRANLA AYNI)
+    // 🔎 TRANSACTION FİLTRE
     const trxFilter = {
       accountId: accountObjectId,
       date: { $gte: startDate, $lte: endDate },
@@ -107,18 +107,19 @@ if (userId) {
       totalBorc += borc;
       totalAlacak += alacak;
 
+      // ✅ PROFESYONEL AÇIKLAMA (type bazlı)
+      let aciklama = "-";
+
+      if (t.type === "sale") aciklama = "Satış";
+      else if (t.type === "purchase") aciklama = "Alış";
+      else if (t.type === "sale_cancel") aciklama = "Satış İptali";
+      else if (t.type === "sale_return") aciklama = "Satış İadesi";
+      else if (t.direction === "alacak") aciklama = "Tahsilat";
+      else if (t.direction === "borc") aciklama = "Ödeme";
+
       return {
         tarih: t.date,
-        aciklama:
-          t.type === "sale"
-            ? "Satış"
-            : t.type === "purchase"
-            ? "Alış"
-            : t.direction === "alacak"
-            ? "Tahsilat"
-            : t.direction === "borc"
-            ? "Ödeme"
-            : "-",
+        aciklama,
         borc,
         alacak,
         bakiye,
@@ -127,13 +128,11 @@ if (userId) {
 
     // 📄 PDF
     const doc = createPdf(res, {
-  title: "CARİ EKSTRESİ",
-  subtitle: `${start} - ${end}`,
-  inline: true,
-  layout: "landscape", // ✅ EKLE
-});
-
-
+      title: "CARİ EKSTRESİ",
+      subtitle: `${start} - ${end}`,
+      inline: true,
+      layout: "landscape",
+    });
 
     renderCariEkstrePdf(doc, {
       company,

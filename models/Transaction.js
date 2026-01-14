@@ -55,6 +55,32 @@ const TransactionSchema = new mongoose.Schema(
     fxRate: { type: Number, default: 1 },
     totalTRY: { type: Number, default: 0 },
 
+        // =========================
+    // ❌ İPTAL / SİLME DURUMU (YENİ)
+    // =========================
+    isDeleted: { type: Boolean, default: false },
+    status: { type: String, default: "active" }, // active | cancelled
+
+    canceledAt: { type: Date },
+    canceledBy: { type: String, default: "" }, // userId string tutuyoruz (senin sistemin userId string)
+    cancelReason: { type: String, default: "" },
+
+        // =========================
+    // ❌ İPTAL / İADE / GERİ AL (YENİ)
+    // =========================
+    refSaleNo: { type: String, default: "" },
+
+    isDeleted: { type: Boolean, default: false },
+    status: { type: String, default: "active" }, // active | cancelled | reversed
+
+    canceledAt: { type: Date },
+    canceledBy: { type: String, default: "" },
+    cancelReason: { type: String, default: "" },
+
+
+    // ✅ Referans Belge No (İade/İptal için)
+    refSaleNo: { type: String, default: "" },
+
     // =========================
     // ⬇️ ESKİ ALANLAR (KALDI)
     // =========================
