@@ -1,191 +1,105 @@
-// /pages/teklif/onay/[id].js
-"use client";
-
+import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
-import QRCode from "qrcode";
 
 export default function TeklifOnay() {
+  const router = useRouter();
+  const { id } = router.query;
+
   const [teklif, setTeklif] = useState(null);
-  const [status, setStatus] = useState("loading");
-  const [rejectReason, setRejectReason] = useState("");
-  const [qrData, setQrData] = useState("");
+  const [note, setNote] = useState("");
+  const [loading, setLoading] = useState(false);
 
+  // Teklifi çek
   useEffect(() => {
-    const url = new URL(window.location.href);
-    const id = url.pathname.split("/").pop();
-    const token = url.searchParams.get("token");
-
-    if (!id || !token) {
-      setStatus("invalid");
-      return;
-    }
-
+    if (!id) return;
     (async () => {
-      try {
-        const r = await fetch(`/api/teklif/get?id=${id}&token=${token}`);
-        if (!r.ok) return setStatus("notfound");
-
-        const data = await r.json();
-        setTeklif(data);
-        setStatus(data.status || "Bekliyor");
-
-        // ✔ QR KOD bağlatı URL’si
-        const qr = await QRCode.toDataURL(window.location.href);
-        setQrData(qr);
-      } catch (err) {
-        console.error("QR veya veri hatası:", err);
-        setStatus("invalid");
-      }
+      const res = await fetch(`/api/teklif/view?id=${id}`);
+      const data = await res.json();
+      if (res.ok) setTeklif(data?.teklif || null);
     })();
-  }, []);
+  }, [id]);
 
-  const updateStatus = async (newStatus) => {
-    if (!teklif) return;
-
-    const body = {
-      id: teklif._id,
-      token: teklif.token,
-      status: newStatus,
-    };
-
-    if (newStatus === "Reddedildi") {
-      if (!rejectReason.trim()) return alert("Lütfen red sebebi yazın.");
-      body.rejectReason = rejectReason;
-    }
-
-    const r = await fetch("/api/teklif/status", {
+  const approve = async () => {
+    setLoading(true);
+    const res = await fetch("/api/teklif/status", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ teklifId: id, action: "approve" }),
     });
+    const data = await res.json();
+    setLoading(false);
 
-    if (!r.ok) return alert("Bir hata oluştu.");
-    setStatus(newStatus);
+    if (!res.ok) return alert(data?.message || "Hata");
+    alert("✅ Teklif onaylandı. Teşekkürler!");
   };
 
-  // Durumlar
-  if (status === "loading") return <Center>Yükleniyor...</Center>;
-  if (status === "invalid") return <Center>❌ Geçersiz bağlantı</Center>;
-  if (status === "notfound") return <Center>❌ Teklif bulunamadı</Center>;
-  if (status === "Onaylandı") return <Center>✅ Bu teklif zaten onaylanmış</Center>;
-  if (status === "Reddedildi") return <Center>❌ Bu teklif daha önce reddedilmiş</Center>;
+  const revise = async () => {
+    setLoading(true);
+    const res = await fetch("/api/teklif/status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ teklifId: id, action: "revise", note }),
+    });
+    const data = await res.json();
+    setLoading(false);
 
-  const cari = teklif?.cariAd || "Müşteri";
-
-  // WhatsApp mesajı
-  const waPhone = (teklif?.phone || "")
-    .replace(/\D/g, "")
-    .replace(/^0/, "");
-
-  const waText = `Teklifinizi aldım. Teklif No: ${teklif.number}`;
-  const waUrl = `https://wa.me/90${waPhone}?text=${encodeURIComponent(waText)}`;
+    if (!res.ok) return alert(data?.message || "Hata");
+    alert("✅ Revize talebiniz alındı.");
+  };
 
   return (
-    <Center>
-      <div style={panel}>
-        {/* QR KOD */}
-        {qrData && (
-          <img
-            src={qrData}
-            alt="QR"
-            style={{
-              width: 120,
-              margin: "0 auto 12px",
-              display: "block",
-              borderRadius: 8
-            }}
-          />
-        )}
+    <div style={{ padding: 20, maxWidth: 700, margin: "0 auto", fontFamily: "Arial" }}>
+      <h2>📄 Teklif Onay Sayfası</h2>
 
-        <h2 style={{ textAlign: "center", marginBottom: 10 }}>Teklif Onay</h2>
+      {!teklif ? (
+        <p>Teklif yükleniyor...</p>
+      ) : (
+        <>
+          <p>
+            <b>Cari:</b> {teklif.cariUnvan || "-"}
+          </p>
+          <p>
+            <b>Teklif No:</b> {teklif.number || "-"}
+          </p>
+          <p>
+            <b>Genel Toplam:</b> {teklif.genelToplam} {teklif.paraBirimi}
+          </p>
 
-        <p><b>Firma:</b> {cari}</p>
-        <p><b>Teklif No:</b> {teklif.number}</p>
-        <p><b>Toplam:</b> {teklif.totals.genelToplam} {teklif.currency || "₺"}</p>
-        <p><b>Geçerlilik:</b> {new Date(teklif.validUntil).toLocaleDateString("tr-TR")}</p>
+          {teklif.pdfUrl && (
+            <p>
+              <a href={teklif.pdfUrl} target="_blank">📎 PDF Görüntüle</a>
+            </p>
+          )}
 
-        <hr style={{ margin: "14px 0" }} />
+          <hr />
 
-        {/* ONAY BUTTON */}
-        <button onClick={() => updateStatus("Onaylandı")} style={btnGreen}>
-          ✅ Teklifi Onayla
-        </button>
+          <button
+            disabled={loading}
+            onClick={approve}
+            style={{ padding: 10, background: "green", color: "white", border: "none", marginRight: 10 }}
+          >
+            ✅ Onayla
+          </button>
 
-        {/* RED SEBEBİ */}
-        <textarea
-          placeholder="Red sebebi yazın..."
-          value={rejectReason}
-          onChange={(e) => setRejectReason(e.target.value)}
-          style={textarea}
-        />
+          <button
+            disabled={loading}
+            onClick={revise}
+            style={{ padding: 10, background: "orange", color: "white", border: "none" }}
+          >
+            ✍️ Revize İste
+          </button>
 
-        <button onClick={() => updateStatus("Reddedildi")} style={btnRed}>
-          ❌ Teklifi Reddet
-        </button>
-
-        {/* WhatsApp */}
-        {waPhone && (
-          <a href={waUrl} target="_blank" style={btnWhatsapp}>
-            💬 WhatsApp ile Bilgilendir
-          </a>
-        )}
-      </div>
-    </Center>
+          <div style={{ marginTop: 15 }}>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Revize açıklaması yazın..."
+              rows={4}
+              style={{ width: "100%" }}
+            />
+          </div>
+        </>
+      )}
+    </div>
   );
 }
-
-// --- Tasarım ---
-const Center = ({ children }) => (
-  <div style={{
-    minHeight: "80vh",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-    background: "#f9fafb"
-  }}>
-    {children}
-  </div>
-);
-
-const panel = {
-  padding: 24,
-  border: "1px solid #e5e7eb",
-  borderRadius: 12,
-  maxWidth: 450,
-  width: "100%",
-  background: "#fff",
-  boxShadow: "0 4px 12px rgba(0,0,0,0.08)"
-};
-
-const textarea = {
-  width: "100%",
-  minHeight: 80,
-  padding: 10,
-  borderRadius: 8,
-  border: "1px solid #ccc",
-  marginTop: 12,
-  resize: "vertical",
-  fontSize: 15
-};
-
-const btnBase = {
-  padding: "12px 18px",
-  borderRadius: 6,
-  border: "none",
-  cursor: "pointer",
-  width: "100%",
-  marginTop: 10,
-  fontSize: 16,
-  fontWeight: 600
-};
-
-const btnGreen = { ...btnBase, background: "#16a34a", color: "#fff" };
-const btnRed = { ...btnBase, background: "#dc2626", color: "#fff" };
-const btnWhatsapp = {
-  ...btnBase,
-  background: "#25D366",
-  color: "#fff",
-  textAlign: "center",
-  display: "block"
-};

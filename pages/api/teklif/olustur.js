@@ -1,138 +1,112 @@
-// 📄 /pages/api/teklif/olustur.js
-import { ObjectId } from "mongodb";
-import { getTeklifCollection, getNextTeklifNumber } from "@/models/Teklif";
-import clientPromise from "@/lib/mongodb";
+// pages/api/teklif/olustur.js
+import jwt from "jsonwebtoken";
+import dbConnect, { connectToDatabase } from "../../../lib/mongodb";
+import Teklif from "../../../models/Teklif";
 
 export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ message: "Sadece POST desteklenir" });
+  }
+
   try {
-    // Sadece POST isteği kabul edilir
-    if (req.method !== "POST") {
-      return res.status(405).json({ message: "Only POST" });
+    // 1) DB connect
+    await dbConnect();
+
+    // 2) Token kontrol
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) return res.status(401).json({ message: "Token yok" });
+
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (e) {
+      return res.status(401).json({ message: "Token geçersiz" });
     }
 
+    const userId = decoded?.userId;
+    if (!userId) return res.status(401).json({ message: "UserId bulunamadı" });
+
+    // 3) Body al
     const {
       cariId,
-      lines = [],
-      note = "",
-      logo = null,
-      totals = null,
-      validDays = 7,
+      cariName,
+      not,
+      currency,
+      number, // ✅ Frontend'den gönderiyorsun: number: offerNumber
+      lines,
     } = req.body || {};
 
-    // 🧾 1️⃣ Temel doğrulamalar
-    if (!cariId || !Array.isArray(lines) || lines.length === 0) {
-      return res.status(400).json({ message: "cariId ve en az 1 satır gerekli" });
+    // 4) Validasyon
+    if (!cariId) return res.status(400).json({ message: "Cari seçiniz." });
+    if (!Array.isArray(lines) || lines.length === 0) {
+      return res.status(400).json({ message: "Ürün/Hizmet kalemleri boş olamaz" });
     }
 
-    // 🧩 2️⃣ MongoDB bağlantısı
-    const client = await clientPromise;
-    if (!client) {
-      console.error("❌ MongoDB bağlantısı başarısız");
-      return res.status(500).json({ message: "Veritabanı bağlantısı başarısız" });
+    // boş satırları ele
+    const cleanedLines = lines
+      .map((l) => ({
+        urunId: l.urunId || l.productId || "",
+        urunAd: l.urunAd || l.name || "",
+        adet: Number(l.adet ?? 0),
+        fiyat: Number(l.fiyat ?? 0),
+        kdv: Number(l.kdv ?? 0),
+      }))
+      .filter((l) => (l.urunId || l.urunAd) && l.adet > 0);
+
+    if (cleanedLines.length === 0) {
+      return res.status(400).json({ message: "Ürün/Hizmet kalemleri boş olamaz" });
     }
 
-    const db = client.db("satistakip");
-    const cariler = db.collection("accounts");
+    // 5) Totals (server tarafı güvenli hesap)
+    const araToplam = cleanedLines.reduce((t, l) => t + l.adet * l.fiyat, 0);
+    const kdvToplam = cleanedLines.reduce((t, l) => {
+      const satir = l.adet * l.fiyat;
+      return t + (satir * (l.kdv || 0)) / 100;
+    }, 0);
+    const genelToplam = araToplam + kdvToplam;
 
-    // Cari kaydını getir
-    let cari = null;
-    try {
-      cari = await cariler.findOne({ _id: new ObjectId(cariId) });
-    } catch (err) {
-      console.error("Cari ObjectId hatası:", err);
-      return res.status(400).json({ message: "Geçersiz cariId formatı" });
-    }
+    // 6) Multi-tenant firma bilgisi: token userId → company_settings
+    // company api driver ile çalışıyor; biz direkt collection'dan çekiyoruz.
+    const { db } = await connectToDatabase();
+    const companySettings = await db
+      .collection("company_settings")
+      .findOne({ userId });
 
-    if (!cari) {
-      return res.status(404).json({ message: "Cari bulunamadı" });
-    }
+    const companyName = companySettings?.firmaAdi || companySettings?.yetkili || "Firma";
+    const companyEmail = companySettings?.eposta || process.env.SMTP_FROM_EMAIL || "";
 
-    // 🔢 3️⃣ Teklif numarası oluştur
-    let number, year, seq;
-    try {
-      const next = await getNextTeklifNumber();
-      number = next.number;
-      year = next.year;
-      seq = next.seq;
-    } catch (err) {
-      console.warn("⚠️ getNextTeklifNumber hata:", err);
-      const y = new Date().getFullYear();
-      number = `T-${y}-0001`;
-      year = y;
-      seq = 1;
-    }
+    // 7) Kaydet
+    const teklif = await Teklif.create({
+      userId,
+      cariId,
+      cariName: cariName || "",
 
-    // 💰 4️⃣ Tutar hesaplamaları
-    const araToplam =
-      totals?.araToplam ??
-      lines.reduce((t, l) => {
-        const adet = Number(l.adet || 0);
-        const fiyat = Number(l.fiyat || 0);
-        return t + adet * fiyat;
-      }, 0);
+      number: number || null, // ✅ offer number
+      currency: currency || "TL",
+      not: not || "",
 
-    const kdvToplam =
-      totals?.kdvToplam ??
-      lines.reduce((t, l) => {
-        const adet = Number(l.adet || 0);
-        const fiyat = Number(l.fiyat || 0);
-        const kdv = Number(l.kdv || 0);
-        const satirTutar = adet * fiyat;
-        return t + (satirTutar * kdv) / 100;
-      }, 0);
+      lines: cleanedLines,
 
-    const genelToplam = totals?.genelToplam ?? araToplam + kdvToplam;
+      araToplam,
+      kdvToplam,
+      genelToplam,
 
-    // 🕒 5️⃣ Tarihler
-    const now = new Date();
-    const validUntil = new Date(now.getTime() + (validDays || 7) * 24 * 60 * 60 * 1000);
+      companyName,
+      companyEmail,
 
-    // 📦 6️⃣ Kayıt payload’u
-    const payload = {
-      number,
-      year,
-      seq,
-      cariId: new ObjectId(cariId),
-      cariAd: cari.ad || "",
-      lines: lines.map((l) => ({
-        urunAd: l.urunAd || "",
-        adet: Number(l.adet || 0),
-        fiyat: Number(l.fiyat || 0),
-        kdv: Number(l.kdv || 0),
-      })),
-      note,
-      logo,
-      totals: { araToplam, kdvToplam, genelToplam },
-      status: "Beklemede",
-      approved: false,
-      approvedAt: null,
-      rejected: false,
-      rejectedAt: null,
-      sentAt: null,
-      createdAt: now,
-      validUntil,
-    };
+      status: "kaydedildi", // ✅ enum uyumlu
 
-    // 💾 7️⃣ Veritabanına ekle
-    const teklifler = await getTeklifCollection();
-    if (!teklifler) {
-      console.error("❌ getTeklifCollection null döndü");
-      return res.status(500).json({ message: "Teklif koleksiyonu bulunamadı" });
-    }
-
-    const result = await teklifler.insertOne(payload);
-
-    // 📨 8️⃣ Yanıt
-    return res.status(201).json({
-      message: "✅ Teklif başarıyla oluşturuldu",
-      id: result.insertedId,
-      offerNumber: number,
-      year,
-      seq,
-      totals: payload.totals,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     });
-  } catch (e) {
-    console.error("❌ /api/teklif/olustur hata:", e);
-    return res.status(500).json({ message: "Sunucu hatası", error: e.message || e.toString() });
+
+    return res.status(201).json({
+      message: "Teklif oluşturuldu",
+      teklif,
+      teklifId: teklif?._id,
+    });
+  } catch (err) {
+    console.error("❌ /api/teklif/olustur hata:", err);
+    return res.status(500).json({ message: "Sunucu hatası", error: err.message });
   }
 }

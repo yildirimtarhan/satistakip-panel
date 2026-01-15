@@ -1,72 +1,86 @@
-// /pages/api/teklif/mail.js
 import nodemailer from "nodemailer";
-import { ObjectId } from "mongodb";
-import { getTeklifCollection } from "@/models/Teklif";
+import dbConnect from "@/lib/mongodb";
+import Teklif from "@/models/Teklif";
 
-function transporter() {
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST,          // smtp.zoho.eu
-    port: Number(process.env.SMTP_PORT),  // 465
-    secure: true,
-    auth: {
-      user: process.env.SMTP_USER,        // teklif@tedarikci.org.tr
-      pass: process.env.SMTP_PASS,        // ********
-    },
-  });
+function escapeHtml(str = "") {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
-
-const FROM_NAME = process.env.SMTP_FROM_NAME || "Kurumsal Tedarikçi";
-const FROM_ADDR = process.env.SMTP_USER;
 
 export default async function handler(req, res) {
   try {
-    if (req.method !== "POST") return res.status(405).json({ message: "Only POST" });
-    const { teklifId, toEmail, pdfBase64 } = req.body || {};
-    if (!teklifId || !toEmail || !pdfBase64) {
-      return res.status(400).json({ message: "teklifId, toEmail, pdfBase64 gerekli" });
+    if (req.method !== "POST") {
+      return res.status(405).json({ message: "Only POST" });
     }
 
-    const teklifler = await getTeklifCollection();
-    const teklif = await teklifler.findOne({ _id: new ObjectId(teklifId) });
+    await dbConnect();
+
+    const { teklifId, toEmail, subject, message } = req.body || {};
+
+    if (!teklifId || !toEmail) {
+      return res.status(400).json({ message: "teklifId ve toEmail gerekli" });
+    }
+
+    const teklif = await Teklif.findById(teklifId).lean();
     if (!teklif) return res.status(404).json({ message: "Teklif bulunamadı" });
 
-    const approveUrl = `${process.env.NEXT_PUBLIC_BASE_URL || ""}/teklif/onay/${teklif._id.toString()}?ok=1`;
+    if (!teklif.pdfUrl) {
+      return res
+        .status(400)
+        .json({ message: "Bu teklife ait PDF bulunamadı. Önce Sunucuya Kaydet." });
+    }
 
-    const mail = {
-      from: `"${FROM_NAME}" <${FROM_ADDR}>`,
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT),
+      secure: true,
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
+
+    const mailSubject =
+      subject ||
+      `Teklif - ${teklif?.cariUnvan || teklif?.cariAdi || ""}`;
+
+    const mailMessage = message || "Merhaba,\nTeklifinizi aşağıdan görüntüleyebilirsiniz.";
+
+    const htmlMessage = escapeHtml(mailMessage).replaceAll("\n", "<br/>");
+
+    await transporter.sendMail({
+      from: `"Kurumsal Tedarikçi" <${process.env.SMTP_USER}>`,
       to: toEmail,
-      subject: `Teklif #${teklif.number} — ${teklif.cariAd}`,
+      subject: mailSubject,
       html: `
-        <div style="font-family:Arial,sans-serif;font-size:14px">
-          <p>Merhaba, ekli dosyada <b>#${teklif.number}</b> nolu teklifimizi bulabilirsiniz.</p>
-          <p><b>Müşteri:</b> ${teklif.cariAd}</p>
-          <p><b>Toplam:</b> ${Intl.NumberFormat("tr-TR", {minimumFractionDigits:2}).format(teklif?.totals?.genelToplam || 0)} TL</p>
-          <p><a href="${approveUrl}" target="_blank" style="color:#0b79d0">Teklifi onaylamak için tıklayın</a></p>
+        <div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6">
+          <p>${htmlMessage}</p>
+
+          <p style="margin-top:12px">
+            <b>📄 Teklif PDF Linki:</b><br/>
+            <a href="${teklif.pdfUrl}" target="_blank">${teklif.pdfUrl}</a>
+          </p>
+
           <hr/>
-          <p>Kurumsal Tedarikçi<br/>www.tedarikci.org.tr • iletisim@tedarikci.org.tr</p>
+          <p style="color:#666;font-size:12px">
+            Kurumsal Tedarikçi • Otomatik gönderim
+          </p>
         </div>
       `,
-      attachments: [
-        {
-          filename: `Teklif-${teklif.number}.pdf`,
-          content: Buffer.from(pdfBase64, "base64"),
-          contentType: "application/pdf",
-        },
-      ],
-    };
+    });
 
-    const t = transporter();
-    await t.sendMail(mail);
+    await Teklif.findByIdAndUpdate(teklifId, {
+  $set: { status: "Gönderildi", sentAt: new Date() },
+});
 
-    // gönderildi olarak işaretle
-    await teklifler.updateOne(
-      { _id: teklif._id },
-      { $set: { status: "Gönderildi", sentAt: new Date() } }
-    );
 
-    return res.status(200).json({ message: "E-posta gönderildi ve durum 'Gönderildi' yapıldı." });
+    return res.status(200).json({ message: "✅ Mail gönderildi" });
   } catch (e) {
-    console.error("mail error:", e);
-    return res.status(500).json({ message: "E-posta gönderilemedi" });
+    console.error("MAIL ERROR:", e);
+    return res.status(500).json({ message: "Mail gönderilemedi", error: e.message });
   }
 }
