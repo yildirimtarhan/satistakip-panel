@@ -547,13 +547,22 @@ export default function EditProductPage() {
               </div>
 
               <div>
-                <Label>KDV Oranı (%)</Label>
-                <Input
-                  type="number"
-                  value={form.vatRate}
-                  onChange={(e) => handleChange("vatRate", e.target.value)}
-                />
-              </div>
+  <Label>KDV Oranı (%)</Label>
+
+  <select
+    className="w-full border rounded-lg p-2"
+    value={form.vatRate}
+    onChange={(e) => handleChange("vatRate", Number(e.target.value))}
+  >
+    <option value={0}>%0</option>
+    <option value={1}>%1</option>
+    <option value={8}>%8</option>
+    <option value={10}>%10</option>
+    <option value={18}>%18</option>
+    <option value={20}>%20</option>
+  </select>
+</div>
+
 
               <div>
                 <Label>USD Fiyat</Label>

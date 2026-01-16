@@ -1,99 +1,89 @@
+// /pages/api/purchases/list.js
 import dbConnect from "@/lib/dbConnect";
-import Transaction from "@/models/Transaction";
-import Cari from "@/models/Cari";
 import jwt from "jsonwebtoken";
 
-const ITEMS_MARKER = "__PURCHASE_ITEMS__:";
-const CANCEL_MARKER = "__PURCHASE_CANCELLED__:";
+import Transaction from "@/models/Transaction";
+import Cari from "@/models/Cari";
 
-function extractItemsFromNote(note) {
-  if (!note || typeof note !== "string") return null;
-  const idx = note.indexOf(ITEMS_MARKER);
-  if (idx === -1) return null;
-  const json = note.slice(idx + ITEMS_MARKER.length).trim();
+const ITEMS_MARKER = "__PURCHASE_ITEMS__:";
+
+function parseItemsFromNote(note = "") {
   try {
-    const parsed = JSON.parse(json);
-    return Array.isArray(parsed) ? parsed : null;
+    const s = String(note || "");
+    const idx = s.indexOf(ITEMS_MARKER);
+    if (idx === -1) return [];
+
+    const json = s.slice(idx + ITEMS_MARKER.length).trim();
+    const arr = JSON.parse(json);
+    return Array.isArray(arr) ? arr : [];
   } catch {
-    return null;
+    return [];
   }
 }
 
-function extractHumanNote(note) {
-  if (!note || typeof note !== "string") return "";
-  const idx = note.indexOf(ITEMS_MARKER);
-  return idx === -1 ? note.trim() : note.slice(0, idx).trim();
-}
-
-function isCancelled(note) {
-  return typeof note === "string" && note.includes(CANCEL_MARKER);
-}
-
 export default async function handler(req, res) {
-  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-  res.setHeader("Pragma", "no-cache");
-  res.setHeader("Expires", "0");
-
   if (req.method !== "GET") {
-    return res.status(405).json({ message: "Method Not Allowed" });
+    return res.status(405).json({ message: "Method not allowed" });
   }
 
   try {
     await dbConnect();
 
-    const auth = req.headers.authorization;
-    if (!auth) return res.status(401).json({ message: "Yetkisiz" });
+    // ✅ AUTH
+    const auth = req.headers.authorization || "";
+    const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+    if (!token) return res.status(401).json({ message: "Token yok" });
 
-    const token = auth.split(" ")[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    const userId = decoded.userId || decoded.id || decoded._id;
-    const companyId = decoded.companyId || null;
-
-    const filter = { userId, type: "purchase" };
-    if (companyId && ("companyId" in (Transaction.schema?.paths || {}))) {
-      filter.companyId = companyId;
+    let decoded = null;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch {
+      return res.status(401).json({ message: "Geçersiz token" });
     }
 
-    const purchases = await Transaction.find(filter)
-      .populate("accountId", "unvan ad firmaAdi email")
+    const userId = decoded?.userId || decoded?.id || decoded?._id;
+    if (!userId) return res.status(401).json({ message: "userId yok" });
+
+    // ✅ sadece bu user'ın alışları (multi-tenant)
+    const txs = await Transaction.find({
+      userId,
+      type: "purchase",
+    })
       .sort({ date: -1, createdAt: -1 })
       .lean();
 
-    // ✅ iptal edilenleri gizle + normalize et
-    const normalized = purchases
-      .filter((p) => !isCancelled(p.note))
-      .map((p) => {
-        const noteItems = extractItemsFromNote(p.note);
-        const legacySingle = p.productId
-          ? [
-              {
-                productId: p.productId,
-                quantity: p.quantity,
-                unitPrice: p.unitPrice,
-                total: p.total || p.totalTRY || p.amount || 0,
-              },
-            ]
-          : null;
+    // Cari bilgisi
+    const accountIds = txs.map((t) => String(t.accountId)).filter(Boolean);
+    const cariler = await Cari.find({ _id: { $in: accountIds }, userId }).lean();
+    const cariMap = new Map(cariler.map((c) => [String(c._id), c]));
 
-        const items = Array.isArray(p.items)
-          ? p.items
-          : noteItems
-          ? noteItems
-          : legacySingle
-          ? legacySingle
-          : [];
+    const list = txs.map((t) => {
+      const items = parseItemsFromNote(t.note);
+      const account = cariMap.get(String(t.accountId)) || null;
 
-        return {
-          ...p,
-          items,
-          description: extractHumanNote(p.note) || "Alış",
-        };
-      });
+      return {
+        _id: t._id,
+        date: t.date || t.createdAt,
+        accountId: account, // ✅ alislar.js buradan unvan okuyor
+        description: t.note?.split("\n")?.[0] || "Alış",
+        amount: Number(t.amount || 0),
+        totalTRY: Number(t.totalTRY || 0),
 
-    return res.status(200).json(normalized);
+        // ✅ EN KRİTİK FIX: frontend p.items bekliyor
+        items: items.map((x) => ({
+          productId: x.productId,
+          quantity: Number(x.quantity || 0),
+          unitPrice: Number(x.unitPrice || 0),
+          currency: x.currency || "TRY",
+          fxRate: Number(x.fxRate || 1),
+          total: Number(x.total || 0),
+        })),
+      };
+    });
+
+    return res.status(200).json(list);
   } catch (err) {
     console.error("PURCHASE LIST ERROR:", err);
-    return res.status(500).json({ message: "Alışlar getirilemedi", error: err.message });
+    return res.status(500).json({ message: "Sunucu hatası", error: err.message });
   }
 }

@@ -20,6 +20,8 @@ const PurchaseItemSchema = new mongoose.Schema(
       min: 0,
     },
 
+    vatRate: { type: Number, default: 20 },
+
     total: {
       type: Number,
       required: true,
