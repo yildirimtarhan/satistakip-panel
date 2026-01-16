@@ -1,6 +1,6 @@
 // 📄 /pages/dashboard/teklifler.js
 "use client";
-import { useEffect, useRef, useState, useMemo } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import RequireAuth from "@/components/RequireAuth";
@@ -108,8 +108,11 @@ function safeUUID() {
 ──────────────────────────────────────────────*/
 
 export default function Teklifler() {
+
+  // ✅ EN ÜSTE STATE KISMINA EKLE
+  
   // Data
-  const [cariler, setCariler] = useState([]);
+    const [cariler, setCariler] = useState([]);
   const [urunler, setUrunler] = useState([]);
   const [teklifler, setTeklifler] = useState([]);
   const [company, setCompany] = useState(null);
@@ -140,18 +143,23 @@ export default function Teklifler() {
 };
 
 
-  const buildKalemler = () => {
-  return lines
-    .filter((l) => l.urunId && l.urunAd) // boş satırları at
-    .map((l) => ({
-      urunId: l.urunId,
-      urunAdi: l.urunAd,          // ✅ frontend urunAd -> backend urunAdi
-      adet: Number(l.adet || 0),
-      birimFiyat: Number(l.fiyat || 0), // ✅ frontend fiyat -> backend birimFiyat
-      kdvOrani: Number(l.kdv || 0),      // ✅ frontend kdv -> backend kdvOrani
-    }));
-};
+ const buildKalemler = () => {
+  return (lines || [])
+    .filter((l) => l?.urunId) // ✅ urunId varsa satır geçerli
+    .map((l) => {
+      const adet = Number(l?.adet || 0) > 0 ? Number(l.adet) : 1;
+      const birimFiyat = Number(l?.fiyat ?? 0);
+      const kdvOrani = Number(l?.kdv ?? 0);
 
+      return {
+        urunId: l.urunId,
+        urunAdi: l?.urunAd || l?.urunAdi || "Ürün", // ✅ boş kalmasın
+        adet,
+        birimFiyat,
+        kdvOrani,
+      };
+    });
+};
 
   // 💱 Para birimi
   const [currency, setCurrency] = useState("TL");
@@ -280,93 +288,110 @@ useEffect(() => {
   };
 
   const selectProduct = (idx, urunId) => {
-    const u = urunler.find((x) => x._id === urunId || x.id === urunId);
-    if (!u) return updateLine(idx, "urunId", urunId);
+  const u = urunler.find((x) => x._id === urunId || x.id === urunId);
 
-    const patch = {
-      urunId,
-      urunAd: u.ad || u.name || u.urunAd || u.title || u.urunAdi || "",
-      fiyat: Number(u.satisFiyati || u.salePrice || u.price || u.fiyat || u.satisFiyat || 0),
-    };
+  if (!u) {
+    setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, urunId } : l)));
+    return;
+  }
 
-    setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
-  };
+  const urunAd =
+    u.ad || u.name || u.urunAd || u.title || u.urunAdi || "-";
+
+  const fiyat = Number(
+    u.satisFiyati || u.salePrice || u.price || u.fiyat || u.satisFiyat || 0
+  );
+
+  setLines((prev) =>
+    prev.map((l, i) =>
+      i === idx
+        ? { ...l, urunId, urunAd, fiyat, adet: Number(l.adet || 0) > 0 ? l.adet : 1, kdv: l.kdv ?? 20 }
+        : l
+    )
+  );
+};
+
+
 
   /* ───────── Teklif yükle / revize ───────── */
 
   const loadTeklifToForm = (t) => {
-    setCariId(t.cariId || "");
-    setLines(
-      (t.lines && t.lines.length ? t.lines : [{ urunId: "", urunAd: "", adet: 1, fiyat: 0, kdv: 20 }]).map(
-        (l) => ({
-          urunId: l.urunId || "",
-          urunAd: l.urunAd || "",
-          adet: Number(l.adet || 0),
-          fiyat: Number(l.fiyat || 0),
-          kdv: Number(l.kdv || 20),
-        })
-      )
-    );
-    setNot(t.note || "");
-    setCurrency(t.currency || "TL");
-    setOfferNumber(t.number || t.offerNumber || offerNumber);
-    setSavedTeklifId(t._id || t.id || null);
-    alert("📝 Teklif formu revize için yüklendi.");
-  };
+  setCariId(t.cariId || "");
 
-  /* ───────── Kaydet (DB’ye) ───────── */
+  // ✅ DB: kalemler, Front: lines
+  const src = Array.isArray(t.kalemler) ? t.kalemler : Array.isArray(t.lines) ? t.lines : [];
 
-  const kaydet = async () => {
-    if (!cariId) return alert("Önce cari seçiniz.");
-    if (!lines.length) return alert("En az bir satır ekleyiniz.");
+  setLines(
+    (src.length ? src : [{ urunId: "", urunAd: "", adet: 1, fiyat: 0, kdv: 20 }]).map((k) => ({
+      urunId: k.urunId || "",
+      urunAd: k.urunAdi || k.urunAd || "",
+      adet: Number(k.adet || 1),
+      fiyat: Number(k.birimFiyat ?? k.fiyat ?? 0),
+      kdv: Number(k.kdvOrani ?? k.kdv ?? 20),
+    }))
+  );
 
-    try {
-     const body = {
-  number: offerNumber, // ✅ doğru
-  cariId,
-  cariName: cariler.find((c) => c._id === cariId)?.unvan || "", // ✅ cariName olmalı
-  currency, // ✅ paraBirimi değil
-  not,
-  lines: buildKalemler(), // ✅ kalemler değil
+  setNot(t.not || t.note || "");
+  setCurrency(t.paraBirimi || t.currency || "TL");
+  setOfferNumber(t.number || t.offerNumber || offerNumber);
+  setSavedTeklifId(t._id || t.id || null);
+
+  alert("📝 Teklif formu revize için yüklendi.");
 };
 
 
-      const res = await fetch("/api/teklif/olustur", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify(body),
-      });
+  /* ───────── Kaydet (DB’ye) ───────── */
 
-      const data = await res.json();
-      if (!res.ok) {
-        console.error("Teklif oluşturma hatası:", data);
-        return alert("❌ Teklif oluşturulamadı: " + (data?.message || "Sunucu hatası"));
-      }
+ /* ───────── Kaydet (DB’ye) ───────── */
+const kaydet = async () => {
+  if (!cariId) return alert("Önce cari seçiniz.");
 
-      alert("✅ Teklif kaydedildi");
+  const kalemler = buildKalemler();
+  if (!kalemler.length) return alert("❌ Ürün/Hizmet kalemleri boş olamaz");
 
-      // API'den dönen ID ve numarayı al
-      const newId = data.id || data._id || null;
-      const newNumber = data.number || data.offerNumber || offerNumber;
+  try {
+    const body = {
+      number: offerNumber,
+      cariId,
+      paraBirimi: currency,
+      not,
+      kalemler, // ✅ backend bunu bekliyor
+    };
 
-      setSavedTeklifId(newId);
-      setOfferNumber(newNumber);
+    const res = await fetch("/api/teklif/olustur", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify(body),
+    });
 
-      setTeklifler((prev) => [
-        {
-          ...body,
-          _id: newId || safeUUID(),
-          number: newNumber,
-          tarih: new Date().toISOString(),
-          status: "Beklemede",
-        },
-        ...prev,
-      ]);
-    } catch (err) {
-      console.error("Kaydet hatası:", err);
-      alert("❌ Kayıt sırasında hata oluştu.");
+    const data = await res.json();
+
+    if (!res.ok) {
+      console.error("Teklif oluşturma hatası:", data);
+      return alert("❌ Teklif oluşturulamadı: " + (data?.message || "Sunucu hatası"));
     }
-  };
+
+    // ✅ ID set et (EN KRİTİK)
+    const teklif = data?.teklif;
+    const id = data?.teklifId || data?._id || teklif?._id;
+    if (id) setSavedTeklifId(id);
+
+    alert("✅ Teklif kaydedildi");
+
+    // ✅ listeyi yenile
+    const listRes = await fetch("/api/teklif/list", {
+      headers: { ...getAuthHeaders() },
+      cache: "no-store",
+    });
+
+    const listData = await listRes.json();
+    setTeklifler(listData?.teklifler || listData?.items || []);
+  } catch (err) {
+    console.error("Kaydet hatası:", err);
+    alert("❌ Kayıt sırasında hata oluştu.");
+  }
+};
+
 
   /* ───────── PDF oluştur ───────── */
 
@@ -522,45 +547,81 @@ useEffect(() => {
   /* ───────── PDF'yi Sunucuya Kaydet ───────── */
 
   const sunucuyaKaydet = async () => {
-    if (!cariId) return alert("Önce cari seçiniz.");
+  if (!cariId) return alert("Önce cari seçiniz.");
 
-    const pdf = await pdfOlustur(false);
-    if (!pdf) return;
+  const kalemler = buildKalemler();
+  if (!kalemler.length) return alert("❌ Ürün/Hizmet kalemleri boş olamaz");
 
-    try {
-      const res = await fetch("/api/teklif/save", {
+  try {
+    let teklifId = savedTeklifId;
+
+    // ✅ Eğer daha önce DB’ye kaydedilmediyse önce oluştur
+    if (!teklifId) {
+      const createRes = await fetch("/api/teklif/olustur", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify({
-          
-          pdfBase64: pdf.base64,
-          fileName: pdf.fileName,
+          number: offerNumber,
           cariId,
-          offerNumber,
-          currency,
+          paraBirimi: currency,
+          not,
+          kalemler,
         }),
       });
 
-      const data = await res.json();
+      const createData = await createRes.json();
 
-// ✅ ID set et (mail için şart)
-const id = data?.teklifId || data?._id || data?.teklif?._id;
-if (id) setSavedTeklifId(id);
-
-      if (!res.ok) {
-        console.error("Kaydetme hatası:", data);
-        return alert("❌ PDF sunucuya kaydedilemedi: " + (data?.message || "Sunucu hatası"));
+      if (!createRes.ok) {
+        console.error("Teklif oluşturma hatası:", createData);
+        return alert("❌ Teklif oluşturulamadı: " + (createData?.message || "Sunucu hatası"));
       }
 
-      alert(
-        "✅ PDF sunucuya başarıyla kaydedildi!" +
-          (data?.url ? `\n📎 Dosya: ${data.url}` : data?.path ? `\n📎 Dosya: ${data.path}` : "")
-      );
-    } catch (err) {
-      console.error("Sunucuya kaydetme hatası:", err);
-      alert("❌ Sunucuya kaydetme sırasında hata oluştu.");
+      teklifId = createData?.teklifId || createData?._id || createData?.teklif?._id;
+      if (!teklifId) return alert("❌ Teklif ID alınamadı!");
+
+      setSavedTeklifId(teklifId);
     }
-  };
+
+    // ✅ PDF oluştur
+    const pdf = await pdfOlustur(false);
+    if (!pdf) return;
+
+    // ✅ PDF'i sunucuya kaydet
+    const res = await fetch("/api/teklif/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify({
+        teklifId,
+        pdfBase64: pdf.base64,
+        fileName: pdf.fileName,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      console.error("Kaydetme hatası:", data);
+      return alert("❌ PDF sunucuya kaydedilemedi: " + (data?.message || "Sunucu hatası"));
+    }
+
+    alert(
+      "✅ PDF sunucuya başarıyla kaydedildi!" +
+        (data?.url ? `\n📎 Dosya: ${data.url}` : data?.path ? `\n📎 Dosya: ${data.path}` : "")
+    );
+
+    // ✅ Listeyi refresh et
+    const listRes = await fetch("/api/teklif/list", {
+      headers: { ...getAuthHeaders() },
+      cache: "no-store",
+    });
+
+    const listData = await listRes.json();
+    setTeklifler(listData?.teklifler || listData?.items || []);
+  } catch (err) {
+    console.error("Sunucuya kaydetme hatası:", err);
+    alert("❌ Sunucuya kaydetme sırasında hata oluştu.");
+  }
+};
 
   /* ───────── Mail Gönder ───────── */
 

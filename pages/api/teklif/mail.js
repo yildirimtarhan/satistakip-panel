@@ -1,86 +1,72 @@
+import jwt from "jsonwebtoken";
 import nodemailer from "nodemailer";
-import dbConnect from "@/lib/mongodb";
-import Teklif from "@/models/Teklif";
-
-function escapeHtml(str = "") {
-  return String(str)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
+import dbConnect from "../../../lib/dbConnect";
+import Teklif from "../../../models/Teklif";
 
 export default async function handler(req, res) {
-  try {
-    if (req.method !== "POST") {
-      return res.status(405).json({ message: "Only POST" });
-    }
+  if (req.method !== "POST") return res.status(405).json({ message: "Method not allowed" });
 
+  try {
     await dbConnect();
 
-    const { teklifId, toEmail, subject, message } = req.body || {};
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) return res.status(401).json({ message: "Token yok" });
 
-    if (!teklifId || !toEmail) {
-      return res.status(400).json({ message: "teklifId ve toEmail gerekli" });
-    }
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const teklif = await Teklif.findById(teklifId).lean();
+    const { teklifId, toEmail } = req.body;
+
+    if (!teklifId) return res.status(400).json({ message: "teklifId gerekli" });
+
+    const teklif = await Teklif.findOne({ _id: teklifId, userId: decoded.userId });
     if (!teklif) return res.status(404).json({ message: "Teklif bulunamadı" });
 
     if (!teklif.pdfUrl) {
-      return res
-        .status(400)
-        .json({ message: "Bu teklife ait PDF bulunamadı. Önce Sunucuya Kaydet." });
+      return res.status(400).json({ message: "Önce Sunucuya Kaydet yapmalısın (pdfUrl yok)" });
     }
+
+    const recipient = toEmail || process.env.NOTIFY_EMAIL;
+    if (!recipient) return res.status(400).json({ message: "Alıcı mail bulunamadı" });
 
     const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT),
-      secure: true,
+      port: Number(process.env.SMTP_PORT || 465),
+      secure: String(process.env.SMTP_SECURE) === "true",
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
     });
 
-    const mailSubject =
-      subject ||
-      `Teklif - ${teklif?.cariUnvan || teklif?.cariAdi || ""}`;
-
-    const mailMessage = message || "Merhaba,\nTeklifinizi aşağıdan görüntüleyebilirsiniz.";
-
-    const htmlMessage = escapeHtml(mailMessage).replaceAll("\n", "<br/>");
+    const subject = `Teklif: ${teklif.number || teklif._id}`;
+    const html = `
+      <h3>Teklif Gönderildi</h3>
+      <p><b>Teklif No:</b> ${teklif.number || "-"}</p>
+      <p><b>Cari:</b> ${teklif.cariUnvan || "-"}</p>
+      <p><b>Genel Toplam:</b> ${teklif.genelToplam || 0} ${teklif.paraBirimi || ""}</p>
+      <hr/>
+      <p>PDF Linki:</p>
+      <a href="${teklif.pdfUrl}" target="_blank">${teklif.pdfUrl}</a>
+    `;
 
     await transporter.sendMail({
-      from: `"Kurumsal Tedarikçi" <${process.env.SMTP_USER}>`,
-      to: toEmail,
-      subject: mailSubject,
-      html: `
-        <div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6">
-          <p>${htmlMessage}</p>
-
-          <p style="margin-top:12px">
-            <b>📄 Teklif PDF Linki:</b><br/>
-            <a href="${teklif.pdfUrl}" target="_blank">${teklif.pdfUrl}</a>
-          </p>
-
-          <hr/>
-          <p style="color:#666;font-size:12px">
-            Kurumsal Tedarikçi • Otomatik gönderim
-          </p>
-        </div>
-      `,
+      from: `"${process.env.SMTP_FROM_NAME || "Teklif Sistemi"}" <${process.env.SMTP_FROM_EMAIL}>`,
+      to: recipient,
+      subject,
+      html,
     });
 
-    await Teklif.findByIdAndUpdate(teklifId, {
-  $set: { status: "Gönderildi", sentAt: new Date() },
-});
+    teklif.status = "gonderildi";
+    await teklif.save();
 
-
-    return res.status(200).json({ message: "✅ Mail gönderildi" });
-  } catch (e) {
-    console.error("MAIL ERROR:", e);
-    return res.status(500).json({ message: "Mail gönderilemedi", error: e.message });
+    return res.status(200).json({
+      message: "Mail gönderildi",
+      teklifId: teklif._id,
+      pdfUrl: teklif.pdfUrl,
+      teklif,
+    });
+  } catch (err) {
+    console.error("❌ /api/teklif/mail hata:", err);
+    return res.status(500).json({ message: "Sunucu hatası", error: err.message });
   }
 }

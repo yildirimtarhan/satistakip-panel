@@ -1,109 +1,87 @@
-// pages/api/teklif/olustur.js
 import jwt from "jsonwebtoken";
-import dbConnect, { connectToDatabase } from "../../../lib/mongodb";
+import dbConnect from "../../../lib/dbConnect";
 import Teklif from "../../../models/Teklif";
+import Cari from "../../../models/Cari";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ message: "Sadece POST desteklenir" });
+    return res.status(405).json({ message: "Method not allowed" });
   }
 
   try {
-    // 1) DB connect
     await dbConnect();
 
-    // 2) Token kontrol
     const token = req.headers.authorization?.split(" ")[1];
     if (!token) return res.status(401).json({ message: "Token yok" });
 
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (e) {
-      return res.status(401).json({ message: "Token geçersiz" });
-    }
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const userId = decoded.userId;
 
-    const userId = decoded?.userId;
-    if (!userId) return res.status(401).json({ message: "UserId bulunamadı" });
+    // ✅ Front/Back uyumluluk: kalemler || lines
+    const number = req.body?.number || req.body?.offerNumber;
+    const cariId = req.body?.cariId;
+    const paraBirimi = req.body?.paraBirimi || req.body?.currency || "TL";
+    const not = req.body?.not || req.body?.note || "";
+    const kalemler = req.body?.kalemler || req.body?.lines || [];
 
-    // 3) Body al
-    const {
-      cariId,
-      cariName,
-      not,
-      currency,
-      number, // ✅ Frontend'den gönderiyorsun: number: offerNumber
-      lines,
-    } = req.body || {};
-
-    // 4) Validasyon
-    if (!cariId) return res.status(400).json({ message: "Cari seçiniz." });
-    if (!Array.isArray(lines) || lines.length === 0) {
+    if (!number) return res.status(400).json({ message: "Teklif numarası (number) gerekli" });
+    if (!cariId) return res.status(400).json({ message: "Cari seçmelisiniz" });
+    if (!Array.isArray(kalemler) || kalemler.length === 0) {
       return res.status(400).json({ message: "Ürün/Hizmet kalemleri boş olamaz" });
     }
 
-    // boş satırları ele
-    const cleanedLines = lines
-      .map((l) => ({
-        urunId: l.urunId || l.productId || "",
-        urunAd: l.urunAd || l.name || "",
-        adet: Number(l.adet ?? 0),
-        fiyat: Number(l.fiyat ?? 0),
-        kdv: Number(l.kdv ?? 0),
-      }))
-      .filter((l) => (l.urunId || l.urunAd) && l.adet > 0);
+    // ✅ Cari bilgisi (multi-tenant)
+    const cari = await Cari.findOne({ _id: cariId, userId }).lean();
+    if (!cari) return res.status(404).json({ message: "Cari bulunamadı" });
 
-    if (cleanedLines.length === 0) {
-      return res.status(400).json({ message: "Ürün/Hizmet kalemleri boş olamaz" });
-    }
+    const cariUnvan = cari.unvan || cari.firmaAdi || cari.ad || cari.name || "-";
 
-    // 5) Totals (server tarafı güvenli hesap)
-    const araToplam = cleanedLines.reduce((t, l) => t + l.adet * l.fiyat, 0);
-    const kdvToplam = cleanedLines.reduce((t, l) => {
-      const satir = l.adet * l.fiyat;
-      return t + (satir * (l.kdv || 0)) / 100;
-    }, 0);
+    // ✅ Toplamları hesapla (server-side)
+    let araToplam = 0;
+    let kdvToplam = 0;
+
+    const temizKalemler = kalemler.map((k) => {
+      const adet = Number(k.adet || 0) > 0 ? Number(k.adet) : 1;
+      const birimFiyat = Number(k.birimFiyat ?? k.fiyat ?? 0);
+      const kdvOrani = Number(k.kdvOrani ?? k.kdv ?? 0);
+
+      const satirTutar = adet * birimFiyat;
+      const satirKdv = (satirTutar * kdvOrani) / 100;
+
+      araToplam += satirTutar;
+      kdvToplam += satirKdv;
+
+      return {
+        urunId: k.urunId,
+        urunAdi: k.urunAdi || k.urunAd || "Ürün",
+        adet,
+        birimFiyat,
+        kdvOrani,
+        toplam: satirTutar + satirKdv,
+      };
+    });
+
     const genelToplam = araToplam + kdvToplam;
 
-    // 6) Multi-tenant firma bilgisi: token userId → company_settings
-    // company api driver ile çalışıyor; biz direkt collection'dan çekiyoruz.
-    const { db } = await connectToDatabase();
-    const companySettings = await db
-      .collection("company_settings")
-      .findOne({ userId });
-
-    const companyName = companySettings?.firmaAdi || companySettings?.yetkili || "Firma";
-    const companyEmail = companySettings?.eposta || process.env.SMTP_FROM_EMAIL || "";
-
-    // 7) Kaydet
+    // ✅ Teklif kaydı
     const teklif = await Teklif.create({
       userId,
+      number,
       cariId,
-      cariName: cariName || "",
-
-      number: number || null, // ✅ offer number
-      currency: currency || "TL",
-      not: not || "",
-
-      lines: cleanedLines,
-
+      cariUnvan,
+      paraBirimi,
+      not,
+      kalemler: temizKalemler,
       araToplam,
       kdvToplam,
       genelToplam,
-
-      companyName,
-      companyEmail,
-
-      status: "kaydedildi", // ✅ enum uyumlu
-
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      status: "kaydedildi",
     });
 
     return res.status(201).json({
-      message: "Teklif oluşturuldu",
+      message: "✅ Teklif oluşturuldu",
+      teklifId: teklif._id,
       teklif,
-      teklifId: teklif?._id,
     });
   } catch (err) {
     console.error("❌ /api/teklif/olustur hata:", err);
