@@ -401,8 +401,12 @@ const kaydet = async () => {
       const doc = new jsPDF({ unit: "pt", format: "a4", orientation: "landscape" });
       doc.setCharSpace(0); // ✅ TR karakterlerde spacing sorunlarını azaltır
       doc.setLineHeightFactor(1.4);
+      doc.setR2L(false);
 
-      const { setFont } = await ensureRoboto(doc);
+
+      const { hasRoboto, setFont } = await ensureRoboto(doc);
+if (!hasRoboto) console.warn("⚠️ Roboto font yüklenemedi! public/fonts içine Roboto-Regular.ttf ve Roboto-Bold.ttf ekleyin.");
+    
       const pageW = doc.internal.pageSize.getWidth();
       const pageH = doc.internal.pageSize.getHeight();
 
