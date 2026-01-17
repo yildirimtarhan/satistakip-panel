@@ -1,6 +1,6 @@
 import dbConnect from "@/lib/mongodb";
 import Teklif from "@/models/Teklif";
-import { sendMailApiBrevo } from "@/lib/mail/sendMailApi";
+import { sendMailApiBrevo } from "@/lib/mail/sendMail";
 
 function escapeHtml(str = "") {
   return String(str)
