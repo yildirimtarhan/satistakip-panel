@@ -28,15 +28,16 @@ export default async function handler(req, res) {
     const recipient = toEmail || process.env.NOTIFY_EMAIL;
     if (!recipient) return res.status(400).json({ message: "Alıcı mail bulunamadı" });
 
-    const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT || 465),
-      secure: String(process.env.SMTP_SECURE) === "true",
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
+   const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT),
+  secure: process.env.SMTP_SECURE === "true", // 587'de false olacak
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
+
 
     const subject = `Teklif: ${teklif.number || teklif._id}`;
     const html = `
