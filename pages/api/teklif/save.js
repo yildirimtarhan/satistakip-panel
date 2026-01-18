@@ -27,7 +27,10 @@ export default async function handler(req, res) {
 
     // ✅ pdfUrl yarat (online olunca burası domain olacak)
     const baseUrl =
-      process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  process.env.APP_URL ||
+  process.env.NEXT_PUBLIC_APP_URL ||
+  "http://localhost:3000";
+
 
     teklif.pdfUrl = `${baseUrl}/api/teklif/view?id=${teklif._id}`;
 
