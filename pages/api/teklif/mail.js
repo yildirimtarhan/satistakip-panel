@@ -56,9 +56,9 @@ export default async function handler(req, res) {
       });
     }
 
-    // ✅ BASE_URL (Render'da ayarlanacak)
+    // ✅ APP_URL (Render'da ayarlanacak)
     // Örn: https://www.satistakip.online
-    const baseUrl = (process.env.BASE_URL || "http://localhost:3000").replace(
+    const baseUrl = (process.env.APP_URL || "http://localhost:3000").replace(
       /\/+$/,
       ""
     );
