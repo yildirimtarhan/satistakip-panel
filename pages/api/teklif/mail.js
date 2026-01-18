@@ -11,6 +11,22 @@ function escapeHtml(str = "") {
     .replaceAll("'", "&#039;");
 }
 
+function ensureAbsoluteUrl(url = "", baseUrl = "") {
+  if (!url) return "";
+  const trimmed = String(url).trim();
+
+  // zaten absolute ise olduğu gibi döndür
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return trimmed;
+  }
+
+  // relative ise baseUrl ile birleştir
+  const base = String(baseUrl || "").replace(/\/+$/, "");
+  const path = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+
+  return base ? `${base}${path}` : trimmed;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ ok: false, message: "Only POST" });
@@ -40,6 +56,16 @@ export default async function handler(req, res) {
       });
     }
 
+    // ✅ BASE_URL (Render'da ayarlanacak)
+    // Örn: https://www.satistakip.online
+    const baseUrl = (process.env.BASE_URL || "http://localhost:3000").replace(
+      /\/+$/,
+      ""
+    );
+
+    // ✅ pdfUrl absolute yap (localhost/relative hatasını çözer)
+    const pdfUrl = ensureAbsoluteUrl(teklif.pdfUrl, baseUrl);
+
     const mailSubject = subject || `Teklif - ${teklif?.number || ""}`;
 
     const mailMessage =
@@ -53,17 +79,19 @@ export default async function handler(req, res) {
 
         <p style="margin-top:12px">
           <b>📄 Teklif PDF Linki:</b><br/>
-          <a href="${teklif.pdfUrl}" target="_blank">${teklif.pdfUrl}</a>
+          <a href="${pdfUrl}" target="_blank">${pdfUrl}</a>
         </p>
 
         <hr/>
         <p style="color:#666;font-size:12px">
-          Otomatik gönderim • ${escapeHtml(process.env.SMTP_FROM_NAME || "Kurumsal Tedarikçi")}
+          Otomatik gönderim • ${escapeHtml(
+            process.env.SMTP_FROM_NAME || "Kurumsal Tedarikçi"
+          )}
         </p>
       </div>
     `;
 
-    const text = `${mailMessage}\n\nTeklif PDF Linki: ${teklif.pdfUrl}`;
+    const text = `${mailMessage}\n\nTeklif PDF Linki: ${pdfUrl}`;
 
     const result = await sendMailApiBrevo({
       to: toEmail,
