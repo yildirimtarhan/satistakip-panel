@@ -1,139 +1,139 @@
-import dbConnect from "@/lib/mongodb";
-import Teklif from "@/models/Teklif";
-import { sendMailApiBrevo } from "@/lib/mail/sendMail";
-
-function escapeHtml(str = "") {
-  return String(str)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-function ensureAbsoluteUrl(url = "", baseUrl = "") {
-  if (!url) return "";
-  const trimmed = String(url).trim();
-
-  // zaten absolute ise olduğu gibi döndür
-  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-    return trimmed;
-  }
-
-  // relative ise baseUrl ile birleştir
-  const base = String(baseUrl || "").replace(/\/+$/, "");
-  const path = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
-
-  return base ? `${base}${path}` : trimmed;
-}
+import dbConnect from "../../../lib/dbConnect";
+import Teklif from "../../../models/Teklif";
+import Cari from "../../../models/Cari";
+import sendEmail from "../../../lib/sendEmail";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ ok: false, message: "Only POST" });
+    return res.status(405).json({ message: "Method not allowed" });
   }
 
   try {
     await dbConnect();
 
-    const { teklifId, toEmail, subject, message } = req.body || {};
+    const { teklifId, toEmail } = req.body;
 
-    if (!teklifId || !toEmail) {
-      return res.status(400).json({
-        ok: false,
-        message: "teklifId ve toEmail gerekli",
-      });
+    if (!teklifId) {
+      return res.status(400).json({ message: "teklifId zorunludur" });
     }
 
-    const teklif = await Teklif.findById(teklifId).lean();
+    if (!toEmail) {
+      return res.status(400).json({ message: "toEmail zorunludur" });
+    }
+
+    const teklif = await Teklif.findById(teklifId);
     if (!teklif) {
-      return res.status(404).json({ ok: false, message: "Teklif bulunamadı" });
+      return res.status(404).json({ message: "Teklif bulunamadı" });
     }
 
-    if (!teklif.pdfUrl) {
-      return res.status(400).json({
-        ok: false,
-        message: "Bu teklife ait PDF bulunamadı. Önce Sunucuya Kaydet.",
-      });
+    // Cari bilgisi varsa çekelim (müşteri adı için)
+    let cari = null;
+    if (teklif.cariId) {
+      cari = await Cari.findById(teklif.cariId);
     }
 
-    // ✅ APP_URL (Render'da ayarlanacak)
-    // Örn: https://www.satistakip.online
+    // ✅ APP_URL (Render / Prod / Local uyumlu)
     const APP_URL = (process.env.APP_URL || "http://localhost:3000").replace(
       /\/+$/,
       ""
     );
 
-    // ✅ pdfUrl absolute yap
-    const pdfUrl = ensureAbsoluteUrl(teklif.pdfUrl, APP_URL);
-
-    // ✅ Online Onay Linki
+    // ✅ Linkler (3 tane)
     const onayLink = `${APP_URL}/teklif/onay/${teklifId}?ok=1`;
+    const revizeLink = `${APP_URL}/teklif/onay/${teklifId}?revize=1`;
+    const pdfLink = `${APP_URL}/api/teklif/view?id=${teklifId}`;
 
-    const mailSubject = subject || `Teklif - ${teklif?.number || ""}`;
+    // ✅ Mail içeriği (profesyonel butonlu)
+    const cariAdi =
+      cari?.unvan ||
+      cari?.ad ||
+      cari?.isim ||
+      teklif?.cariUnvan ||
+      "Sayın Yetkili";
 
-    const mailMessage =
-      message || "Merhaba,\nTeklifinizi aşağıdaki linklerden görüntüleyebilirsiniz.";
+    const teklifNo = teklif?.number || "Teklif";
+    const toplam = teklif?.genelToplam ?? teklif?.genelToplamTL ?? "";
 
-    const htmlMessage = escapeHtml(mailMessage).replaceAll("\n", "<br/>");
+    const subject = `Teklif - ${teklifNo}`;
 
     const html = `
-      <div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6">
-        <p>${htmlMessage}</p>
+      <div style="background:#f5f7fb; padding:30px 10px; font-family:Arial, sans-serif;">
+        <div style="max-width:650px; margin:auto; background:#ffffff; border-radius:12px; overflow:hidden; box-shadow:0 8px 20px rgba(0,0,0,0.08);">
 
-        <p style="margin-top:12px">
-          <b>✅ Online Onay Linki:</b><br/>
-          <a href="${onayLink}" target="_blank">${onayLink}</a>
-        </p>
+          <div style="padding:22px 24px; background:linear-gradient(90deg,#2563eb,#1d4ed8); color:#fff;">
+            <div style="font-size:18px; font-weight:700;">Kurumsal Tedarikçi</div>
+            <div style="font-size:13px; opacity:0.9; margin-top:4px;">
+              Teklif onay / revize işlemleri için mail
+            </div>
+          </div>
 
-        <p style="margin-top:12px">
-          <b>📄 Teklif PDF Linki:</b><br/>
-          <a href="${pdfUrl}" target="_blank">${pdfUrl}</a>
-        </p>
+          <div style="padding:24px;">
+            <div style="font-size:15px; color:#111827; margin-bottom:10px;">
+              Merhaba <b>${cariAdi}</b>,
+            </div>
 
-        <hr/>
-        <p style="color:#666;font-size:12px">
-          Otomatik gönderim • ${escapeHtml(
-            process.env.SMTP_FROM_NAME || "Kurumsal Tedarikçi"
-          )}
-        </p>
+            <div style="font-size:14px; color:#374151; line-height:1.6;">
+              <b>${teklifNo}</b> numaralı teklifiniz hazırlanmıştır.
+              ${toplam !== "" ? `<br/><b>Genel Toplam:</b> ${toplam} TL` : ""}
+              <br/><br/>
+              Aşağıdaki butonlardan teklifinizi inceleyebilir, onaylayabilir veya revize isteyebilirsiniz.
+            </div>
+
+            <div style="margin-top:18px; display:flex; gap:10px; flex-wrap:wrap;">
+              <a href="${onayLink}"
+                 style="display:inline-block; padding:12px 18px; background:#16a34a; color:white; text-decoration:none; border-radius:10px; font-weight:700;">
+                 ✅ Onayla
+              </a>
+
+              <a href="${revizeLink}"
+                 style="display:inline-block; padding:12px 18px; background:#f59e0b; color:white; text-decoration:none; border-radius:10px; font-weight:700;">
+                 ✍️ Revize İste
+              </a>
+
+              <a href="${pdfLink}"
+                 style="display:inline-block; padding:12px 18px; background:#2563eb; color:white; text-decoration:none; border-radius:10px; font-weight:700;">
+                 📄 PDF Görüntüle
+              </a>
+            </div>
+
+            <div style="margin-top:18px; font-size:13px; color:#6b7280; line-height:1.5;">
+              Eğer butonlar çalışmazsa aşağıdaki linkleri tarayıcıya yapıştırabilirsiniz:
+              <br/>
+              <div style="margin-top:8px;">
+                ✅ Onay: <a href="${onayLink}">${onayLink}</a><br/>
+                ✍️ Revize: <a href="${revizeLink}">${revizeLink}</a><br/>
+                📄 PDF: <a href="${pdfLink}">${pdfLink}</a>
+              </div>
+            </div>
+
+            <hr style="margin:22px 0; border:none; border-top:1px solid #e5e7eb;" />
+
+            <div style="font-size:12px; color:#9ca3af;">
+              Otomatik gönderimdir • Kurumsal Tedarikçi
+            </div>
+          </div>
+        </div>
       </div>
     `;
 
-    const text =
-      `${mailMessage}\n\n` +
-      `Online Onay Linki: ${onayLink}\n` +
-      `Teklif PDF Linki: ${pdfUrl}`;
-
-    const result = await sendMailApiBrevo({
+    // ✅ Gönderim
+    await sendEmail({
       to: toEmail,
-      subject: mailSubject,
+      subject,
       html,
-      text,
-    });
-
-    if (!result.ok) {
-      return res.status(500).json({
-        ok: false,
-        message: "Brevo API ile mail gönderilemedi",
-        ...result,
-      });
-    }
-
-    await Teklif.findByIdAndUpdate(teklifId, {
-      $set: { status: "Gönderildi", sentAt: new Date() },
     });
 
     return res.status(200).json({
-      ok: true,
-      message: "✅ Mail gönderildi (Brevo API)",
-      messageId: result.messageId,
+      message: "Mail gönderildi",
+      onayLink,
+      revizeLink,
+      pdfLink,
     });
-  } catch (err) {
-    console.error("MAIL API ERROR:", err?.message || err);
+  } catch (error) {
+    console.error("mail.js error:", error);
     return res.status(500).json({
-      ok: false,
-      message: "Mail gönderilemedi",
-      error: err?.message || String(err),
+      message: "Sunucu hatası",
+      error: error?.message || "Bilinmeyen hata",
     });
   }
 }

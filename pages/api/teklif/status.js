@@ -61,18 +61,19 @@ export default async function handler(req, res) {
       (process.env.NOTIFY_EMAIL || "").trim() ||
       process.env.SMTP_USER;
 
-    // ✅ Bildirim maili at
-    // (notifyEmail boşsa hata vermemek için kontrollü)
+    const transporter = makeTransporter();
+
+    const teklifNo = teklif.number || teklif._id;
+    const cari = teklif.cariName || "-";
+    const toplam = `${teklif.genelToplam || 0} ${teklif.paraBirimi || ""}`;
+
+    // ✅ PDF satırı
+    const pdfLine = teklif.pdfUrl
+      ? `<p><b>PDF:</b> <a href="${teklif.pdfUrl}" target="_blank">Görüntüle</a></p>`
+      : `<p><b>PDF:</b> (Yok)</p>`;
+
+    // ✅ (1) İç ekibe bildirim maili (senin mevcut sistemin)
     if (notifyEmail) {
-      const transporter = makeTransporter();
-      const teklifNo = teklif.number || teklif._id;
-      const cari = teklif.cariName || "-";
-      const toplam = `${teklif.genelToplam || 0} ${teklif.paraBirimi || ""}`;
-
-      const pdfLine = teklif.pdfUrl
-        ? `<p><b>PDF:</b> <a href="${teklif.pdfUrl}" target="_blank">Görüntüle</a></p>`
-        : `<p><b>PDF:</b> (Yok)</p>`;
-
       if (action === "approve") {
         await transporter.sendMail({
           from: mailFrom(),
@@ -107,6 +108,55 @@ export default async function handler(req, res) {
               ${pdfLine}
               <hr />
               <p style="color:#6b7280;font-size:12px">SatışTakip ERP - Otomatik bildirim</p>
+            </div>
+          `,
+        });
+      }
+    }
+
+    // ✅ (2) MÜŞTERİYE "REVİZE ALINDI" MAİLİ (Yeni eklenen kısım)
+    if (action === "revise") {
+      // Cari maili hangi alanda tutuluyorsa burayı yakalıyoruz:
+      const customerEmail =
+        (teklif.cariEmail || "").trim() ||
+        (teklif.customerEmail || "").trim() ||
+        (teklif.email || "").trim();
+
+      if (customerEmail) {
+        const appUrl = (process.env.APP_URL || "http://localhost:3000").replace(/\/+$/, "");
+        const onayLink = `${appUrl}/teklif/onay/${teklif._id}?ok=1`;
+        const pdfLink = teklif.pdfUrl || `${appUrl}/api/teklif/view?id=${teklif._id}`;
+
+        await transporter.sendMail({
+          from: mailFrom(),
+          to: customerEmail,
+          subject: `✅ Revize talebiniz alındı - ${teklifNo}`,
+          html: `
+            <div style="font-family:Arial,sans-serif">
+              <h2 style="color:#16a34a;margin:0 0 8px">✅ Revize talebiniz alındı</h2>
+
+              <p>Merhaba,</p>
+              <p>
+                <b>${teklifNo}</b> numaralı teklif için revize talebiniz tarafımıza ulaştı.
+                En kısa sürede güncelleme yapıp size tekrar ileteceğiz.
+              </p>
+
+              <p><b>Revize Notunuz:</b> ${teklif.revisionNote || "-"}</p>
+
+              <p style="margin-top:12px">
+                <b>📄 Teklif PDF:</b><br/>
+                <a href="${pdfLink}" target="_blank">${pdfLink}</a>
+              </p>
+
+              <p style="margin-top:12px">
+                <b>🔗 Teklif Sayfası:</b><br/>
+                <a href="${onayLink}" target="_blank">${onayLink}</a>
+              </p>
+
+              <hr />
+              <p style="color:#6b7280;font-size:12px">
+                Kurumsal Tedarikçi • Otomatik bilgilendirme
+              </p>
             </div>
           `,
         });
