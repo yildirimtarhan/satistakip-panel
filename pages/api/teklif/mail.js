@@ -58,24 +58,32 @@ export default async function handler(req, res) {
 
     // ✅ APP_URL (Render'da ayarlanacak)
     // Örn: https://www.satistakip.online
-    const baseUrl = (process.env.APP_URL || "http://localhost:3000").replace(
+    const APP_URL = (process.env.APP_URL || "http://localhost:3000").replace(
       /\/+$/,
       ""
     );
 
-    // ✅ pdfUrl absolute yap (localhost/relative hatasını çözer)
-    const pdfUrl = ensureAbsoluteUrl(teklif.pdfUrl, baseUrl);
+    // ✅ pdfUrl absolute yap
+    const pdfUrl = ensureAbsoluteUrl(teklif.pdfUrl, APP_URL);
+
+    // ✅ Online Onay Linki
+    const onayLink = `${APP_URL}/teklif/onay/${teklifId}?ok=1`;
 
     const mailSubject = subject || `Teklif - ${teklif?.number || ""}`;
 
     const mailMessage =
-      message || "Merhaba,\nTeklifinizi aşağıdaki linkten görüntüleyebilirsiniz.";
+      message || "Merhaba,\nTeklifinizi aşağıdaki linklerden görüntüleyebilirsiniz.";
 
     const htmlMessage = escapeHtml(mailMessage).replaceAll("\n", "<br/>");
 
     const html = `
       <div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6">
         <p>${htmlMessage}</p>
+
+        <p style="margin-top:12px">
+          <b>✅ Online Onay Linki:</b><br/>
+          <a href="${onayLink}" target="_blank">${onayLink}</a>
+        </p>
 
         <p style="margin-top:12px">
           <b>📄 Teklif PDF Linki:</b><br/>
@@ -91,7 +99,10 @@ export default async function handler(req, res) {
       </div>
     `;
 
-    const text = `${mailMessage}\n\nTeklif PDF Linki: ${pdfUrl}`;
+    const text =
+      `${mailMessage}\n\n` +
+      `Online Onay Linki: ${onayLink}\n` +
+      `Teklif PDF Linki: ${pdfUrl}`;
 
     const result = await sendMailApiBrevo({
       to: toEmail,
