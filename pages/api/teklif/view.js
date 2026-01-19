@@ -1,6 +1,6 @@
 import dbConnect from "@/lib/mongodb";
 import Teklif from "@/models/Teklif";
-import { createPdf } from "@/lib/PdfEngine";
+import { createPdf } from "@/lib/pdf/PdfEngine";
 
 const money = (n) => {
   const num = Number(n || 0);
