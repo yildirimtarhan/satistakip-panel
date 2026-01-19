@@ -3,29 +3,45 @@ import { useEffect, useState } from "react";
 
 export default function TeklifOnay() {
   const router = useRouter();
-  const { id } = router.query;
+  const { id, ok, revize } = router.query;
 
   const [teklif, setTeklif] = useState(null);
   const [note, setNote] = useState("");
   const [loading, setLoading] = useState(false);
   const [doneMessage, setDoneMessage] = useState("");
 
-  // Teklifi çek
+  // ✅ Teklifi çek (JSON endpoint)
   useEffect(() => {
     if (!id) return;
 
     (async () => {
       try {
-        const res = await fetch(`/api/teklif/view?id=${id}`);
+        const res = await fetch(`/api/teklif/public?id=${id}`);
         const data = await res.json();
-        if (res.ok) setTeklif(data?.teklif || null);
+
+        if (res.ok && data?.ok) {
+          setTeklif(data?.teklif || null);
+        } else {
+          setTeklif(null);
+        }
       } catch (err) {
         console.error("Teklif yükleme hatası:", err);
+        setTeklif(null);
       }
     })();
   }, [id]);
 
-  const approve = async () => {
+  // ✅ Link ile otomatik onay (ok=1 ise)
+  useEffect(() => {
+    if (!id) return;
+    if (!ok) return;
+
+    // otomatik onay (bir kez)
+    approve(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, ok]);
+
+  const approve = async (isAuto = false) => {
     setLoading(true);
     setDoneMessage("");
 
@@ -39,12 +55,18 @@ export default function TeklifOnay() {
       const data = await res.json();
       setLoading(false);
 
-      if (!res.ok) return alert(data?.message || "Hata");
+      if (!res.ok) {
+        if (!isAuto) alert(data?.message || "Hata");
+        return;
+      }
 
       setDoneMessage("✅ Teklif onaylandı. Teşekkür ederiz 🙏");
+
+      // ✅ ekrandaki status’u da güncelle
+      setTeklif((prev) => (prev ? { ...prev, status: "onaylandi" } : prev));
     } catch (err) {
       setLoading(false);
-      alert("Sunucu hatası oluştu.");
+      if (!isAuto) alert("Sunucu hatası oluştu.");
     }
   };
 
@@ -70,6 +92,11 @@ export default function TeklifOnay() {
 
       setDoneMessage("✅ Revize talebiniz alındı. En kısa sürede geri dönüş yapılacaktır.");
       setNote("");
+
+      // ✅ ekrandaki status’u da güncelle
+      setTeklif((prev) =>
+        prev ? { ...prev, status: "revize_istendi", revisionNote: note } : prev
+      );
     } catch (err) {
       setLoading(false);
       alert("Sunucu hatası oluştu.");
@@ -80,6 +107,9 @@ export default function TeklifOnay() {
     if (val === undefined || val === null) return "-";
     return Number(val).toLocaleString("tr-TR");
   };
+
+  // ✅ PDF Link (her zaman server’da üretilen PDF)
+  const pdfLink = id ? `/api/teklif/view?id=${id}` : "#";
 
   return (
     <div
@@ -140,33 +170,28 @@ export default function TeklifOnay() {
                   label="Genel Toplam"
                   value={`${formatMoney(teklif.genelToplam)} ${teklif.paraBirimi || ""}`}
                 />
+                <InfoBox label="Durum" value={teklif.status || "-"} />
               </div>
 
               {/* PDF BUTONU */}
               <div style={{ marginTop: 14 }}>
-                {teklif.pdfUrl ? (
-                  <a
-                    href={teklif.pdfUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{
-                      display: "inline-block",
-                      padding: "10px 14px",
-                      borderRadius: 10,
-                      background: "#0b5fff",
-                      color: "white",
-                      textDecoration: "none",
-                      fontSize: 14,
-                      fontWeight: "bold",
-                    }}
-                  >
-                    📎 PDF Görüntüle
-                  </a>
-                ) : (
-                  <span style={{ color: "#888", fontSize: 13 }}>
-                    PDF henüz oluşturulmamış.
-                  </span>
-                )}
+                <a
+                  href={pdfLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    display: "inline-block",
+                    padding: "10px 14px",
+                    borderRadius: 10,
+                    background: "#0b5fff",
+                    color: "white",
+                    textDecoration: "none",
+                    fontSize: 14,
+                    fontWeight: "bold",
+                  }}
+                >
+                  📎 PDF Görüntüle
+                </a>
               </div>
             </div>
 
@@ -174,7 +199,7 @@ export default function TeklifOnay() {
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               <button
                 disabled={loading}
-                onClick={approve}
+                onClick={() => approve(false)}
                 style={{
                   padding: "12px 16px",
                   background: loading ? "#9ad0a2" : "#1aa34a",
