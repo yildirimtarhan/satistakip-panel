@@ -1,127 +1,143 @@
-// pages/api/teklif/mail.js
-import connectMongo from "../../../lib/mongo";
-import Teklif from "../../../models/Teklif";
-import { verifyToken } from "../../../lib/auth";
-
-// ✅ sende hangi helper varsa ona göre:
-// - Eğer lib/sendMail.js kullanıyorsan:
-import { sendMail } from "../../../lib/sendMail";
-// - Eğer bazı yerlerde sendEmail kullanıldıysa (alias dosyası da var):
-// import { sendEmail as sendMail } from "../../../lib/sendEmail";
+import dbConnect from "@/lib/mongodb";
+import Teklif from "@/models/Teklif";
+import { sendMailApiBrevo } from "@/lib/mail/sendMail";
 
 const APP_URL = process.env.APP_URL || "http://localhost:3000";
 
+function escapeHtml(str = "") {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ message: "Method not allowed" });
+  if (req.method !== "POST") {
+    return res.status(405).json({ ok: false, message: "Only POST" });
+  }
 
   try {
-    // dashboard çağrısı auth’lu kalsın
-    const user = await verifyToken(req);
-    if (!user) return res.status(401).json({ message: "Unauthorized" });
+    await dbConnect();
 
-    await connectMongo();
+    const { teklifId, toEmail, subject, message } = req.body || {};
 
-    const { teklifId, toEmail, mode } = req.body || {};
-    if (!teklifId) return res.status(400).json({ message: "teklifId zorunlu" });
-    if (!toEmail) return res.status(400).json({ message: "toEmail zorunlu" });
+    if (!teklifId || !toEmail) {
+      return res.status(400).json({
+        ok: false,
+        message: "teklifId ve toEmail gerekli",
+      });
+    }
 
     const teklif = await Teklif.findById(teklifId).lean();
-    if (!teklif) return res.status(404).json({ message: "Teklif bulunamadı" });
+    if (!teklif) {
+      return res.status(404).json({ ok: false, message: "Teklif bulunamadı" });
+    }
 
-    // ✅ Linkler artık asla localhost olmaz
+    // ✅ Linkler artık %100 doğru domain ile gider
     const onayLink = `${APP_URL}/teklif/onay/${teklifId}?ok=1`;
     const pdfLink = `${APP_URL}/api/teklif/view?id=${teklifId}`;
 
-    const teklifNo = teklif?.number || "TEKLIF";
-    const cariUnvan = teklif?.cariUnvan || teklif?.cariAdi || "Müşteri";
+    const mailSubject = subject || `Teklif - ${teklif?.number || ""}`;
 
-    // mode:
-    // - "offer"  -> teklif gönderimi (default)
-    // - "revize_alindi" -> müşteri revize isteyince "revize alındı" maili
-    const isRevizeMail = mode === "revize_alindi";
+    const mailMessage =
+      message ||
+      "Merhaba,\nTeklifinizi aşağıdaki bağlantılardan inceleyebilirsiniz.";
 
-    const subject = isRevizeMail
-      ? `Revize talebiniz alındı - ${teklifNo}`
-      : `Teklif - ${teklifNo}`;
+    const htmlMessage = escapeHtml(mailMessage).replaceAll("\n", "<br/>");
 
-    const preheader = isRevizeMail
-      ? "Revize talebiniz başarıyla alındı. En kısa sürede güncelleyip tekrar ileteceğiz."
-      : "Teklif detaylarını aşağıdaki bağlantılardan inceleyebilirsiniz.";
+    const firmaAdi = escapeHtml(process.env.SMTP_FROM_NAME || "Kurumsal Tedarikçi");
 
-    const title = isRevizeMail ? "Revize Talebi Alındı" : "Teklifiniz Hazır";
-
-    const mainText = isRevizeMail
-      ? `Sayın ${cariUnvan}, revize talebiniz alınmıştır. Ekibimiz teklifi güncelleyip size tekrar iletecektir.`
-      : `Sayın ${cariUnvan}, teklif detaylarını aşağıdaki bağlantılardan inceleyebilirsiniz.`;
-
-    // ✅ Basit, şık, butonlu HTML
+    // ✅ Profesyonel HTML tasarım + butonlar
     const html = `
-<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width" />
-    <title>${subject}</title>
-  </head>
-  <body style="margin:0; padding:0; background:#f5f7fb; font-family:Arial, sans-serif;">
-    <div style="max-width:680px; margin:0 auto; padding:24px;">
-      <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent;">
-        ${preheader}
-      </div>
+      <div style="font-family:Arial,sans-serif;background:#f5f7fb;padding:30px 15px">
+        <div style="max-width:650px;margin:0 auto;background:#ffffff;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,0.08);overflow:hidden">
 
-      <div style="background:#ffffff; border-radius:14px; box-shadow:0 10px 30px rgba(16,24,40,0.08); overflow:hidden;">
-        <div style="padding:22px 22px 10px 22px; border-bottom:1px solid #eef2f7;">
-          <div style="font-size:18px; font-weight:700; color:#111827;">Kurumsal Tedarikçi</div>
-          <div style="font-size:12px; color:#6b7280; margin-top:4px;">${title}</div>
-        </div>
-
-        <div style="padding:18px 22px; color:#111827; line-height:1.6;">
-          <p style="margin:0 0 12px 0;">${mainText}</p>
-
-          <div style="background:#f9fafb; border:1px solid #eef2f7; border-radius:12px; padding:14px; margin:14px 0;">
-            <div style="font-size:13px; color:#374151; margin-bottom:10px;">
-              <strong>Teklif No:</strong> ${teklifNo}
-              ${teklif?.genelToplam ? `&nbsp;&nbsp;•&nbsp;&nbsp;<strong>Genel Toplam:</strong> ${teklif.genelToplam} ${teklif?.paraBirimi || "TL"}` : ""}
-            </div>
-
-            <div style="display:flex; gap:10px; flex-wrap:wrap;">
-              <a href="${onayLink}" style="background:#16a34a; color:#fff; text-decoration:none; padding:10px 14px; border-radius:10px; display:inline-block; font-weight:700;">
-                Online Onay / Revize
-              </a>
-              <a href="${pdfLink}" style="background:#111827; color:#fff; text-decoration:none; padding:10px 14px; border-radius:10px; display:inline-block; font-weight:700;">
-                PDF Görüntüle
-              </a>
+          <div style="background:#0d6efd;color:#fff;padding:18px 22px">
+            <h2 style="margin:0;font-size:18px;font-weight:700">📌 Teklif Bilgilendirmesi</h2>
+            <div style="margin-top:4px;font-size:13px;opacity:0.9">
+              Teklif No: <b>${escapeHtml(teklif?.number || "-")}</b>
             </div>
           </div>
 
-          <p style="margin:0; font-size:13px; color:#6b7280;">
-            Bu e-posta otomatik gönderilmiştir.
-          </p>
-        </div>
+          <div style="padding:20px 22px;color:#111">
+            <p style="margin-top:0;font-size:14px;line-height:1.7">${htmlMessage}</p>
 
-        <div style="padding:14px 22px; background:#0b1220; color:#cbd5e1; font-size:12px;">
-          © ${new Date().getFullYear()} Kurumsal Tedarikçi
+            <div style="margin-top:18px;padding:14px;background:#f8fafc;border:1px solid #e7eef8;border-radius:10px">
+              <div style="font-size:13px;color:#444;margin-bottom:10px">
+                ✅ Teklifinizi görüntülemek / onaylamak için:
+              </div>
+
+              <div style="display:flex;gap:10px;flex-wrap:wrap">
+                <a href="${onayLink}" target="_blank"
+                  style="background:#198754;color:#fff;text-decoration:none;padding:10px 14px;border-radius:8px;font-weight:700;font-size:13px;display:inline-block">
+                  ✅ Teklifi Onayla / Revize İste
+                </a>
+
+                <a href="${pdfLink}" target="_blank"
+                  style="background:#0d6efd;color:#fff;text-decoration:none;padding:10px 14px;border-radius:8px;font-weight:700;font-size:13px;display:inline-block">
+                  📄 PDF Görüntüle
+                </a>
+              </div>
+
+              <div style="margin-top:12px;font-size:12px;color:#666">
+                Eğer butonlar açılmazsa:
+                <br/>
+                <a href="${onayLink}" target="_blank" style="color:#0d6efd">${onayLink}</a>
+                <br/>
+                <a href="${pdfLink}" target="_blank" style="color:#0d6efd">${pdfLink}</a>
+              </div>
+            </div>
+
+            <hr style="border:none;border-top:1px solid #eee;margin:18px 0" />
+
+            <p style="margin:0;font-size:12px;color:#777">
+              Bu mail otomatik olarak gönderilmiştir • ${firmaAdi}
+            </p>
+          </div>
+
         </div>
       </div>
-    </div>
-  </body>
-</html>
-    `.trim();
+    `;
 
-    await sendMail({
+    const text = `${mailMessage}
+
+✅ Onay Linki: ${onayLink}
+📄 PDF Linki: ${pdfLink}
+
+${process.env.SMTP_FROM_NAME || "Kurumsal Tedarikçi"}`;
+
+    const result = await sendMailApiBrevo({
       to: toEmail,
-      subject,
+      subject: mailSubject,
       html,
-      // from / sender ayarların lib/sendMail içinde yönetiliyorsa burada gerek yok
+      text,
+    });
+
+    if (!result.ok) {
+      return res.status(500).json({
+        ok: false,
+        message: "Brevo API ile mail gönderilemedi",
+        ...result,
+      });
+    }
+
+    await Teklif.findByIdAndUpdate(teklifId, {
+      $set: { status: "Gönderildi", sentAt: new Date() },
     });
 
     return res.status(200).json({
       ok: true,
-      message: "Mail gönderildi",
-      links: { onayLink, pdfLink },
+      message: "✅ Mail gönderildi (Brevo API)",
+      messageId: result.messageId,
     });
   } catch (err) {
-    console.error("mail.js error:", err);
-    return res.status(500).json({ message: "Mail gönderilemedi", error: String(err?.message || err) });
+    console.error("MAIL API ERROR:", err?.message || err);
+    return res.status(500).json({
+      ok: false,
+      message: "Mail gönderilemedi",
+      error: err?.message || String(err),
+    });
   }
 }
