@@ -1,7 +1,8 @@
 import dbConnect from "../../../lib/dbConnect";
 import Teklif from "../../../models/Teklif";
 import Cari from "../../../models/Cari";
-import sendEmail from "../../../lib/sendEmail";
+import { sendMailApiBrevo } from "@/lib/mail/sendMail";
+
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
