@@ -1,8 +1,11 @@
 import dbConnect from "@/lib/mongodb";
 import Teklif from "@/models/Teklif";
+import { createPdf } from "@/lib/PdfEngine";
 
-import chromium from "@sparticuz/chromium";
-import puppeteer from "puppeteer-core";
+const money = (n) => {
+  const num = Number(n || 0);
+  return num.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
 
 export default async function handler(req, res) {
   try {
@@ -14,80 +17,131 @@ export default async function handler(req, res) {
     const teklif = await Teklif.findById(id).lean();
     if (!teklif) return res.status(404).json({ message: "Teklif bulunamadı" });
 
-    // ✅ HTML çıktısı (PDF’ye basılacak tasarım)
-    const html = `
-      <!DOCTYPE html>
-      <html lang="tr">
-      <head>
-        <meta charset="UTF-8" />
-        <style>
-          body { font-family: Arial, sans-serif; padding: 30px; }
-          h1 { font-size: 20px; margin-bottom: 10px; }
-          .info { margin-bottom: 10px; }
-          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-          th, td { border: 1px solid #ddd; padding: 8px; font-size: 12px; }
-          th { background: #f5f5f5; }
-          .total { margin-top: 20px; font-size: 14px; font-weight: bold; }
-        </style>
-      </head>
-      <body>
-        <h1>Teklif - ${teklif.number || ""}</h1>
-
-        <div class="info"><b>Cari:</b> ${teklif.cariUnvan || ""}</div>
-        <div class="info"><b>Tarih:</b> ${new Date(teklif.createdAt).toLocaleString("tr-TR")}</div>
-
-        <table>
-          <thead>
-            <tr>
-              <th>Ürün</th>
-              <th>Adet</th>
-              <th>Birim Fiyat</th>
-              <th>Toplam</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${
-              teklif.kalemler?.map((k) => `
-                <tr>
-                  <td>${k.urunAdi || ""}</td>
-                  <td>${k.adet || 0}</td>
-                  <td>${k.birimFiyat || 0} TL</td>
-                  <td>${k.satirGenelToplam || 0} TL</td>
-                </tr>
-              `).join("") || ""
-            }
-          </tbody>
-        </table>
-
-        <div class="total">Genel Toplam: ${teklif.genelToplam || 0} TL</div>
-      </body>
-      </html>
-    `;
-
-    // ✅ Render ortamında chromium path
-    const isProd = process.env.NODE_ENV === "production";
-
-    const browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath: isProd ? await chromium.executablePath() : undefined,
-      headless: chromium.headless,
+    const doc = createPdf(res, {
+      title: `Teklif-${teklif.number || id}`,
+      fileName: `Teklif-${teklif.number || id}`,
+      inline: true,
     });
 
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0" });
+    // ✅ Sayfa ayarları
+    const pageWidth = doc.page.width;
+    const left = 40;
+    const right = pageWidth - 40;
 
-    const pdfBuffer = await page.pdf({
-      format: "A4",
-      printBackground: true,
+    // ✅ Header
+    doc.fontSize(18).text("TEKLİF FORMU", { align: "center" });
+    doc.moveDown(0.5);
+
+    doc.fontSize(11);
+    doc.text(`Teklif No: ${teklif.number || "-"}`, left, doc.y);
+    doc.text(
+      `Tarih: ${new Date(teklif.createdAt || Date.now()).toLocaleString("tr-TR")}`,
+      { align: "right" }
+    );
+
+    doc.moveDown(0.3);
+    doc.text(`Cari Ünvan: ${teklif.cariUnvan || "-"}`);
+    doc.moveDown(0.8);
+
+    // ✅ TABLO BAŞLIK
+    const startY = doc.y;
+    const rowH = 22;
+
+    // kolon genişlikleri
+    const col = {
+      no: left,
+      urun: left + 30,
+      adet: left + 310,
+      birim: left + 360,
+      kdvoran: left + 440,
+      toplam: left + 500,
+    };
+
+    // Başlık satırı arka plan
+    doc.rect(left, startY, right - left, rowH).fill("#f2f2f2");
+    doc.fillColor("#000").fontSize(10);
+
+    doc.text("#", col.no, startY + 6);
+    doc.text("Ürün", col.urun, startY + 6);
+    doc.text("Adet", col.adet, startY + 6);
+    doc.text("Birim", col.birim, startY + 6);
+    doc.text("KDV%", col.kdvoran, startY + 6);
+    doc.text("Toplam", col.toplam, startY + 6);
+
+    // Başlık alt çizgi
+    doc.moveTo(left, startY + rowH).lineTo(right, startY + rowH).stroke();
+
+    // ✅ TABLO SATIRLARI
+    let y = startY + rowH;
+
+    const items = teklif.kalemler || [];
+
+    let araToplam = 0;
+    let kdvToplam = 0;
+    let genelToplam = 0;
+
+    items.forEach((k, idx) => {
+      const adet = Number(k.adet || 0);
+      const birimFiyat = Number(k.birimFiyat || 0);
+      const kdvOrani = Number(k.kdvOrani || k.kdv || 0);
+
+      const satirAra = adet * birimFiyat;
+      const satirKdv = satirAra * (kdvOrani / 100);
+      const satirGenel = satirAra + satirKdv;
+
+      araToplam += satirAra;
+      kdvToplam += satirKdv;
+      genelToplam += satirGenel;
+
+      // sayfa taşarsa yeni sayfa
+      if (y > doc.page.height - 120) {
+        doc.addPage();
+        y = 50;
+      }
+
+      doc.fontSize(9).fillColor("#000");
+      doc.text(String(idx + 1), col.no, y + 6);
+      doc.text(String(k.urunAdi || "-"), col.urun, y + 6, { width: col.adet - col.urun - 5 });
+      doc.text(String(adet), col.adet, y + 6);
+      doc.text(money(birimFiyat), col.birim, y + 6);
+      doc.text(String(kdvOrani), col.kdvoran, y + 6);
+      doc.text(money(satirGenel), col.toplam, y + 6);
+
+      // satır alt çizgi
+      doc.moveTo(left, y + rowH).lineTo(right, y + rowH).strokeColor("#e5e5e5").stroke();
+
+      y += rowH;
     });
 
-    await browser.close();
+    doc.strokeColor("#000");
 
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `inline; filename="Teklif-${teklif.number || id}.pdf"`);
+    doc.moveDown(2);
 
-    return res.status(200).send(pdfBuffer);
+    // ✅ TOPLAM ALANI (sağda)
+    const summaryY = y + 20;
+    const boxW = 240;
+    const boxX = right - boxW;
+
+    doc.rect(boxX, summaryY, boxW, 90).stroke();
+
+    doc.fontSize(11).fillColor("#000");
+    doc.text(`Ara Toplam: ${money(araToplam)} TL`, boxX + 10, summaryY + 12);
+    doc.text(`KDV Toplam: ${money(kdvToplam)} TL`, boxX + 10, summaryY + 34);
+
+    doc.fontSize(12).font("Roboto");
+    doc.text(`Genel Toplam: ${money(genelToplam)} TL`, boxX + 10, summaryY + 60);
+
+    doc.moveDown(3);
+
+    // ✅ Alt bilgi
+    doc
+      .fontSize(9)
+      .fillColor("#666")
+      .text("Bu belge SatışTakip ERP tarafından otomatik oluşturulmuştur.", left, doc.page.height - 50, {
+        align: "center",
+      });
+
+    doc.end();
   } catch (err) {
     console.error("PDF VIEW ERROR:", err);
     return res.status(500).json({
