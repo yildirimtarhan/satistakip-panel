@@ -21,6 +21,12 @@ const PurchaseItemSchema = new mongoose.Schema(
     },
 
     vatRate: { type: Number, default: 20 },
+    currency: { type: String, default: "TRY" },
+fxRate: { type: Number, default: 1 },
+
+totalFCY: { type: Number, default: 0 },
+totalTRY: { type: Number, default: 0 },
+
 
     total: {
       type: Number,

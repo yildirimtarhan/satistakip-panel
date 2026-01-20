@@ -98,14 +98,39 @@ export default async function handler(req, res) {
     let totalBorc = 0;
     let totalAlacak = 0;
 
+    // ✅ Döviz toplamları (USD/EUR ayrı ayrı)
+    const fxTotals = {};
+
     const rows = transactions.map((t) => {
-      const amount = Number(t.amount || t.totalTRY || 0);
-      const borc = t.direction === "borc" ? amount : 0;
-      const alacak = t.direction === "alacak" ? amount : 0;
+      // ✅ TL bazlı (mevcut yapı)
+      const amountTRY = Number(t.amount || t.totalTRY || 0);
+      const borc = t.direction === "borc" ? amountTRY : 0;
+      const alacak = t.direction === "alacak" ? amountTRY : 0;
 
       bakiye = bakiye + borc - alacak;
       totalBorc += borc;
       totalAlacak += alacak;
+
+      // ✅ Döviz alanları (yeni ek)
+      const currency = t.currency || "TRY";
+      const fxRate = Number(t.fxRate || 1);
+
+      const amountFCY =
+        currency === "TRY"
+          ? amountTRY
+          : Number(t.totalFCY || t.amountFCY || 0);
+
+      const borcFCY = t.direction === "borc" ? amountFCY : 0;
+      const alacakFCY = t.direction === "alacak" ? amountFCY : 0;
+
+      // ✅ Döviz toplamlarını biriktir
+      if (currency !== "TRY") {
+        if (!fxTotals[currency]) {
+          fxTotals[currency] = { borc: 0, alacak: 0 };
+        }
+        fxTotals[currency].borc += borcFCY;
+        fxTotals[currency].alacak += alacakFCY;
+      }
 
       // ✅ PROFESYONEL AÇIKLAMA (type bazlı)
       let aciklama = "-";
@@ -120,9 +145,17 @@ export default async function handler(req, res) {
       return {
         tarih: t.date,
         aciklama,
+
+        // ✅ TL sütunları
         borc,
         alacak,
         bakiye,
+
+        // ✅ EKLENDİ: Para / Kur / Döviz Borç-Alacak
+        currency,
+        fxRate,
+        borcFCY,
+        alacakFCY,
       };
     });
 
@@ -134,15 +167,20 @@ export default async function handler(req, res) {
       layout: "landscape",
     });
 
+    // ✅ render fonksiyonuna ekstra alanları gönderiyoruz (bozmaz)
     renderCariEkstrePdf(doc, {
       company,
       cari: cari.unvan || cari.firmaAdi || cari.ad || "-",
       start,
       end,
       rows,
+
       totalBorc,
       totalAlacak,
       bakiye,
+
+      // ✅ EKLENDİ: PDF altına döviz toplam basabilmek için
+      fxTotals,
     });
 
     doc.end();

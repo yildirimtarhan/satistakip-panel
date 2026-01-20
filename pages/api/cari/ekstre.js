@@ -52,20 +52,33 @@ export default async function handler(req, res) {
     }
 
     // 📚 TRANSACTIONS
-    const txs = await Transaction.find(trxFilter)
-      .sort({ date: 1 })
-      .lean();
+    const txs = await Transaction.find(trxFilter).sort({ date: 1 }).lean();
 
     // 🧮 EKSTRE
     let bakiye = 0;
     const rows = [];
 
     for (const t of txs) {
-      const amount = Number(t.amount || t.totalTRY || 0);
-      const borc = t.direction === "borc" ? amount : 0;
-      const alacak = t.direction === "alacak" ? amount : 0;
+      // ✅ TL bazında miktar (mevcut sistemin)
+      const amountTRY = Number(t.amount || t.totalTRY || 0);
+      const borc = t.direction === "borc" ? amountTRY : 0;
+      const alacak = t.direction === "alacak" ? amountTRY : 0;
 
       bakiye = bakiye + borc - alacak;
+
+      // ✅ Döviz bilgileri (yeni ek)
+      const currency = t.currency || "TRY";
+      const fxRate = Number(t.fxRate || 1);
+
+      // ✅ Döviz borç/alacak (FCY)
+      // totalFCY yoksa TRY kabul edilir
+      const amountFCY =
+        currency === "TRY"
+          ? amountTRY
+          : Number(t.totalFCY || t.amountFCY || 0);
+
+      const borcFCY = t.direction === "borc" ? amountFCY : 0;
+      const alacakFCY = t.direction === "alacak" ? amountFCY : 0;
 
       rows.push({
         tarih: t.date,
@@ -90,9 +103,17 @@ export default async function handler(req, res) {
             ? "Tahsilat"
             : "-",
 
+        // ✅ TL kolonları (mevcut)
         borc,
         alacak,
         bakiye,
+
+        // ✅ EKLENDİ: Para / Kur / Döviz Borç-Alacak
+        currency,
+        fxRate,
+        borcFCY,
+        alacakFCY,
+
         _id: t._id,
       });
     }

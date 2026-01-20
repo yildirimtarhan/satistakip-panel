@@ -87,39 +87,64 @@ export default async function handler(req, res) {
     }
 
     // ✅ 2) Transaction'a KAYDEDİLEBİLEN alanlar + items'ı note içine göm
-    // Transaction modelinde items/description/status yok → note içine JSON koyuyoruz.
-    const humanNote = (note || "Ürün Alışı").toString().trim();
-    const payload = JSON.stringify(cleanItems);
+// Transaction modelinde items/description/status yok → note içine JSON koyuyoruz.
+const humanNote = (note || "Ürün Alışı").toString().trim();
+const payload = JSON.stringify(cleanItems);
 
-    const tx = await Transaction.create({
-      userId,
-      accountId,
+// ✅ EKLENDİ: Döviz bilgisi bul (items içinden)
+const fxItem =
+  cleanItems.find((x) => (x.currency || "TRY") !== "TRY") || cleanItems[0];
 
-      type: "purchase",
-      direction: "borc",
+const currency = fxItem?.currency || "TRY";
+const fxRate = Number(fxItem?.fxRate || 1);
 
-      amount: Number(grandTotalTRY.toFixed(2)),
-      totalTRY: Number(grandTotalTRY.toFixed(2)), // modelde var
+// ✅ EKLENDİ: Döviz toplam (FCY)
+// TRY ise FCY = TRY toplam mantıklı
+const grandTotalFCY =
+  currency === "TRY"
+    ? Number(grandTotalTRY.toFixed(2))
+    : Number(
+        cleanItems
+          .filter((x) => (x.currency || "TRY") === currency)
+          .reduce((s, x) => s + Number(x.totalFCY || 0), 0)
+          .toFixed(2)
+      );
 
-      date: invoiceDate ? new Date(invoiceDate) : new Date(),
+const tx = await Transaction.create({
+  userId,
+  accountId,
 
-      // invoiceNo/orderNo modelde yok → note içine ekliyoruz
-      note:
-        `${humanNote}` +
-        (invoiceNo ? ` | Fatura: ${invoiceNo}` : "") +
-        (orderNo ? ` | Sipariş: ${orderNo}` : "") +
-        `\n${ITEMS_MARKER}${payload}`,
-    });
+  type: "purchase",
+  direction: "borc",
 
-    return res.status(200).json({
-      message: "✅ Alış kaydı oluşturuldu",
-      purchase: {
-        _id: tx._id,
-        accountId,
-        totalTry: Number(grandTotalTRY.toFixed(2)),
-        items: cleanItems,
-      },
-    });
+  amount: Number(grandTotalTRY.toFixed(2)),
+  totalTRY: Number(grandTotalTRY.toFixed(2)), // modelde var
+
+  // ✅ EKLENDİ: Döviz alanları (Cari Ekstre ve PDF için şart)
+  currency, // USD/EUR/TRY
+  fxRate, // kur
+  totalFCY: grandTotalFCY, // döviz borç
+
+  date: invoiceDate ? new Date(invoiceDate) : new Date(),
+
+  // invoiceNo/orderNo modelde yok → note içine ekliyoruz
+  note:
+    `${humanNote}` +
+    (invoiceNo ? ` | Fatura: ${invoiceNo}` : "") +
+    (orderNo ? ` | Sipariş: ${orderNo}` : "") +
+    `\n${ITEMS_MARKER}${payload}`,
+});
+
+return res.status(200).json({
+  message: "✅ Alış kaydı oluşturuldu",
+  purchase: {
+    _id: tx._id,
+    accountId,
+    totalTry: Number(grandTotalTRY.toFixed(2)),
+    items: cleanItems,
+  },
+});
+
   } catch (err) {
     console.error("PURCHASE CREATE ERROR:", err);
     return res.status(500).json({

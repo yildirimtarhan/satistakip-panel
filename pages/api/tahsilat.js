@@ -41,7 +41,15 @@ export default async function handler(req, res) {
     // 📥 BODY
     const {
       accountId,
+
+      // TL tutar (frontend her zaman TL amount gönderiyor)
       amount,
+
+      // ✅ EKLENDİ: Döviz alanları
+      currency,
+      fxRate,
+      amountFCY,
+
       note,
       date,
       type: bodyType,
@@ -76,13 +84,30 @@ export default async function handler(req, res) {
     // ✅ Direction: Tahsilat = alacak, Ödeme = borc
     const trxDirection = type === "tahsilat" ? "alacak" : "borc";
 
+    // ✅ EKLENDİ: Döviz hesapları
+    const cur = currency || "TRY";
+    const fx = cur === "TRY" ? 1 : Number(fxRate || 0);
+    const fcy = cur === "TRY" ? Number(amount || 0) : Number(amountFCY || 0);
+
+    const totalTRY =
+      cur === "TRY" ? Number(amount || 0) : Number(fcy) * Number(fx || 0);
+
     // ✅ Transaction oluştur
     const trx = await Transaction.create({
       userId,
       accountId,
       type,
       direction: trxDirection,
-      amount: Number(amount),
+
+      // TL alanları (ekstre/bakiye)
+      amount: Number(Number(totalTRY).toFixed(2)),
+      totalTRY: Number(Number(totalTRY).toFixed(2)),
+
+      // ✅ Döviz alanları (ekstre pdf + para/kur)
+      currency: cur,
+      fxRate: Number(fx || 1),
+      totalFCY: Number(Number(fcy).toFixed(2)),
+
       paymentMethod,
       note: note || "",
       date: trxDate,
@@ -90,13 +115,11 @@ export default async function handler(req, res) {
       isDeleted: false,
     });
 
-    // ✅ Cari bakiye güncelle
-    // Tahsilat: bakiye azalır (müşteri borcu düşer)
-    // Ödeme: bakiye artar (müşteriye ödeme yapıldıysa borç artar)
+    // ✅ Cari bakiye güncelle (TL üzerinden)
     if (type === "tahsilat") {
-      cari.bakiye = Number(cari.bakiye || 0) - Number(amount);
+      cari.bakiye = Number(cari.bakiye || 0) - Number(totalTRY);
     } else {
-      cari.bakiye = Number(cari.bakiye || 0) + Number(amount);
+      cari.bakiye = Number(cari.bakiye || 0) + Number(totalTRY);
     }
 
     await cari.save();
@@ -127,6 +150,14 @@ export default async function handler(req, res) {
 
         const pdfUrl = `${process.env.NEXT_PUBLIC_BASE_URL}/api/tahsilat/pdf?id=${trx._id}&token=${token}`;
 
+        const fxInfo =
+          cur !== "TRY"
+            ? `<tr>
+                 <td style="padding:6px;border-bottom:1px solid #eee"><b>Döviz</b></td>
+                 <td style="padding:6px;border-bottom:1px solid #eee">${fmtMoney(fcy)} ${cur} (Kur: ${Number(fx || 0).toFixed(4)})</td>
+               </tr>`
+            : "";
+
         await sendMail({
           to: companyEmail,
           subject: `✅ ${isTahsilat ? "Tahsilat" : "Ödeme"} Kaydedildi - ${cariName}`,
@@ -148,9 +179,11 @@ export default async function handler(req, res) {
                   <td style="padding:6px;border-bottom:1px solid #eee">${isTahsilat ? "Tahsilat" : "Ödeme"}</td>
                 </tr>
 
+                ${fxInfo}
+
                 <tr>
                   <td style="padding:6px;border-bottom:1px solid #eee"><b>Tutar</b></td>
-                  <td style="padding:6px;border-bottom:1px solid #eee">${fmtMoney(amount)} TRY</td>
+                  <td style="padding:6px;border-bottom:1px solid #eee">${fmtMoney(totalTRY)} TRY</td>
                 </tr>
 
                 <tr>

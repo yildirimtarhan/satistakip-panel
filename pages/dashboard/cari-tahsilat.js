@@ -8,7 +8,15 @@ export default function CariTahsilat() {
   const [form, setForm] = useState({
     accountId: "",
     date: new Date().toISOString().slice(0, 10),
+
+    // TRY tutar (DB’de amount/totalTRY olarak kaydolacak)
     amount: "",
+
+    // ✅ EKLENDİ: Döviz alanları
+    currency: "TRY",
+    fxRate: "",
+    amountFCY: "",
+
     direction: "alacak",
     method: "cash",
     note: "",
@@ -22,6 +30,9 @@ export default function CariTahsilat() {
 
   const [err, setErr] = useState("");
   const [success, setSuccess] = useState("");
+
+  // ✅ EKLENDİ: TCMB kurlar
+  const [rates, setRates] = useState({ TRY: 1, USD: 0, EUR: 0 });
 
   // ✅ Token al
   useEffect(() => {
@@ -75,33 +86,58 @@ export default function CariTahsilat() {
     loadCariList();
   }, [token]);
 
+  // ✅ EKLENDİ: TCMB kur çek
+  const loadRates = async () => {
+    try {
+      const res = await fetch("/api/rates/tcmb", { cache: "no-store" });
+      const data = await res.json();
+
+      const USD = Number(data?.USD?.rateSell || data?.USD || 0);
+      const EUR = Number(data?.EUR?.rateSell || data?.EUR || 0);
+
+      setRates({ TRY: 1, USD, EUR });
+
+      // Eğer kullanıcı USD/EUR seçiliyse fxRate’i otomatik doldur
+      setForm((prev) => {
+        if (prev.currency === "USD") return { ...prev, fxRate: String(USD || "") };
+        if (prev.currency === "EUR") return { ...prev, fxRate: String(EUR || "") };
+        return prev;
+      });
+    } catch (e) {
+      console.log("TCMB kur alınamadı:", e);
+    }
+  };
+
+  useEffect(() => {
+    loadRates();
+  }, []);
+
   // ✅ Bakiye çek (token ile)
   const loadBalance = async (accountId) => {
-  if (!accountId) return;
+    if (!accountId) return;
 
-  try {
-    const res = await fetch(`/api/cari/balance?id=${accountId}`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      cache: "no-store",
-    });
+    try {
+      const res = await fetch(`/api/cari/balance?id=${accountId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        cache: "no-store",
+      });
 
-    const data = await res.json();
+      const data = await res.json();
 
-    if (!res.ok) {
-      console.log("❌ /api/cari/balance error:", data);
+      if (!res.ok) {
+        console.log("❌ /api/cari/balance error:", data);
+        setBalance(0);
+        return;
+      }
+
+      setBalance(data?.bakiye ?? data?.balance ?? 0);
+    } catch (e) {
+      console.error("Balance load error:", e);
       setBalance(0);
-      return;
     }
-
-   setBalance(data?.bakiye ?? data?.balance ?? 0);
-  } catch (e) {
-    console.error("Balance load error:", e);
-    setBalance(0);
-  }
-};
-
+  };
 
   // ✅ Ödemeler/Tahsilatlar listesi çek (token ile)
   const loadPayments = async (accountId) => {
@@ -158,11 +194,24 @@ export default function CariTahsilat() {
 
     if (!token) return setErr("Token yok, tekrar giriş yap");
     if (!form.accountId) return setErr("Cari seçmelisin");
-    if (!form.amount) return setErr("Tutar giriniz");
+
+    // TRY ise amount zorunlu
+    if (form.currency === "TRY") {
+      if (!form.amount) return setErr("Tutar giriniz");
+    } else {
+      if (!form.amountFCY) return setErr("Döviz tutar giriniz");
+      if (!form.fxRate) return setErr("Kur giriniz");
+    }
 
     setLoading(true);
 
     try {
+      // ✅ TRY hesapla (frontend’de gösterim için)
+      const cur = form.currency || "TRY";
+      const fx = cur === "TRY" ? 1 : Number(form.fxRate || 0);
+      const fcy = cur === "TRY" ? Number(form.amount || 0) : Number(form.amountFCY || 0);
+      const tryAmount = cur === "TRY" ? Number(form.amount || 0) : Number(fcy) * Number(fx || 0);
+
       const res = await fetch("/api/tahsilat", {
         method: "POST",
         headers: {
@@ -171,7 +220,15 @@ export default function CariTahsilat() {
         },
         body: JSON.stringify({
           accountId: form.accountId,
-          amount: form.amount,
+
+          // ✅ Backend TL üzerinden bakiye güncelliyor
+          amount: Number(tryAmount.toFixed(2)),
+
+          // ✅ EKLENDİ: Döviz alanları
+          currency: cur,
+          fxRate: Number(fx),
+          amountFCY: Number(fcy),
+
           direction: form.direction,
           method: form.method,
           note: form.note,
@@ -187,6 +244,7 @@ export default function CariTahsilat() {
       setForm((prev) => ({
         ...prev,
         amount: "",
+        amountFCY: "",
         note: "",
       }));
 
@@ -239,6 +297,16 @@ export default function CariTahsilat() {
     }
   };
 
+  // ✅ Ekranda göstermek için TRY tutar
+  const computedTryAmount = (() => {
+    const cur = form.currency || "TRY";
+    if (cur === "TRY") return form.amount;
+    const fx = Number(form.fxRate || 0);
+    const fcy = Number(form.amountFCY || 0);
+    const v = fcy * fx;
+    return Number.isFinite(v) ? v : 0;
+  })();
+
   return (
     <div className="p-6">
       <h1 className="text-xl font-bold mb-4">Cari Tahsilat / Ödeme</h1>
@@ -253,28 +321,25 @@ export default function CariTahsilat() {
       )}
 
       {/* FORM */}
-      <form
-        onSubmit={handleSubmit}
-        className="bg-white border rounded p-4 mb-6"
-      >
+      <form onSubmit={handleSubmit} className="bg-white border rounded p-4 mb-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <label className="text-sm font-semibold">Cari</label>
             <select
               className="w-full border p-2 rounded"
               value={form.accountId}
-  onChange={(e) => {
-    const id = e.target.value;
+              onChange={(e) => {
+                const id = e.target.value;
 
-    setForm((prev) => ({ ...prev, accountId: id }));
+                setForm((prev) => ({ ...prev, accountId: id }));
 
-    // ✅ anında tetikle (useEffect beklemeden)
-    if (token && id) {
-      loadBalance(id);
-      loadPayments(id);
-    }
-  }}
->
+                // ✅ anında tetikle (useEffect beklemeden)
+                if (token && id) {
+                  loadBalance(id);
+                  loadPayments(id);
+                }
+              }}
+            >
               <option value="">Cari Seç</option>
 
               {Array.isArray(cariList) &&
@@ -305,12 +370,81 @@ export default function CariTahsilat() {
             />
           </div>
 
+          {/* ✅ EKLENDİ: Para Birimi */}
           <div>
-            <label className="text-sm font-semibold">Tutar</label>
+            <label className="text-sm font-semibold">Para Birimi</label>
+            <select
+              className="w-full border p-2 rounded"
+              value={form.currency}
+              onChange={(e) => {
+                const cur = e.target.value;
+
+                const autoFx =
+                  cur === "USD" ? rates.USD : cur === "EUR" ? rates.EUR : 1;
+
+                setForm((prev) => ({
+                  ...prev,
+                  currency: cur,
+                  fxRate: cur === "TRY" ? "1" : String(autoFx || ""),
+                  amountFCY: cur === "TRY" ? "" : prev.amountFCY,
+                }));
+              }}
+            >
+              <option value="TRY">TRY</option>
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
+            </select>
+
+            <button
+              type="button"
+              className="mt-2 text-xs underline text-blue-600"
+              onClick={loadRates}
+            >
+              Kuru Yenile (TCMB)
+            </button>
+          </div>
+
+          {/* ✅ EKLENDİ: Kur */}
+          <div>
+            <label className="text-sm font-semibold">Kur</label>
+            <input
+              type="number"
+              step="0.0001"
+              className="w-full border p-2 rounded"
+              value={form.fxRate}
+              disabled={form.currency === "TRY"}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, fxRate: e.target.value }))
+              }
+            />
+          </div>
+
+          {/* ✅ EKLENDİ: Döviz Tutar */}
+          <div>
+            <label className="text-sm font-semibold">
+              Döviz Tutar ({form.currency})
+            </label>
             <input
               type="number"
               className="w-full border p-2 rounded"
-              value={form.amount}
+              value={form.amountFCY}
+              disabled={form.currency === "TRY"}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, amountFCY: e.target.value }))
+              }
+            />
+          </div>
+
+          {/* TRY Tutar (TRY’de girilebilir, dövizde hesaplanır) */}
+          <div>
+            <label className="text-sm font-semibold">Tutar (TRY)</label>
+            <input
+              type="number"
+              className={`w-full border p-2 rounded ${
+                form.currency !== "TRY" ? "bg-gray-50" : ""
+              }`}
+              readOnly={form.currency !== "TRY"}
+              value={form.currency === "TRY" ? form.amount : computedTryAmount}
               onChange={(e) =>
                 setForm((prev) => ({ ...prev, amount: e.target.value }))
               }
@@ -368,99 +502,113 @@ export default function CariTahsilat() {
         </div>
       </form>
 
-{/* LİSTE */}
-<div className="bg-white border rounded p-4">
-  <h2 className="font-bold mb-3">Tahsilat / Ödeme Geçmişi</h2>
+      {/* LİSTE */}
+      <div className="bg-white border rounded p-4">
+        <h2 className="font-bold mb-3">Tahsilat / Ödeme Geçmişi</h2>
 
-  {listLoading ? (
-    <div>Yükleniyor...</div>
-  ) : (
-    <table className="w-full border-collapse">
-      <thead>
-        <tr className="bg-gray-100">
-          <th className="border p-2 text-left">Tarih</th>
-          <th className="border p-2 text-left">Tür</th>
-          <th className="border p-2 text-left">Tutar</th>
-          <th className="border p-2 text-left">Yöntem</th>
-          <th className="border p-2 text-left">Not</th>
-          <th className="border p-2 text-center">PDF</th>
-          <th className="border p-2 text-center">İşlem</th>
-        </tr>
-      </thead>
-
-      <tbody>
-        {payments?.length === 0 ? (
-          <tr>
-            <td className="border p-2" colSpan={7}>
-              Kayıt yok
-            </td>
-          </tr>
+        {listLoading ? (
+          <div>Yükleniyor...</div>
         ) : (
-          payments.map((p) => {
-            const isCancelled =
-              p?.isDeleted === true || p?.status === "cancelled";
-
-            return (
-              <tr
-                key={p._id}
-                className={isCancelled ? "bg-gray-100 text-gray-400" : ""}
-              >
-                <td className="border p-2">
-                  {p.date ? new Date(p.date).toLocaleDateString("tr-TR") : "-"}
-                </td>
-
-                <td className="border p-2">
-                  {p.direction === "alacak" ? "Tahsilat" : "Ödeme"}
-
-                  {/* ✅ İPTAL BADGE + TOOLTIP */}
-                  {isCancelled && (
-                    <span
-                      title={`İptal Nedeni: ${p?.cancelReason || "-"}`}
-                      className="ml-2 px-2 py-1 text-xs rounded bg-red-100 text-red-600 font-semibold"
-                    >
-                      İPTAL EDİLDİ
-                    </span>
-                  )}
-                </td>
-
-                <td className="border p-2">{fmt(p.amount)} TRY</td>
-
-                <td className="border p-2">
-                  {formatMethod(p.paymentMethod)}
-                </td>
-
-                <td className="border p-2">{p.note || "-"}</td>
-
-                <td className="border p-2 text-center">
-                  <button
-                    className="text-blue-600 underline"
-                    onClick={() => openPdfForPayment(p._id)}
-                  >
-                    PDF
-                  </button>
-                </td>
-
-                <td className="border p-2 text-center">
-                  <button
-                    disabled={isCancelled}
-                    className={`underline ${
-                      isCancelled
-                        ? "text-gray-400 cursor-not-allowed"
-                        : "text-red-600"
-                    }`}
-                    onClick={() => cancelPayment(p._id)}
-                  >
-                    {isCancelled ? "Geri Alındı" : "Geri Al"}
-                  </button>
-                </td>
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="border p-2 text-left">Tarih</th>
+                <th className="border p-2 text-left">Tür</th>
+                <th className="border p-2 text-left">Tutar</th>
+                <th className="border p-2 text-left">Yöntem</th>
+                <th className="border p-2 text-left">Not</th>
+                <th className="border p-2 text-center">PDF</th>
+                <th className="border p-2 text-center">İşlem</th>
               </tr>
-            );
-          })
+            </thead>
+
+            <tbody>
+              {payments?.length === 0 ? (
+                <tr>
+                  <td className="border p-2" colSpan={7}>
+                    Kayıt yok
+                  </td>
+                </tr>
+              ) : (
+                payments.map((p) => {
+                  const isCancelled =
+                    p?.isDeleted === true || p?.status === "cancelled";
+
+                  return (
+                    <tr
+                      key={p._id}
+                      className={isCancelled ? "bg-gray-100 text-gray-400" : ""}
+                    >
+                      <td className="border p-2">
+                        {p.date
+                          ? new Date(p.date).toLocaleDateString("tr-TR")
+                          : "-"}
+                      </td>
+
+                      <td className="border p-2">
+                        {p.direction === "alacak" ? "Tahsilat" : "Ödeme"}
+
+                        {isCancelled && (
+                          <span
+                            title={`İptal Nedeni: ${p?.cancelReason || "-"}`}
+                            className="ml-2 px-2 py-1 text-xs rounded bg-red-100 text-red-600 font-semibold"
+                          >
+                            İPTAL EDİLDİ
+                          </span>
+                        )}
+                      </td>
+
+                      {/* ✅ Dövizli gösterim */}
+                      <td className="border p-2">
+                        {p.currency && p.currency !== "TRY" ? (
+                          <>
+                            {fmt(p.totalFCY)} {p.currency}{" "}
+                            <span className="text-gray-400">
+                              (Kur: {Number(p.fxRate || 0).toFixed(4)} |{" "}
+                              {fmt(p.amount)} TRY)
+                            </span>
+                          </>
+                        ) : (
+                          `${fmt(p.amount)} TRY`
+                        )}
+                      </td>
+
+                      <td className="border p-2">
+                        {formatMethod(p.paymentMethod)}
+                      </td>
+
+                      <td className="border p-2">{p.note || "-"}</td>
+
+                      <td className="border p-2 text-center">
+                        <button
+                          className="text-blue-600 underline"
+                          onClick={() => openPdfForPayment(p._id)}
+                        >
+                          PDF
+                        </button>
+                      </td>
+
+                      <td className="border p-2 text-center">
+                        <button
+                          disabled={isCancelled}
+                          className={`underline ${
+                            isCancelled
+                              ? "text-gray-400 cursor-not-allowed"
+                              : "text-red-600"
+                          }`}
+                          onClick={() => cancelPayment(p._id)}
+                        >
+                          {isCancelled ? "Geri Alındı" : "Geri Al"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         )}
-      </tbody>
-    </table>
-  )}
-</div>
-</div>
- );
- }
+      </div>
+    </div>
+  );
+}

@@ -54,6 +54,8 @@ const TransactionSchema = new mongoose.Schema(
     currency: { type: String, default: "TRY" },
     fxRate: { type: Number, default: 1 },
     totalTRY: { type: Number, default: 0 },
+    totalFCY: { type: Number, default: 0 },
+
 
         // =========================
     // ❌ İPTAL / SİLME DURUMU (YENİ)

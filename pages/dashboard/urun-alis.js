@@ -21,6 +21,8 @@ export default function UrunAlis() {
   const [urunler, setUrunler] = useState([]);
 
   const [cariId, setCariId] = useState("");
+  const [cariBakiye, setCariBakiye] = useState(null);
+  const [loadingCariBakiye, setLoadingCariBakiye] = useState(false);
 
   const [rates, setRates] = useState({ TRY: 1, USD: 0, EUR: 0 });
   const [manualRates, setManualRates] = useState({ USD: "", EUR: "" });
@@ -78,6 +80,8 @@ export default function UrunAlis() {
     setUrunler(list);
   };
 
+  console.log("cariler örnek:", cariler?.[0]);
+
   // TCMB kurları
   const loadRates = async () => {
     try {
@@ -85,8 +89,15 @@ export default function UrunAlis() {
       const res = await fetch("/api/rates/tcmb");
       const data = await res.json();
       // beklenen: { TRY:1, USD:x, EUR:y } veya { usd, eur }
-      const USD = Number(data?.USD || data?.usd || 0);
-      const EUR = Number(data?.EUR || data?.eur || 0);
+      const USD = Number(
+  data?.USD?.rateSell || data?.USD?.rateBuy || data?.USD || data?.usd || 0
+);
+
+const EUR = Number(
+  data?.EUR?.rateSell || data?.EUR?.rateBuy || data?.EUR || data?.eur || 0
+);
+
+
       setRates({ TRY: 1, USD, EUR });
     } catch (e) {
       console.error("Kur çekme hatası:", e);
@@ -101,6 +112,28 @@ export default function UrunAlis() {
     loadUrunler(token);
     loadRates();
   }, [token]);
+
+  // ✅✅✅ FIX: Cari seçilince bakiye getir (Ek API YOK – 405 sorunu bitti)
+  useEffect(() => {
+    if (!cariId) {
+      setCariBakiye(null);
+      return;
+    }
+
+    // loading state'i görsel için koruyalım
+    setLoadingCariBakiye(true);
+
+    const selectedCari = cariler.find((c) => String(c._id) === String(cariId));
+
+    const bakiye =
+      selectedCari?.bakiye ??
+      selectedCari?.balance ??
+      selectedCari?.cariBakiye ??
+      0;
+
+    setCariBakiye(Number(bakiye || 0));
+    setLoadingCariBakiye(false);
+  }, [cariId, cariler]);
 
   const getFx = (currency) => {
     if (currency === "TRY") return 1;
@@ -142,40 +175,55 @@ export default function UrunAlis() {
   const removeRow = (i) => setRows((p) => p.filter((_, idx) => idx !== i));
 
   const onSelectProduct = (i, productId) => {
-    const p = urunler.find((x) => String(x._id) === String(productId));
-    if (!p) {
-      updateRow(i, "productId", "");
-      return;
-    }
-    updateRow(i, "productId", p._id);
-    updateRow(i, "ad", p.ad || p.name || "");
-    updateRow(i, "barkod", p.barkod || p.barcode || "");
+  const p = urunler.find((x) => String(x._id || x.id) === String(productId));
+
+  const copy = [...rows];
+
+  if (!p) {
+    copy[i] = { ...copy[i], productId: "" };
+    setRows(copy);
+    return;
+  }
+
+  copy[i] = {
+    ...copy[i],
+    productId: p._id || p.id,
+    ad: p.ad || p.name || p.urunAdi || p.title || p.productName || "",
+    barkod: p.barkod || p.barcode || "",
   };
 
-  const onBarcodeBlur = (i) => {
-    const b = String(rows[i]?.barkod || "").trim();
-    if (!b) return;
-    const p = urunler.find((x) => String(x.barkod || x.barcode || "") === b);
-    if (p) {
-      onSelectProduct(i, p._id);
-    }
-  };
+  setRows(copy);
+};
 
-  const handleSave = async () => {
-    if (role === "admin") {
-      alert("Admin alış işlemi yapamaz. Normal kullanıcı ile giriş yapın.");
-      return;
-    }
+const onBarcodeBlur = (i) => {
+  const b = String(rows[i]?.barkod || "").trim();
+  if (!b) return;
 
-    if (!cariId) {
-      alert("⚠️ Tedarikçi (Cari) seçin");
-      return;
-    }
+  const p = urunler.find((x) => String(x.barkod || x.barcode || "") === b);
 
-    if (!token) {
-      alert("⚠️ Giriş yapınız");
-      return;
-    }
+  if (p) {
+    onSelectProduct(i, p._id || p.id);
+  }
+};
+
+const handleSave = async () => {
+  if (role === "admin") {
+    alert("Admin alış işlemi yapamaz. Normal kullanıcı ile giriş yapın.");
+    return;
+  }
+
+  if (!cariId) {
+    alert("⚠️ Tedarikçi (Cari) seçin");
+    return;
+  }
+
+  if (!token) {
+    alert("⚠️ Giriş yapınız");
+    return;
+  }
+
+  
+
 
     // Satırları normalize et
     const normalizedRows = rows
@@ -246,16 +294,28 @@ export default function UrunAlis() {
         }
 
         const fx = getFx(r.currency || "TRY");
-        const total = Number(r.adet) * Number(r.fiyat) * fx;
 
-        items.push({
-          productId,
-          quantity: Number(r.adet),
-          unitPrice: Number(r.fiyat),
-          currency: r.currency || "TRY",
-          fxRate: fx,
-          total, // TRY toplam
-        });
+// ✅ Döviz toplamı (USD/EUR/TRY)
+const totalFCY = Number(r.adet) * Number(r.fiyat);
+
+// ✅ TL karşılığı
+const totalTRY = totalFCY * fx;
+
+items.push({
+  productId,
+  quantity: Number(r.adet),
+  unitPrice: Number(r.fiyat),
+
+  currency: r.currency || "TRY",
+  fxRate: fx,
+
+  totalFCY, // ✅ döviz borcu
+  totalTRY, // ✅ TL karşılığı
+
+  // ⚠️ eski sistemi bozmamak için total alanını da koruyoruz
+  total: totalTRY,
+});
+
       }
 
       if (items.length === 0) {
@@ -323,6 +383,7 @@ export default function UrunAlis() {
 
         {/* Üst Bilgi */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 border rounded p-4">
+          {/* ✅ Tedarikçi (Cari) + Cari Bakiye */}
           <div>
             <label className="text-sm text-gray-600">Tedarikçi (Cari)</label>
             <select
@@ -335,7 +396,7 @@ export default function UrunAlis() {
                 <option key={c._id} value={c._id}>
                   {c.unvan ||
                     c.firmaAdi ||
-                    c.ad ||        // 👈 BUNU EKLE
+                    c.ad ||
                     c.title ||
                     c.adSoyad ||
                     c.name ||
@@ -344,8 +405,28 @@ export default function UrunAlis() {
                 </option>
               ))}
             </select>
+
+            {/* ✅ Cari Bakiye */}
+            <div className="mt-2">
+              <label className="text-sm text-gray-600">Cari Bakiye</label>
+              <input
+                readOnly
+                value={
+                  loadingCariBakiye
+                    ? "Yükleniyor..."
+                    : cariBakiye === null
+                    ? "-"
+                    : cariBakiye.toLocaleString("tr-TR", {
+                        style: "currency",
+                        currency: "TRY",
+                      })
+                }
+                className="w-full border rounded px-2 py-2 bg-gray-100"
+              />
+            </div>
           </div>
 
+          {/* ✅ Tarih */}
           <div>
             <label className="text-sm text-gray-600">Tarih</label>
             <input
@@ -356,6 +437,7 @@ export default function UrunAlis() {
             />
           </div>
 
+          {/* ✅ Fatura No */}
           <div>
             <label className="text-sm text-gray-600">Fatura No</label>
             <input
@@ -366,6 +448,7 @@ export default function UrunAlis() {
             />
           </div>
 
+          {/* ✅ Sipariş No */}
           <div>
             <label className="text-sm text-gray-600">Sipariş No</label>
             <input
@@ -376,6 +459,7 @@ export default function UrunAlis() {
             />
           </div>
 
+          {/* ✅ Açıklama */}
           <div className="md:col-span-4">
             <label className="text-sm text-gray-600">Açıklama</label>
             <input
@@ -478,11 +562,13 @@ export default function UrunAlis() {
                         >
                           <option value="">(Seç / Yoksa isim gir)</option>
                           {urunler.map((u) => (
-                            <option key={u._id} value={u._id}>
-                              {(u.ad || u.name || "-") +
-                                (u.sku ? ` (${u.sku})` : "")}
-                            </option>
-                          ))}
+  <option key={u._id || u.id} value={u._id || u.id}>
+
+    {(u.ad || u.name || u.urunAdi || u.title || u.productName || "-") +
+      (u.sku ? ` (${u.sku})` : "")}
+  </option>
+))}
+
                         </select>
 
                         <input
@@ -496,7 +582,9 @@ export default function UrunAlis() {
                       <td className="border px-2 py-1 min-w-[160px]">
                         <input
                           value={r.barkod}
-                          onChange={(e) => updateRow(i, "barkod", e.target.value)}
+                          onChange={(e) =>
+                            updateRow(i, "barkod", e.target.value)
+                          }
                           onBlur={() => onBarcodeBlur(i)}
                           className="w-full border rounded px-2 py-1"
                           placeholder="Barkod"
@@ -526,7 +614,9 @@ export default function UrunAlis() {
                       <td className="border px-2 py-1 min-w-[90px]">
                         <select
                           value={r.currency || "TRY"}
-                          onChange={(e) => updateRow(i, "currency", e.target.value)}
+                          onChange={(e) =>
+                            updateRow(i, "currency", e.target.value)
+                          }
                           className="w-full border rounded px-2 py-1"
                         >
                           <option value="TRY">TRY</option>

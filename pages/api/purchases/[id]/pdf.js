@@ -69,34 +69,64 @@ export default async function handler(req, res) {
       prodMap = new Map(prods.map((p) => [String(p._id), p]));
     }
 
-    // ✅ items normalize + KDV fallback
+    // ✅ items normalize + KDV fallback + Döviz Kolonları
     items = items.map((i) => {
       const p = prodMap.get(String(i.productId));
       const quantity = Number(i.quantity || 0);
+
+      // Orijinal birim fiyat (döviz/TRY)
       const unitPrice = Number(i.unitPrice || 0);
+
+      // ✅ Döviz alanları (fallback'li)
+      const currency = i.currency || "TRY";
+      const fxRate =
+        currency === "TRY" ? 1 : Number(i.fxRate || i.fx || 1);
 
       const vatRate = Number(i.vatRate ?? p?.vatRate ?? 20);
 
-      const net = quantity * unitPrice;
-      const vatAmount = (net * vatRate) / 100;
-      const gross = net + vatAmount;
+      // ✅ TL hesap (PDF tutarlı olsun)
+      // Satır TRY birim fiyatı:
+      const unitPriceTRY =
+        currency === "TRY" ? unitPrice : unitPrice * (fxRate || 1);
+
+      const netTRY = quantity * unitPriceTRY;
+      const vatAmountTRY = (netTRY * vatRate) / 100;
+      const grossTRY = netTRY + vatAmountTRY;
 
       return {
         name: i.productName || p?.name || "-",
         barcode: i.barcode || p?.barcode || "-",
+
         quantity,
-        unitPrice,
+
+        unitPrice, // ✅ Orijinal birim fiyat (döviz olabilir)
+        currency, // ✅ Para Birimi
+        fxRate, // ✅ Kur
+
         vatRate,
-        net,
-        vatAmount,
-        total: gross, // ✅ KDV dahil satır toplam
+
+        net: netTRY, // ✅ TL net
+        vatAmount: vatAmountTRY, // ✅ TL KDV
+        total: grossTRY, // ✅ TL toplam (KDV dahil)
       };
     });
 
-    // ✅ toplamlar
+    // ✅ toplamlar (TL)
     const araToplam = items.reduce((s, x) => s + Number(x.net || 0), 0);
     const kdvToplam = items.reduce((s, x) => s + Number(x.vatAmount || 0), 0);
     const genelToplam = araToplam + kdvToplam;
+
+    // ✅ Döviz genel toplamları (USD/EUR) - KDV hariç (istersen dahil de yaparız)
+const fxTotals = items.reduce((acc, it) => {
+  const cur = it.currency || "TRY";
+  if (cur === "TRY") return acc;
+
+  // Döviz toplam = adet * birim fiyat (orijinal)
+  const totalFCY = Number(it.quantity || 0) * Number(it.unitPrice || 0);
+
+  acc[cur] = (acc[cur] || 0) + totalFCY;
+  return acc;
+}, {});
 
     // =========================
     // 📄 PDF BAŞLANGIÇ
@@ -115,7 +145,9 @@ export default async function handler(req, res) {
     y += 16;
 
     doc.fontSize(9).text(
-      `Vergi Dairesi: ${company?.vergiDairesi || "-"}   Vergi No: ${company?.vergiNo || "-"}`,
+      `Vergi Dairesi: ${company?.vergiDairesi || "-"}   Vergi No: ${
+        company?.vergiNo || "-"
+      }`,
       40,
       y
     );
@@ -132,14 +164,24 @@ export default async function handler(req, res) {
     // =========================
     const cariName =
       purchase?.accountId?.unvan ||
-      purchase?.accountName ||
       purchase?.accountId?.firmaAdi ||
+      purchase?.accountId?.ad ||
+      purchase?.accountId?.name ||
+      purchase?.accountId?.title ||
+      purchase?.accountId?.adSoyad ||
+      purchase?.accountName ||
       "—";
 
-    doc.fontSize(10).text(`Cari: ${cariName}`, 40, y);
+    doc.fontSize(10).text(`Tedarikçi: ${cariName}`, 40, y);
     y += 14;
 
-    doc.text(`Tarih: ${new Date(purchase.date || new Date()).toLocaleDateString("tr-TR")}`, 40, y);
+    doc.text(
+      `Tarih: ${new Date(purchase.date || new Date()).toLocaleDateString(
+        "tr-TR"
+      )}`,
+      40,
+      y
+    );
     y += 20;
 
     // =========================
@@ -148,12 +190,18 @@ export default async function handler(req, res) {
     doc.rect(40, y, 510, 20).fill("#f2f2f2");
     doc.fillColor("#000").fontSize(9);
 
-    doc.text("Ürün", 45, y + 6);
-    doc.text("Adet", 275, y + 6, { width: 45, align: "right" });
-    doc.text("Birim", 325, y + 6, { width: 55, align: "right" });
-    doc.text("KDV%", 385, y + 6, { width: 45, align: "right" });
-    doc.text("KDV₺", 430, y + 6, { width: 55, align: "right" });
-    doc.text("Toplam", 485, y + 6, { width: 65, align: "right" });
+    doc.text("Ürün", 45, y + 6, { width: 195 });
+    doc.text("Adet", 240, y + 6, { width: 40, align: "right" });
+    doc.text("Birim", 280, y + 6, { width: 55, align: "right" });
+
+    // ✅ Yeni sütunlar
+    doc.text("Para", 335, y + 6, { width: 35, align: "right" });
+    doc.text("Kur", 370, y + 6, { width: 45, align: "right" });
+
+    doc.text("KDV%", 415, y + 6, { width: 35, align: "right" });
+    doc.text("KDV₺", 450, y + 6, { width: 45, align: "right" });
+
+    doc.text("Toplam ₺", 495, y + 6, { width: 55, align: "right" });
 
     y += 25;
 
@@ -163,15 +211,40 @@ export default async function handler(req, res) {
     for (const it of items) {
       doc.fontSize(9).fillColor("#000");
 
-      doc.text(it.name || "-", 45, y, { width: 220 });
+      doc.text(it.name || "-", 45, y, { width: 195 });
 
-      doc.text(String(it.quantity || 0), 275, y, { width: 45, align: "right" });
-      doc.text(Number(it.unitPrice || 0).toFixed(2), 325, y, { width: 55, align: "right" });
+      doc.text(String(it.quantity || 0), 240, y, { width: 40, align: "right" });
+      doc.text(Number(it.unitPrice || 0).toFixed(2), 280, y, {
+        width: 55,
+        align: "right",
+      });
 
-      doc.text(String(it.vatRate || 0), 385, y, { width: 45, align: "right" });
-      doc.text(Number(it.vatAmount || 0).toFixed(2), 430, y, { width: 55, align: "right" });
+      // ✅ Para / Kur
+      doc.text(String(it.currency || "TRY"), 335, y, {
+        width: 35,
+        align: "right",
+      });
 
-      doc.text(Number(it.total || 0).toFixed(2), 485, y, { width: 65, align: "right" });
+      doc.text(Number(it.fxRate || 1).toFixed(4), 370, y, {
+        width: 45,
+        align: "right",
+      });
+
+      doc.text(String(it.vatRate || 0), 415, y, {
+        width: 35,
+        align: "right",
+      });
+
+      doc.text(Number(it.vatAmount || 0).toFixed(2), 450, y, {
+        width: 45,
+        align: "right",
+      });
+
+      // ✅ TL toplam
+      doc.text(Number(it.total || 0).toFixed(2), 495, y, {
+        width: 55,
+        align: "right",
+      });
 
       y += 16;
 
@@ -188,24 +261,50 @@ export default async function handler(req, res) {
     doc.moveTo(350, y).lineTo(550, y).stroke();
     y += 10;
 
-    doc.fontSize(10).text(`Ara Toplam: ${araToplam.toFixed(2)} TL`, 350, y, { align: "right" });
+    doc.fontSize(10).text(`Ara Toplam: ${araToplam.toFixed(2)} TL`, 350, y, {
+      align: "right",
+    });
     y += 14;
-    doc.fontSize(10).text(`KDV Toplam: ${kdvToplam.toFixed(2)} TL`, 350, y, { align: "right" });
+
+    doc.fontSize(10).text(`KDV Toplam: ${kdvToplam.toFixed(2)} TL`, 350, y, {
+      align: "right",
+    });
     y += 16;
 
     doc.fontSize(12).text(`GENEL TOPLAM: ${genelToplam.toFixed(2)} TL`, 350, y, {
       align: "right",
     });
 
+    // ✅ Döviz Genel Toplamları
+const fxLines = Object.entries(fxTotals);
+
+if (fxLines.length > 0) {
+  y += 18;
+  doc.fontSize(10).fillColor("#000");
+
+  for (const [cur, amount] of fxLines) {
+    doc.text(
+      `Döviz Genel Toplam (${cur}): ${Number(amount || 0).toFixed(2)} ${cur}`,
+      350,
+      y,
+      { align: "right" }
+    );
+    y += 14;
+  }
+}
+
     // =========================
     // 🔻 FOOTER
     // =========================
-    doc.fontSize(8).fillColor("#666").text(
-      "Bu belge SatışTakip ERP tarafından oluşturulmuştur.",
-      40,
-      doc.page.height - 40,
-      { align: "center", width: 510 }
-    );
+    doc
+      .fontSize(8)
+      .fillColor("#666")
+      .text(
+        "Bu belge SatışTakip ERP tarafından oluşturulmuştur.",
+        40,
+        doc.page.height - 40,
+        { align: "center", width: 510 }
+      );
 
     doc.end();
   } catch (err) {
