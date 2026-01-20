@@ -1,6 +1,5 @@
 import dbConnect from "@/lib/mongodb";
 import Teklif from "@/models/Teklif";
-import Company from "@/api/setting/Company"; // 👈 senin company model dosya adın neyse ona göre düzelt
 import { createPdf, drawLogo } from "@/lib/pdf/PdfEngine";
 
 
@@ -23,13 +22,16 @@ export default async function handler(req, res) {
     const teklif = await Teklif.findById(id).lean();
     if (!teklif) return res.status(404).json({ message: "Teklif bulunamadı" });
 
-    // ✅ MULTI TENANT firmayı userId’den çek
-    let company = null;
-    if (teklif.userId) {
-      company = await Company.findOne({ userId: teklif.userId }).lean();
-    }
+   const { db } = await connectToDatabase();
 
-    // fallback (firma ayarı yoksa patlamasın)
+let company = null;
+if (teklif.userId) {
+  company = await db.collection("company_settings").findOne({
+    userId: teklif.userId,
+  });
+}
+
+        // fallback (firma ayarı yoksa patlamasın)
     const firma = {
       name: company?.name || "Kurumsal Tedarikçi",
       address: company?.address || "",
