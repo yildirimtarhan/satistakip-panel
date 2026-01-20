@@ -30,15 +30,15 @@ export default async function handler(req, res) {
       });
     }
 
-    // ✅ fallback (firma ayarı yoksa patlamasın)
+    // ✅ fallback
     const firma = {
       name: company?.firmaAdi || "Kurumsal Tedarikçi",
       address: company?.adres || "",
       city: company?.il || "",
       phone: company?.telefon || "",
       email: company?.eposta || "",
-      website: company?.web || "www.satistakip.online",
-      logoUrl: company?.logo || "", // Cloudinary URL olabilir
+      website: company?.web || "www.tedarikci.org.tr",
+      logoUrl: company?.logo || "",
     };
 
     // ✅ PDF START
@@ -55,14 +55,14 @@ export default async function handler(req, res) {
     const right = pageWidth - 40;
 
     // ----------------------------------------------------
-    // ✅ HEADER (Logo + Firma bilgisi + Teklif bilgisi)
+    // ✅ HEADER
     // ----------------------------------------------------
     const headerTop = 40;
 
     // ✅ logo
     if (firma.logoUrl) {
       try {
-        await drawLogo(doc, firma.logoUrl, left, headerTop, 65);
+        await drawLogo(doc, firma.logoUrl, left, headerTop, 55);
       } catch (e) {
         console.log("Logo basılamadı:", e.message);
       }
@@ -70,29 +70,31 @@ export default async function handler(req, res) {
 
     // ✅ Firma başlık
     doc
-      .fontSize(14)
+      .fontSize(13)
       .fillColor("#000")
-      .text(firma.name, left + 80, headerTop);
+      .text(firma.name, left + 70, headerTop);
 
     doc
       .fontSize(9)
       .fillColor("#333")
-      .text(firma.address ? firma.address : "", left + 80, headerTop + 18);
+      .text(firma.address || "", left + 70, headerTop + 18, {
+        width: 250,
+      });
 
     doc
       .fontSize(9)
       .fillColor("#333")
-      .text(`${firma.city ? firma.city : ""}`, left + 80, headerTop + 32);
+      .text(`${firma.city || ""}`, left + 70, headerTop + 34);
 
     doc
       .fontSize(9)
       .fillColor("#333")
-      .text(`Tel: ${firma.phone || "-"}`, left + 80, headerTop + 46);
+      .text(`Tel: ${firma.phone || "-"}`, left + 70, headerTop + 48);
 
     doc
       .fontSize(9)
       .fillColor("#333")
-      .text(`E-posta: ${firma.email || "-"}`, left + 80, headerTop + 60);
+      .text(`E-posta: ${firma.email || "-"}`, left + 70, headerTop + 62);
 
     // ✅ Teklif başlığı sağ üst
     doc
@@ -129,34 +131,59 @@ export default async function handler(req, res) {
     doc.moveDown(1);
 
     // ----------------------------------------------------
-    // ✅ TABLO
+    // ✅ TABLO (PROFESYONEL HİZALAMA)
     // ----------------------------------------------------
     const rowH = 24;
     const startY = doc.y + 10;
 
-    const col = {
-  no: left,
-  urun: left + 30,
-  adet: left + 300,
-  birim: left + 360,
-  kdv: left + 440,
-  toplam: left + 500,
-};
+    const tableWidth = right - left;
 
+    // ✅ Column widths (sabit ve kayma yapmaz)
+    const colW = {
+      no: 25,
+      urun: 250,
+      adet: 50,
+      birim: 75,
+      kdv: 50,
+      toplam: tableWidth - (25 + 250 + 50 + 75 + 50), // kalan alan
+    };
 
-    // ✅ Header row turuncu
-    doc.rect(left, startY, right - left, rowH).fill("#f59e0b");
+    const colX = {
+      no: left,
+      urun: left + colW.no,
+      adet: left + colW.no + colW.urun,
+      birim: left + colW.no + colW.urun + colW.adet,
+      kdv: left + colW.no + colW.urun + colW.adet + colW.birim,
+      toplam:
+        left + colW.no + colW.urun + colW.adet + colW.birim + colW.kdv,
+    };
+
+    // ✅ Header row
+    doc.rect(left, startY, tableWidth, rowH).fill("#f59e0b");
     doc.fillColor("#fff").fontSize(10);
 
-    doc.text("#", col.no, startY + 7);
-    doc.text("Ürün", col.urun, startY + 7);
-    doc.text("Adet", col.adet, startY + 7);
-    doc.text("Birim Fiyat", col.birim, startY + 7);
-    doc.text("KDV", col.kdv, startY + 7);
-    doc.text("Toplam", col.toplam, startY + 7, {
-  width: right - col.toplam,
-  align: "right",
-});
+    doc.text("#", colX.no + 5, startY + 7, { width: colW.no - 5 });
+    doc.text("Ürün", colX.urun + 5, startY + 7, { width: colW.urun - 10 });
+
+    doc.text("Adet", colX.adet, startY + 7, {
+      width: colW.adet,
+      align: "center",
+    });
+
+    doc.text("Birim", colX.birim, startY + 7, {
+      width: colW.birim,
+      align: "right",
+    });
+
+    doc.text("KDV", colX.kdv, startY + 7, {
+      width: colW.kdv,
+      align: "center",
+    });
+
+    doc.text("Toplam", colX.toplam, startY + 7, {
+      width: colW.toplam,
+      align: "right",
+    });
 
     doc.fillColor("#000");
 
@@ -167,7 +194,9 @@ export default async function handler(req, res) {
     let kdvToplam = 0;
     let genelToplam = 0;
 
-    items.forEach((k, idx) => {
+    for (let idx = 0; idx < items.length; idx++) {
+      const k = items[idx];
+
       const adet = Number(k.adet || 0);
       const birimFiyat = Number(k.birimFiyat || 0);
       const kdvOrani = Number(k.kdvOrani || 0);
@@ -180,30 +209,44 @@ export default async function handler(req, res) {
       kdvToplam += satirKdv;
       genelToplam += satirGenel;
 
-      // sayfa taşması
-      if (y > pageHeight - 160) {
+      // ✅ alt boşluk kontrolü (tek sayfa taşma engeli)
+      if (y > pageHeight - 170) {
         doc.addPage();
         y = 60;
       }
 
       doc.fontSize(9).fillColor("#000");
-      doc.text(String(idx + 1), col.no, y + 7);
 
-      doc.text(String(k.urunAdi || "-"), col.urun, y + 7, {
-  width: 255,
-  ellipsis: true,
-});
+      doc.text(String(idx + 1), colX.no + 5, y + 7, {
+        width: colW.no - 5,
+      });
 
+      doc.text(String(k.urunAdi || "-"), colX.urun + 5, y + 7, {
+        width: colW.urun - 10,
+        ellipsis: true,
+      });
 
-      doc.text(String(adet), col.adet, y + 7);
-      doc.text(`${money(birimFiyat)} TL`, col.birim, y + 7);
-      doc.text(`${kdvOrani}%`, col.kdv, y + 7);
-      doc.text(`${money(satirGenel)} TL`, col.toplam, y + 7, {
-  width: right - col.toplam,
-  align: "right",
-});
+      doc.text(String(adet), colX.adet, y + 7, {
+        width: colW.adet,
+        align: "center",
+      });
 
+      doc.text(`${money(birimFiyat)} TL`, colX.birim, y + 7, {
+        width: colW.birim,
+        align: "right",
+      });
 
+      doc.text(`${kdvOrani}%`, colX.kdv, y + 7, {
+        width: colW.kdv,
+        align: "center",
+      });
+
+      doc.text(`${money(satirGenel)} TL`, colX.toplam, y + 7, {
+        width: colW.toplam,
+        align: "right",
+      });
+
+      // çizgi
       doc
         .moveTo(left, y + rowH)
         .lineTo(right, y + rowH)
@@ -211,20 +254,22 @@ export default async function handler(req, res) {
         .stroke();
 
       y += rowH;
-    });
+    }
 
     // ----------------------------------------------------
     // ✅ TOPLAM KUTUSU
     // ----------------------------------------------------
-    const boxW = 250;
+    const boxW = 260;
+    const boxH = 95;
     const boxX = right - boxW;
-    const boxY = y + 25;
+    const boxY = Math.min(y + 25, pageHeight - 140);
 
     doc.strokeColor("#000");
-    doc.rect(boxX, boxY, boxW, 95).stroke();
+    doc.rect(boxX, boxY, boxW, boxH).stroke();
 
     doc.fontSize(11).fillColor("#000");
     doc.text(`Ara Toplam: ${money(araToplam)} TL`, boxX + 12, boxY + 12);
+
     doc.text(`KDV: ${money(kdvToplam)} TL`, boxX + 12, boxY + 40);
 
     doc.fontSize(12).fillColor("#000");
@@ -238,6 +283,7 @@ export default async function handler(req, res) {
       .fillColor("#666")
       .text(`${firma.name} • ${firma.website}`, left, pageHeight - 45, {
         align: "center",
+        width: right - left,
       });
 
     doc.end();
