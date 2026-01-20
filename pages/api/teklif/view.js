@@ -1,10 +1,15 @@
 import dbConnect from "@/lib/mongodb";
 import Teklif from "@/models/Teklif";
-import { createPdf } from "@/lib/pdf/PdfEngine";
+import Company from "@/api/setting/Company"; // 👈 senin company model dosya adın neyse ona göre düzelt
+import { createPdf, drawLogo } from "@/lib/pdf/PdfEngine";
+
 
 const money = (n) => {
   const num = Number(n || 0);
-  return num.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return num.toLocaleString("tr-TR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 };
 
 export default async function handler(req, res) {
@@ -14,8 +19,26 @@ export default async function handler(req, res) {
     const { id } = req.query;
     if (!id) return res.status(400).json({ message: "id gerekli" });
 
+    // ✅ teklif
     const teklif = await Teklif.findById(id).lean();
     if (!teklif) return res.status(404).json({ message: "Teklif bulunamadı" });
+
+    // ✅ MULTI TENANT firmayı userId’den çek
+    let company = null;
+    if (teklif.userId) {
+      company = await Company.findOne({ userId: teklif.userId }).lean();
+    }
+
+    // fallback (firma ayarı yoksa patlamasın)
+    const firma = {
+      name: company?.name || "Kurumsal Tedarikçi",
+      address: company?.address || "",
+      city: company?.city || "",
+      phone: company?.phone || "",
+      email: company?.email || "",
+      website: company?.website || "www.satistakip.online",
+      logoUrl: company?.logoUrl || "", // cloudinary/https link olmalı
+    };
 
     const doc = createPdf(res, {
       title: `Teklif-${teklif.number || id}`,
@@ -23,55 +46,126 @@ export default async function handler(req, res) {
       inline: true,
     });
 
-    // ✅ Sayfa ayarları
     const pageWidth = doc.page.width;
+    const pageHeight = doc.page.height;
+
     const left = 40;
     const right = pageWidth - 40;
 
-    // ✅ Header
-    doc.fontSize(18).text("TEKLİF FORMU", { align: "center" });
-    doc.moveDown(0.5);
+    // ----------------------------------------------------
+    // ✅ HEADER (Logo + Firma bilgisi + Teklif bilgisi)
+    // ----------------------------------------------------
 
-    doc.fontSize(11);
-    doc.text(`Teklif No: ${teklif.number || "-"}`, left, doc.y);
-    doc.text(
-      `Tarih: ${new Date(teklif.createdAt || Date.now()).toLocaleString("tr-TR")}`,
-      { align: "right" }
-    );
+    const headerTop = 40;
 
-    doc.moveDown(0.3);
-    doc.text(`Cari Ünvan: ${teklif.cariUnvan || "-"}`);
-    doc.moveDown(0.8);
+    // logo
+    if (firma.logoUrl) {
+      try {
+        // pdfkit image sadece local path sever, ama senin PdfEngine içinde url destekleyen çözüm varsa oraya uyarlarız.
+        // Şimdilik direkt deniyoruz (yerel ise çalışır).
+        await drawLogo(doc, firma.logo, left, headerTop, 65);
 
-    // ✅ TABLO BAŞLIK
-    const startY = doc.y;
-    const rowH = 22;
+      } catch (e) {
+        // logo patlarsa pdf bozulmasın
+        console.log("Logo basılamadı:", e.message);
+      }
+    }
 
-    // kolon genişlikleri
+    // Firma başlık
+    doc
+      .fontSize(14)
+      .fillColor("#000")
+      .text(firma.name, left + 80, headerTop);
+
+    doc
+      .fontSize(9)
+      .fillColor("#333")
+      .text(firma.address ? firma.address : "", left + 80, headerTop + 18);
+
+    doc
+      .fontSize(9)
+      .fillColor("#333")
+      .text(
+        `${firma.city ? firma.city : ""}`,
+        left + 80,
+        headerTop + 32
+      );
+
+    doc
+      .fontSize(9)
+      .fillColor("#333")
+      .text(`Tel: ${firma.phone || "-"}`, left + 80, headerTop + 46);
+
+    doc
+      .fontSize(9)
+      .fillColor("#333")
+      .text(`E-posta: ${firma.email || "-"}`, left + 80, headerTop + 60);
+
+    // Teklif başlığı sağ üst
+    doc
+      .fontSize(16)
+      .fillColor("#000")
+      .text("TEKLİF FORM", left, headerTop, { align: "right" });
+
+    doc
+      .fontSize(9)
+      .fillColor("#333")
+      .text(
+        `Tarih: ${new Date(teklif.createdAt || Date.now()).toLocaleDateString(
+          "tr-TR"
+        )}`,
+        left,
+        headerTop + 22,
+        { align: "right" }
+      );
+
+    doc
+      .fontSize(9)
+      .fillColor("#333")
+      .text(`Teklif No: ${teklif.number || "-"}`, left, headerTop + 36, {
+        align: "right",
+      });
+
+    // müşteri blok
+    doc.moveDown(4);
+
+    doc
+      .fontSize(10)
+      .fillColor("#000")
+      .text(`Cari Ünvan: ${teklif.cariUnvan || "-"}`, left, doc.y + 10);
+
+    doc.moveDown(1);
+
+    // ----------------------------------------------------
+    // ✅ TABLO
+    // ----------------------------------------------------
+
+    const rowH = 24;
+    const startY = doc.y + 10;
+
     const col = {
       no: left,
       urun: left + 30,
-      adet: left + 310,
-      birim: left + 360,
-      kdvoran: left + 440,
-      toplam: left + 500,
+      adet: left + 320,
+      birim: left + 375,
+      kdv: left + 455,
+      toplam: left + 520,
     };
 
-    // Başlık satırı arka plan
-    doc.rect(left, startY, right - left, rowH).fill("#f2f2f2");
-    doc.fillColor("#000").fontSize(10);
+    // Header row background (turuncu)
+    doc.rect(left, startY, right - left, rowH).fill("#f59e0b");
+    doc.fillColor("#fff").fontSize(10);
 
-    doc.text("#", col.no, startY + 6);
-    doc.text("Ürün", col.urun, startY + 6);
-    doc.text("Adet", col.adet, startY + 6);
-    doc.text("Birim", col.birim, startY + 6);
-    doc.text("KDV%", col.kdvoran, startY + 6);
-    doc.text("Toplam", col.toplam, startY + 6);
+    doc.text("#", col.no, startY + 7);
+    doc.text("Ürün", col.urun, startY + 7);
+    doc.text("Adet", col.adet, startY + 7);
+    doc.text("Birim Fiyat", col.birim, startY + 7);
+    doc.text("KDV", col.kdv, startY + 7);
+    doc.text("Toplam", col.toplam, startY + 7);
 
-    // Başlık alt çizgi
-    doc.moveTo(left, startY + rowH).lineTo(right, startY + rowH).stroke();
+    // reset
+    doc.fillColor("#000");
 
-    // ✅ TABLO SATIRLARI
     let y = startY + rowH;
 
     const items = teklif.kalemler || [];
@@ -83,7 +177,7 @@ export default async function handler(req, res) {
     items.forEach((k, idx) => {
       const adet = Number(k.adet || 0);
       const birimFiyat = Number(k.birimFiyat || 0);
-      const kdvOrani = Number(k.kdvOrani || k.kdv || 0);
+      const kdvOrani = Number(k.kdvOrani || 0);
 
       const satirAra = adet * birimFiyat;
       const satirKdv = satirAra * (kdvOrani / 100);
@@ -93,53 +187,56 @@ export default async function handler(req, res) {
       kdvToplam += satirKdv;
       genelToplam += satirGenel;
 
-      // sayfa taşarsa yeni sayfa
-      if (y > doc.page.height - 120) {
+      // sayfa taşması
+      if (y > pageHeight - 160) {
         doc.addPage();
-        y = 50;
+        y = 60;
       }
 
       doc.fontSize(9).fillColor("#000");
-      doc.text(String(idx + 1), col.no, y + 6);
-      doc.text(String(k.urunAdi || "-"), col.urun, y + 6, { width: col.adet - col.urun - 5 });
-      doc.text(String(adet), col.adet, y + 6);
-      doc.text(money(birimFiyat), col.birim, y + 6);
-      doc.text(String(kdvOrani), col.kdvoran, y + 6);
-      doc.text(money(satirGenel), col.toplam, y + 6);
+      doc.text(String(idx + 1), col.no, y + 7);
+      doc.text(String(k.urunAdi || "-"), col.urun, y + 7, {
+        width: col.adet - col.urun - 10,
+      });
+      doc.text(String(adet), col.adet, y + 7);
+      doc.text(`${money(birimFiyat)} TL`, col.birim, y + 7);
+      doc.text(`${kdvOrani}%`, col.kdv, y + 7);
+      doc.text(`${money(satirGenel)} TL`, col.toplam, y + 7);
 
-      // satır alt çizgi
+      // satır çizgi
       doc.moveTo(left, y + rowH).lineTo(right, y + rowH).strokeColor("#e5e5e5").stroke();
-
       y += rowH;
     });
 
-    doc.strokeColor("#000");
-
-    doc.moveDown(2);
-
-    // ✅ TOPLAM ALANI (sağda)
-    const summaryY = y + 20;
-    const boxW = 240;
+    // ----------------------------------------------------
+    // ✅ TOPLAM KUTUSU
+    // ----------------------------------------------------
+    const boxW = 250;
     const boxX = right - boxW;
+    const boxY = y + 25;
 
-    doc.rect(boxX, summaryY, boxW, 90).stroke();
+    doc.strokeColor("#000");
+    doc.rect(boxX, boxY, boxW, 95).stroke();
 
     doc.fontSize(11).fillColor("#000");
-    doc.text(`Ara Toplam: ${money(araToplam)} TL`, boxX + 10, summaryY + 12);
-    doc.text(`KDV Toplam: ${money(kdvToplam)} TL`, boxX + 10, summaryY + 34);
+    doc.text(`Ara Toplam: ${money(araToplam)} TL`, boxX + 12, boxY + 12);
+    doc.text(`KDV: ${money(kdvToplam)} TL`, boxX + 12, boxY + 40);
 
-    doc.fontSize(12).font("Roboto");
-    doc.text(`Genel Toplam: ${money(genelToplam)} TL`, boxX + 10, summaryY + 60);
+    doc.fontSize(12).fillColor("#000");
+    doc.text(`Genel Toplam: ${money(genelToplam)} TL`, boxX + 12, boxY + 68);
 
-    doc.moveDown(3);
-
-    // ✅ Alt bilgi
+    // ----------------------------------------------------
+    // ✅ FOOTER
+    // ----------------------------------------------------
     doc
       .fontSize(9)
       .fillColor("#666")
-      .text("Bu belge SatışTakip ERP tarafından otomatik oluşturulmuştur.", left, doc.page.height - 50, {
-        align: "center",
-      });
+      .text(
+        `${firma.name} • ${firma.website}`,
+        left,
+        pageHeight - 45,
+        { align: "center" }
+      );
 
     doc.end();
   } catch (err) {
