@@ -135,13 +135,14 @@ export default async function handler(req, res) {
     const startY = doc.y + 10;
 
     const col = {
-      no: left,
-      urun: left + 30,
-      adet: left + 320,
-      birim: left + 375,
-      kdv: left + 455,
-      toplam: left + 520,
-    };
+  no: left,
+  urun: left + 30,
+  adet: left + 300,
+  birim: left + 360,
+  kdv: left + 440,
+  toplam: left + 500,
+};
+
 
     // ✅ Header row turuncu
     doc.rect(left, startY, right - left, rowH).fill("#f59e0b");
@@ -152,7 +153,10 @@ export default async function handler(req, res) {
     doc.text("Adet", col.adet, startY + 7);
     doc.text("Birim Fiyat", col.birim, startY + 7);
     doc.text("KDV", col.kdv, startY + 7);
-    doc.text("Toplam", col.toplam, startY + 7);
+    doc.text("Toplam", col.toplam, startY + 7, {
+  width: right - col.toplam,
+  align: "right",
+});
 
     doc.fillColor("#000");
 
@@ -186,13 +190,19 @@ export default async function handler(req, res) {
       doc.text(String(idx + 1), col.no, y + 7);
 
       doc.text(String(k.urunAdi || "-"), col.urun, y + 7, {
-        width: col.adet - col.urun - 10,
-      });
+  width: 255,
+  ellipsis: true,
+});
+
 
       doc.text(String(adet), col.adet, y + 7);
       doc.text(`${money(birimFiyat)} TL`, col.birim, y + 7);
       doc.text(`${kdvOrani}%`, col.kdv, y + 7);
-      doc.text(`${money(satirGenel)} TL`, col.toplam, y + 7);
+      doc.text(`${money(satirGenel)} TL`, col.toplam, y + 7, {
+  width: right - col.toplam,
+  align: "right",
+});
+
 
       doc
         .moveTo(left, y + rowH)
