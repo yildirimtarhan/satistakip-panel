@@ -1,7 +1,6 @@
-import dbConnect from "@/lib/mongodb";
+import { connectToDatabase } from "@/lib/mongodb";
 import Teklif from "@/models/Teklif";
 import { createPdf, drawLogo } from "@/lib/pdf/PdfEngine";
-
 
 const money = (n) => {
   const num = Number(n || 0);
@@ -13,35 +12,36 @@ const money = (n) => {
 
 export default async function handler(req, res) {
   try {
-    await dbConnect();
-
     const { id } = req.query;
     if (!id) return res.status(400).json({ message: "id gerekli" });
+
+    // ✅ DB
+    const { db } = await connectToDatabase();
 
     // ✅ teklif
     const teklif = await Teklif.findById(id).lean();
     if (!teklif) return res.status(404).json({ message: "Teklif bulunamadı" });
 
-   const { db } = await connectToDatabase();
+    // ✅ MULTI TENANT firma ayarı userId’den çek
+    let company = null;
+    if (teklif.userId) {
+      company = await db.collection("company_settings").findOne({
+        userId: teklif.userId,
+      });
+    }
 
-let company = null;
-if (teklif.userId) {
-  company = await db.collection("company_settings").findOne({
-    userId: teklif.userId,
-  });
-}
-
-        // fallback (firma ayarı yoksa patlamasın)
+    // ✅ fallback (firma ayarı yoksa patlamasın)
     const firma = {
-      name: company?.name || "Kurumsal Tedarikçi",
-      address: company?.address || "",
-      city: company?.city || "",
-      phone: company?.phone || "",
-      email: company?.email || "",
-      website: company?.website || "www.satistakip.online",
-      logoUrl: company?.logoUrl || "", // cloudinary/https link olmalı
+      name: company?.firmaAdi || "Kurumsal Tedarikçi",
+      address: company?.adres || "",
+      city: company?.il || "",
+      phone: company?.telefon || "",
+      email: company?.eposta || "",
+      website: company?.web || "www.satistakip.online",
+      logoUrl: company?.logo || "", // Cloudinary URL olabilir
     };
 
+    // ✅ PDF START
     const doc = createPdf(res, {
       title: `Teklif-${teklif.number || id}`,
       fileName: `Teklif-${teklif.number || id}`,
@@ -57,23 +57,18 @@ if (teklif.userId) {
     // ----------------------------------------------------
     // ✅ HEADER (Logo + Firma bilgisi + Teklif bilgisi)
     // ----------------------------------------------------
-
     const headerTop = 40;
 
-    // logo
+    // ✅ logo
     if (firma.logoUrl) {
       try {
-        // pdfkit image sadece local path sever, ama senin PdfEngine içinde url destekleyen çözüm varsa oraya uyarlarız.
-        // Şimdilik direkt deniyoruz (yerel ise çalışır).
-        await drawLogo(doc, firma.logo, left, headerTop, 65);
-
+        await drawLogo(doc, firma.logoUrl, left, headerTop, 65);
       } catch (e) {
-        // logo patlarsa pdf bozulmasın
         console.log("Logo basılamadı:", e.message);
       }
     }
 
-    // Firma başlık
+    // ✅ Firma başlık
     doc
       .fontSize(14)
       .fillColor("#000")
@@ -87,11 +82,7 @@ if (teklif.userId) {
     doc
       .fontSize(9)
       .fillColor("#333")
-      .text(
-        `${firma.city ? firma.city : ""}`,
-        left + 80,
-        headerTop + 32
-      );
+      .text(`${firma.city ? firma.city : ""}`, left + 80, headerTop + 32);
 
     doc
       .fontSize(9)
@@ -103,7 +94,7 @@ if (teklif.userId) {
       .fillColor("#333")
       .text(`E-posta: ${firma.email || "-"}`, left + 80, headerTop + 60);
 
-    // Teklif başlığı sağ üst
+    // ✅ Teklif başlığı sağ üst
     doc
       .fontSize(16)
       .fillColor("#000")
@@ -128,7 +119,6 @@ if (teklif.userId) {
         align: "right",
       });
 
-    // müşteri blok
     doc.moveDown(4);
 
     doc
@@ -141,7 +131,6 @@ if (teklif.userId) {
     // ----------------------------------------------------
     // ✅ TABLO
     // ----------------------------------------------------
-
     const rowH = 24;
     const startY = doc.y + 10;
 
@@ -154,7 +143,7 @@ if (teklif.userId) {
       toplam: left + 520,
     };
 
-    // Header row background (turuncu)
+    // ✅ Header row turuncu
     doc.rect(left, startY, right - left, rowH).fill("#f59e0b");
     doc.fillColor("#fff").fontSize(10);
 
@@ -165,11 +154,9 @@ if (teklif.userId) {
     doc.text("KDV", col.kdv, startY + 7);
     doc.text("Toplam", col.toplam, startY + 7);
 
-    // reset
     doc.fillColor("#000");
 
     let y = startY + rowH;
-
     const items = teklif.kalemler || [];
 
     let araToplam = 0;
@@ -197,16 +184,22 @@ if (teklif.userId) {
 
       doc.fontSize(9).fillColor("#000");
       doc.text(String(idx + 1), col.no, y + 7);
+
       doc.text(String(k.urunAdi || "-"), col.urun, y + 7, {
         width: col.adet - col.urun - 10,
       });
+
       doc.text(String(adet), col.adet, y + 7);
       doc.text(`${money(birimFiyat)} TL`, col.birim, y + 7);
       doc.text(`${kdvOrani}%`, col.kdv, y + 7);
       doc.text(`${money(satirGenel)} TL`, col.toplam, y + 7);
 
-      // satır çizgi
-      doc.moveTo(left, y + rowH).lineTo(right, y + rowH).strokeColor("#e5e5e5").stroke();
+      doc
+        .moveTo(left, y + rowH)
+        .lineTo(right, y + rowH)
+        .strokeColor("#e5e5e5")
+        .stroke();
+
       y += rowH;
     });
 
@@ -233,12 +226,9 @@ if (teklif.userId) {
     doc
       .fontSize(9)
       .fillColor("#666")
-      .text(
-        `${firma.name} • ${firma.website}`,
-        left,
-        pageHeight - 45,
-        { align: "center" }
-      );
+      .text(`${firma.name} • ${firma.website}`, left, pageHeight - 45, {
+        align: "center",
+      });
 
     doc.end();
   } catch (err) {
