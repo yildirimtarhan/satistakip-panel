@@ -41,6 +41,19 @@ export default async function handler(req, res) {
       logoUrl: company?.logo || "",
     };
 
+    // ✅ Geçerlilik (3 gün)
+    const teklifTarihi = teklif.createdAt ? new Date(teklif.createdAt) : new Date();
+    const gecerlilikBaslangic = new Date(teklifTarihi);
+    const gecerlilikBitis = new Date(teklifTarihi);
+    gecerlilikBitis.setDate(gecerlilikBitis.getDate() + 3);
+
+    const trDate = (d) =>
+      new Date(d).toLocaleDateString("tr-TR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      });
+
     // ✅ PDF START
     const doc = createPdf(res, {
       title: `Teklif-${teklif.number || id}`,
@@ -78,7 +91,7 @@ export default async function handler(req, res) {
       .fontSize(9)
       .fillColor("#333")
       .text(firma.address || "", left + 70, headerTop + 18, {
-        width: 250,
+        width: 260,
       });
 
     doc
@@ -105,19 +118,29 @@ export default async function handler(req, res) {
     doc
       .fontSize(9)
       .fillColor("#333")
-      .text(
-        `Tarih: ${new Date(teklif.createdAt || Date.now()).toLocaleDateString(
-          "tr-TR"
-        )}`,
-        left,
-        headerTop + 22,
-        { align: "right" }
-      );
+      .text(`Tarih: ${trDate(teklifTarihi)}`, left, headerTop + 22, {
+        align: "right",
+      });
 
     doc
       .fontSize(9)
       .fillColor("#333")
       .text(`Teklif No: ${teklif.number || "-"}`, left, headerTop + 36, {
+        align: "right",
+      });
+
+    // ✅ Geçerlilik Tarihleri (Profesyonel blok)
+    doc
+      .fontSize(9)
+      .fillColor("#333")
+      .text(`Geçerlilik Başlangıç: ${trDate(gecerlilikBaslangic)}`, left, headerTop + 52, {
+        align: "right",
+      });
+
+    doc
+      .fontSize(9)
+      .fillColor("#333")
+      .text(`Geçerlilik Bitiş: ${trDate(gecerlilikBitis)}`, left, headerTop + 66, {
         align: "right",
       });
 
@@ -209,8 +232,8 @@ export default async function handler(req, res) {
       kdvToplam += satirKdv;
       genelToplam += satirGenel;
 
-      // ✅ alt boşluk kontrolü (tek sayfa taşma engeli)
-      if (y > pageHeight - 170) {
+      // ✅ alt boşluk kontrolü
+      if (y > pageHeight - 260) {
         doc.addPage();
         y = 60;
       }
@@ -262,7 +285,7 @@ export default async function handler(req, res) {
     const boxW = 260;
     const boxH = 95;
     const boxX = right - boxW;
-    const boxY = Math.min(y + 25, pageHeight - 140);
+    const boxY = Math.min(y + 25, pageHeight - 360);
 
     doc.strokeColor("#000");
     doc.rect(boxX, boxY, boxW, boxH).stroke();
@@ -274,6 +297,73 @@ export default async function handler(req, res) {
 
     doc.fontSize(12).fillColor("#000");
     doc.text(`Genel Toplam: ${money(genelToplam)} TL`, boxX + 12, boxY + 68);
+
+    // ----------------------------------------------------
+    // ✅ BANKA + NOTLAR + İMZA (PROFESYONEL BLOK)
+    // ----------------------------------------------------
+    let infoY = boxY + boxH + 20;
+
+    // Sayfa sonuna çok yaklaşırsa yeni sayfa
+    if (infoY > pageHeight - 220) {
+      doc.addPage();
+      infoY = 60;
+    }
+
+    // ✅ Banka Bloğu (Sol)
+    doc.fontSize(11).fillColor("#000").text("BANKA HESAP BİLGİLERİMİZ", left, infoY);
+
+    doc.fontSize(9).fillColor("#333");
+    doc.text("Banka: TOM-BANK", left, infoY + 18);
+    doc.text("Hesap Sahibi: YILDIRIM AYLUÇTARHAN", left, infoY + 32);
+    doc.text("IBAN: TR69 0021 3000 0007 7934 7000 01", left, infoY + 46);
+
+    // ✅ Notlar Bloğu (Sağ)
+    const notesX = left + 290;
+    doc.fontSize(11).fillColor("#000").text("NOTLAR / TEKLİF ŞARTLARI", notesX, infoY);
+
+    doc.fontSize(9).fillColor("#333");
+
+    const notes = [
+      "1. Teklifimiz teklif tarihinden itibaren 3 gün geçerli olup, geçerlilik bitiş tarihi PDF üzerinde ayrıca belirtilmiştir.",
+      "2. Ürün/ hizmet bedelleri belirtilen miktar ve koşullar için geçerlidir.",
+      "3. Teslimat süresi, ödeme onayı ve stok durumuna göre değişiklik gösterebilir.",
+      "4. Ödeme yöntemi: Havale / EFT.",
+      "5. Sipariş onayı sonrası fiyat değişimi veya iptal talepleri, satıcı değerlendirmesiyle sonuçlandırılır.",
+      "6. Taraflar arasında doğabilecek uyuşmazlıklarda Türk Hukuku geçerlidir.",
+      "7. Döviz cinsinden düzenlenen teklif ve faturalarda, ödeme günü oluşacak TL karşılığı hesaplamasında T.C. Merkez Bankası Döviz Satış Kuru esas alınır.",
+    ];
+
+    let ny = infoY + 18;
+    for (const line of notes) {
+      doc.text(line, notesX, ny, {
+        width: right - notesX,
+      });
+      ny += 14;
+    }
+
+    // ✅ İmza/Kaşe Alanı
+    const signY = Math.max(ny + 15, infoY + 115);
+
+    // Sayfa sonuna yaklaşırsa yeni sayfa
+    let finalSignY = signY;
+    if (finalSignY > pageHeight - 120) {
+      doc.addPage();
+      finalSignY = 60;
+    }
+
+    doc.fontSize(10).fillColor("#000");
+    doc.text("Onaylayan Müşteri:", left, finalSignY);
+    doc.text("Tarih:", left + 310, finalSignY);
+
+    doc.fontSize(9).fillColor("#333");
+    doc.text("______________________________", left, finalSignY + 18);
+    doc.text("____ / ____ / ________", left + 310, finalSignY + 18);
+
+    doc.fontSize(10).fillColor("#000");
+    doc.text("İmza / Kaşe:", left, finalSignY + 45);
+
+    doc.fontSize(9).fillColor("#333");
+    doc.text("______________________________", left, finalSignY + 63);
 
     // ----------------------------------------------------
     // ✅ FOOTER
