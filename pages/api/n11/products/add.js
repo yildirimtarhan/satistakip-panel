@@ -5,6 +5,7 @@ import dbConnect from "@/lib/mongodb";
 import Product from "@/models/Product";
 import N11Product from "@/models/N11Product";
 import jwt from "jsonwebtoken";
+import { getN11SettingsFromRequest } from "@/lib/n11Settings";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -21,7 +22,6 @@ export default async function handler(req, res) {
 
   let user;
   try {
-    // Authorization: Bearer XXX
     const token = auth.split(" ")[1];
     user = jwt.verify(token, process.env.JWT_SECRET);
   } catch (err) {
@@ -48,7 +48,7 @@ export default async function handler(req, res) {
       .json({ success: false, message: "Ürün bulunamadı" });
   }
 
-  // ZORUNLU ALAN KONTROLLERİ
+  // ✅ ZORUNLU ALAN KONTROLLERİ
   if (!p.n11CategoryId) {
     return res.status(400).json({
       success: false,
@@ -69,13 +69,26 @@ export default async function handler(req, res) {
       ? p.aciklama
       : p.ad || "Açıklama yok";
 
-  const { N11_APP_KEY, N11_APP_SECRET } = process.env;
+  // ✅ PROFESYONEL: DB settings + ENV fallback
+  const cfg = await getN11SettingsFromRequest(req);
+
+  const N11_APP_KEY = cfg.appKey || process.env.N11_APP_KEY;
+  const N11_APP_SECRET = cfg.appSecret || process.env.N11_APP_SECRET;
+
   if (!N11_APP_KEY || !N11_APP_SECRET) {
     return res.status(500).json({
       success: false,
-      message: "N11_APP_KEY veya N11_APP_SECRET env değişkeni eksik.",
+      message:
+        "N11 API bilgileri eksik. API Ayarları'ndan girin veya ENV tanımlayın.",
     });
   }
+
+  // ✅ Görsel normalize (images / resimUrl / resimUrls hepsi destek)
+  const normalizedImages = []
+    .concat(p.images || [])
+    .concat(p.resimUrl ? [p.resimUrl] : [])
+    .concat(p.resimUrls || [])
+    .filter((u) => u && String(u).trim());
 
   // 🧩 N11 SAVE PRODUCT SOAP XML OLUŞTUR
   const xml = `
@@ -91,9 +104,7 @@ export default async function handler(req, res) {
 
         <product>
           <productSellerCode>${barkod}</productSellerCode>
-          <title>${(p.ad || "")
-            .replace(/&/g, "&amp;")
-            .slice(0, 60)}</title>
+          <title>${(p.ad || "").replace(/&/g, "&amp;").slice(0, 60)}</title>
           <description><![CDATA[${aciklama}]]></description>
 
           <category id="${p.n11CategoryId}"></category>
@@ -109,19 +120,10 @@ export default async function handler(req, res) {
           </stockItems>
 
           ${
-            p.resimUrl || (p.resimUrls && p.resimUrls.length > 0)
+            normalizedImages.length > 0
               ? `
           <images>
-            ${
-              p.resimUrl
-                ? `<image><url>${p.resimUrl}</url></image>`
-                : ""
-            }
-            ${
-              (p.resimUrls || [])
-                .map((u) => `<image><url>${u}</url></image>`)
-                .join("") || ""
-            }
+            ${normalizedImages.map((u) => `<image><url>${u}</url></image>`).join("")}
           </images>`
               : ""
           }
@@ -132,21 +134,15 @@ export default async function handler(req, res) {
   </soapenv:Envelope>`.trim();
 
   try {
-    // 🌐 N11 PRODUCT SERVICE'E İSTEK
-    const { data } = await axios.post(
-      "https://api.n11.com/ws/ProductService",
-      xml,
-      {
-        headers: {
-          "Content-Type": "text/xml;charset=UTF-8",
-          SOAPAction:
-            "http://www.n11.com/ws/schemas/ProductServicePort/SaveProduct",
-        },
-        timeout: 20000,
-      }
-    );
+    const { data } = await axios.post("https://api.n11.com/ws/ProductService", xml, {
+      headers: {
+        "Content-Type": "text/xml;charset=UTF-8",
+        SOAPAction:
+          "http://www.n11.com/ws/schemas/ProductServicePort/SaveProduct",
+      },
+      timeout: 20000,
+    });
 
-    // XML → JSON parse
     const parser = new xml2js.Parser({ explicitArray: false });
     const json = await parser.parseStringPromise(data);
 
@@ -192,17 +188,16 @@ export default async function handler(req, res) {
       });
     }
 
-    // ÜRÜN BİLGİSİ
     const productData = result.product || resp.product;
 
     if (!productData) {
       return res.status(200).json({
         success: true,
         message: "Ürün N11'e gönderildi (productId dönmedi)",
+        source: cfg.source || "env",
       });
     }
 
-    // 🔐 N11Product tablosuna kaydet (mapping)
     await N11Product.findOneAndUpdate(
       { erpProductId: p._id },
       {
@@ -213,7 +208,6 @@ export default async function handler(req, res) {
       { upsert: true }
     );
 
-    // ERP Product içine n11ProductId'yi yaz
     p.n11ProductId = productData.id;
     await p.save();
 
@@ -221,6 +215,7 @@ export default async function handler(req, res) {
       success: true,
       message: "Ürün N11'e gönderildi",
       n11ProductId: productData.id,
+      source: cfg.source || "env",
     });
   } catch (err) {
     console.error("N11 SaveProduct Error:", err.response?.data || err.message);

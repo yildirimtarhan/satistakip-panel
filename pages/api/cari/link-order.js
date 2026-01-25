@@ -1,109 +1,112 @@
 import dbConnect from "@/lib/mongodb";
+import jwt from "jsonwebtoken";
+
 import Cari from "@/models/Cari";
 import N11Order from "@/models/N11Order";
-import Transaction from "@/models/Transaction";
-import jwt from "jsonwebtoken";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ success: false, message: "Only POST" });
+    return res.status(405).json({
+      success: false,
+      message: "Method not allowed",
+    });
   }
 
-  const token = req.headers.authorization?.split(" ")[1];
-  if (!token)
-    return res.status(401).json({ message: "Token gerekli" });
-
-  let decoded;
   try {
-    decoded = jwt.verify(token, process.env.JWT_SECRET);
-  } catch {
-    return res.status(401).json({ message: "Geçersiz token" });
-  }
+    await dbConnect();
 
-  const userId = decoded.userId;
+    // ✅ TOKEN oku (Authorization veya cookie)
+    const authHeader = req.headers.authorization || "";
+    const tokenFromHeader = authHeader.startsWith("Bearer ")
+      ? authHeader.split(" ")[1]
+      : null;
 
-  const { orderNumber, cariId } = req.body || {};
-  await dbConnect();
+    const tokenFromCookie = req.cookies?.token || null;
 
-  const order = await N11Order.findOne({ orderNumber });
-  if (!order) {
-    return res.status(404).json({ success: false, message: "Sipariş bulunamadı" });
-  }
+    const token = tokenFromHeader || tokenFromCookie;
 
-  // 🟢 manuel cari seçilmişse → direkt eşleştir
-  if (cariId) {
-    const cari = await Cari.findById(cariId);
-    if (!cari) {
-      return res.status(404).json({ success: false, message: "Cari bulunamadı" });
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: "Token gerekli",
+      });
     }
 
-    order.accountId = cari._id;
-    order.userId = userId; // EKLENDİ
+    // ✅ JWT decode
+    let decoded = null;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({
+        success: false,
+        message: "Token geçersiz / süresi dolmuş",
+      });
+    }
+
+    const userId = decoded?.userId;
+    const companyId = decoded?.companyId;
+
+    if (!userId || !companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Token içinde userId/companyId yok",
+      });
+    }
+
+    const { orderNumber, cariId } = req.body || {};
+
+    if (!orderNumber || !cariId) {
+      return res.status(400).json({
+        success: false,
+        message: "orderNumber ve cariId zorunlu",
+      });
+    }
+
+    // ✅ Cari bulundu mu (multi-tenant)
+    const cari = await Cari.findOne({ _id: cariId, companyId }).lean();
+    if (!cari) {
+      return res.status(404).json({
+        success: false,
+        message: "Cari bulunamadı veya bu firmaya ait değil",
+      });
+    }
+
+    // ✅ Sipariş bulundu mu (multi-tenant)
+    const order = await N11Order.findOne({
+      orderNumber,
+      companyId,
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Sipariş bulunamadı",
+      });
+    }
+
+    // ✅ Order'a cari linkle
+    order.accountId = cari._id;   // ⭐ önemli: senin ekranda okuduğun alan
+    order.cariId = cari._id;      // (ikisini de yazıyoruz garanti olsun)
+    order.updatedBy = userId;
+
     await order.save();
 
     return res.status(200).json({
       success: true,
-      message: "Sipariş başarıyla cari ile eşleştirildi (manuel)"
+      message: "Sipariş cari ile eşleştirildi",
+      cari: {
+        _id: cari._id.toString(),
+        ad: cari.ad || "",
+        telefon: cari.telefon || "",
+        email: cari.email || "",
+      },
+    });
+  } catch (err) {
+    console.error("CARI LINK ORDER ERROR:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Sipariş cari eşleştirme sırasında hata oluştu",
+      error: err?.message || String(err),
     });
   }
-
-  // 🟣 OTOMATİK CARİ OLUŞTURMA
-  const buyer = order.buyer || {};
-  const addr = order.shippingAddress || {};
-
-  let cari = await Cari.findOne({
-    $or: [
-      { email: buyer.email || "" },
-      { ad: buyer.fullName || "" }
-    ]
-  });
-
-  if (!cari) {
-    cari = await Cari.create({
-      ad: buyer.fullName || "N11 Müşteri",
-      tur: "Müşteri",
-      telefon: buyer.gsm || "",
-      email: buyer.email || "",
-      vergiTipi: "TCKN",
-      vergiNo: buyer.tckn || "",
-      adres: addr.fullAddress?.address || "",
-      il: addr.city || "",
-      ilce: addr.fullAddress?.district || "",
-      n11CustomerId: buyer.id || "",
-      bakiye: 0,
-
-      // 🟢 EKLENDİ → Sipariş hangi firmaya aitse o firmaya eklenir
-      userId,
-    });
-  }
-
-  order.accountId = cari._id;
-  order.userId = userId; // EKLENDİ
-  await order.save();
-
-  const total =
-    Number(order.totalPrice) ||
-    Number(order.raw?.totalAmount?.value || 0) ||
-    0;
-
-  await Transaction.create({
-    accountId: cari._id,
-    type: "n11_sale",
-    quantity: 1,
-    unitPrice: total,
-    total,
-    currency: "TRY",
-    totalTRY: total,
-    date: new Date(),
-    varyant: "N11 Siparişi",
-
-    // 🟢 EKLENDİ
-    userId,
-  });
-
-  return res.status(200).json({
-    success: true,
-    message: "Sipariş cari ile otomatik eşleştirildi",
-    cariId: cari._id
-  });
 }

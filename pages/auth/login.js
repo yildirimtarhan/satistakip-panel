@@ -37,7 +37,7 @@ export default function LoginPage() {
       // 🔐 Token'ı COOKIE'ye yaz
       Cookies.set("token", data.token, {
         expires: 7,
-        secure: true,
+         secure: false, // ✅ localhost için false yap
         sameSite: "lax",
         path: "/",
       });

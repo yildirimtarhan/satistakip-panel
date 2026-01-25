@@ -1,107 +1,113 @@
-// 📁 /pages/api/cari/search.js
 import dbConnect from "@/lib/mongodb";
-import Cari from "@/models/Cari";
-
-function escapeRegex(str = "") {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+import Cari from "@/models/Cari"; // ✅ senin Cari modelinin yolu buysa kalsın, değilse düzelt
+import jwt from "jsonwebtoken";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ success: false, message: "Only POST" });
-  }
-
-  const { email = "", phone = "", fullName = "" } = req.body || {};
-
-  if (!email && !phone && !fullName) {
-    return res.status(400).json({
+    return res.status(405).json({
       success: false,
-      message: "En az bir alan gerekli: email, phone veya fullName",
+      message: "Method not allowed",
     });
   }
 
-  await dbConnect();
+  try {
+    await dbConnect();
 
-  const orConditions = [];
+    // ✅ TOKEN: Authorization header veya cookie içinden al
+    const authHeader = req.headers.authorization || "";
+    const tokenFromHeader = authHeader.startsWith("Bearer ")
+      ? authHeader.split(" ")[1]
+      : null;
 
-  // 📧 E-posta tam eşleşme
-  if (email) {
-    orConditions.push({
-      email: { $regex: "^" + escapeRegex(email) + "$", $options: "i" },
-    });
-  }
+    const tokenFromCookie = req.cookies?.token || null;
 
-  // 📱 Telefon – sadece rakamlar, son 7–10 haneye göre
-  const digits = (phone || "").replace(/\D/g, "");
-  if (digits.length >= 7) {
-    const last7 = digits.slice(-7);
-    orConditions.push({
-      telefon: { $regex: last7, $options: "i" },
-    });
-  }
+    const token = tokenFromHeader || tokenFromCookie;
 
-  // 🧑 İsim – parçalı regex
-  if (fullName) {
-    const words = fullName
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean);
-    if (words.length > 0) {
-      const pattern = words.map(escapeRegex).join(".*");
-      orConditions.push({
-        ad: { $regex: pattern, $options: "i" },
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: "Token bulunamadı. Lütfen tekrar giriş yap.",
       });
     }
+
+    // ✅ JWT decode
+    let decoded = null;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({
+        success: false,
+        message: "Token geçersiz veya süresi dolmuş.",
+      });
+    }
+
+    const userId = decoded?.userId;
+    const companyId = decoded?.companyId;
+
+    if (!userId || !companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Token içinde userId/companyId eksik.",
+      });
+    }
+
+    // ✅ request body
+    const { email, phone, fullName } = req.body || {};
+
+    // boş request gelirse hata dön (400 fix)
+    if (!email && !phone && !fullName) {
+      return res.status(400).json({
+        success: false,
+        message: "Arama için email / phone / fullName alanlarından en az biri gerekli.",
+      });
+    }
+
+    // ✅ Multi-tenant filtre
+    const query = {
+      companyId,
+      $or: [],
+    };
+
+    if (email && String(email).trim().length > 2) {
+      query.$or.push({ email: String(email).trim().toLowerCase() });
+    }
+
+    if (phone && String(phone).trim().length > 3) {
+      query.$or.push({
+        telefon: { $regex: String(phone).trim(), $options: "i" },
+      });
+    }
+
+    if (fullName && String(fullName).trim().length > 2) {
+      query.$or.push({
+        ad: { $regex: String(fullName).trim(), $options: "i" },
+      });
+    }
+
+    // hiç or yoksa
+    if (query.$or.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Arama kriterleri geçersiz.",
+      });
+    }
+
+    const results = await Cari.find(query)
+      .select("_id ad email telefon vergiNo tcNo") // panelde göstereceğimiz alanlar
+      .limit(20)
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      results,
+      count: results.length,
+    });
+  } catch (err) {
+    console.error("CARI SEARCH ERROR:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Cari arama sırasında hata oluştu.",
+      error: err?.message || String(err),
+    });
   }
-
-  if (orConditions.length === 0) {
-    return res.status(200).json({ success: true, results: [] });
-  }
-
-  const cariler = await Cari.find({ $or: orConditions })
-    .limit(15)
-    .lean();
-
-  // Basit skor hesaplama
-  const lowerEmail = email.toLowerCase();
-  const lowerPhone = digits;
-
-  const results = cariler
-    .map((c) => {
-      let score = 0;
-
-      if (lowerEmail && c.email && c.email.toLowerCase() === lowerEmail) {
-        score += 3;
-      }
-
-      const cDigits = (c.telefon || "").replace(/\D/g, "");
-      if (lowerPhone && cDigits.endsWith(lowerPhone.slice(-7))) {
-        score += 2;
-      }
-
-      if (
-        fullName &&
-        c.ad &&
-        c.ad.toLowerCase().includes(fullName.toLowerCase())
-      ) {
-        score += 1;
-      }
-
-      return {
-        _id: c._id.toString(),
-        ad: c.ad,
-        telefon: c.telefon,
-        email: c.email,
-        il: c.il,
-        ilce: c.ilce,
-        score,
-      };
-    })
-    .sort((a, b) => b.score - a.score);
-
-  return res.status(200).json({
-    success: true,
-    count: results.length,
-    results,
-  });
 }

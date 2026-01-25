@@ -1,44 +1,46 @@
-import axios from "axios";
+import soap from "soap";
+import { getN11SettingsFromRequest } from "@/lib/n11Settings";
 
 export default async function handler(req, res) {
-  if (req.method !== "GET") {
-    return res.status(405).json({ success: false, message: "Only GET allowed" });
-  }
-
   try {
-    const appKey = process.env.N11_APP_KEY;
-    const appSecret = process.env.N11_APP_SECRET;
+    const cfg = await getN11SettingsFromRequest(req);
 
-    if (!appKey || !appSecret) {
-      return res.status(500).json({
-        success: false,
-        message: "N11 API bilgileri eksik. Lütfen .env'e ekleyin.",
+    if (!cfg.appKey || !cfg.appSecret) {
+      return res.status(400).json({
+        message:
+          "N11 API bilgileri bulunamadı. API Ayarları'ndan girin veya ENV tanımlayın.",
       });
     }
 
-    const response = await axios.post(
-      "https://api.n11.com/rest/productService/productList",
-      {},
-      {
-        auth: {
-          username: appKey,
-          password: appSecret,
-        },
-      }
-    );
+    const url =
+      cfg.environment === "sandbox"
+        ? "https://api.n11.com/ws/ProductService.wsdl"
+        : "https://api.n11.com/ws/ProductService.wsdl";
+
+    const client = await soap.createClientAsync(url);
+
+    const requestData = {
+      auth: {
+        appKey: cfg.appKey,
+        appSecret: cfg.appSecret,
+      },
+      pagingData: {
+        currentPage: 0,
+        pageSize: 50,
+      },
+    };
+
+    const [result] = await client.GetProductListAsync(requestData);
 
     return res.status(200).json({
-      success: true,
-      message: "N11 ürün listesi başarıyla alındı.",
-      products: response.data?.productList ?? [],
+      source: cfg.source, // ✅ db mi env mi görebilirsin
+      data: result,
     });
-
-  } catch (err) {
-    console.error("N11 LIST ERROR:", err.response?.data || err.message);
+  } catch (error) {
+    console.error("N11 PRODUCT LIST ERROR:", error);
     return res.status(500).json({
-      success: false,
       message: "N11 ürün listesi alınamadı",
-      error: err.response?.data || err.message,
+      error: error?.message || String(error),
     });
   }
 }

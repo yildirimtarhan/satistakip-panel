@@ -1,53 +1,51 @@
-// /pages/api/n11/orders/live.js
 import axios from "axios";
-import xml2js from "xml2js";
-import jwt from "jsonwebtoken";
-import clientPromise from "@/lib/mongodb";
+import { getN11SettingsFromRequest } from "@/lib/n11Settings";
 
 export default async function handler(req, res) {
-  if (req.method !== "GET") return res.status(405).end();
+  if (req.method !== "GET") {
+    return res.status(405).json({ success: false, message: "Only GET allowed" });
+  }
 
   try {
-    const token = req.headers.authorization?.split(" ")[1];
-    if (!token) return res.status(401).json({ message: "Token gerekli" });
+    // ✅ DB settings + ENV fallback
+    const cfg = await getN11SettingsFromRequest(req);
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const userId = decoded.userId;
+    const appKey = cfg.appKey || process.env.N11_APP_KEY || "";
+    const appSecret = cfg.appSecret || process.env.N11_APP_SECRET || "";
 
-    const xmlRequest = `
-      <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sch="http://www.n11.com/ws/schemas">
-        <soapenv:Header/>
-        <soapenv:Body>
-          <sch:GetOrderListRequest>
-            <auth>
-              <appKey>${process.env.N11_API_KEY}</appKey>
-              <appSecret>${process.env.N11_API_SECRET}</appSecret>
-            </auth>
-            <status>1</status>
-            <pagingData>
-              <currentPage>0</currentPage>
-              <pageSize>50</pageSize>
-            </pagingData>
-          </sch:GetOrderListRequest>
-        </soapenv:Body>
-      </soapenv:Envelope>
-    `;
+    if (!appKey || !appSecret) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "N11 API bilgileri bulunamadı. API Ayarları veya ENV girilmelidir.",
+      });
+    }
 
-    const response = await axios.post(
-      process.env.N11_BASE_URL,
-      xmlRequest,
-      { headers: { "Content-Type": "text/xml" } }
-    );
+    const url = "https://api.n11.com/rest/delivery/v1/shipmentPackages";
 
-    const json = await xml2js.parseStringPromise(response.data, {
-      explicitArray: false,
-      ignoreAttrs: true,
+    const response = await axios.get(url, {
+      headers: {
+        appKey,
+        appSecret,
+      },
+      params: {
+        page: 0,
+        pageSize: 50,
+      },
+      timeout: 30000,
     });
 
-    return res.status(200).json(json);
-
+    return res.status(200).json({
+      success: true,
+      source: cfg.source || "env",
+      data: response.data,
+    });
   } catch (err) {
-    console.log("🔥 Live orders error:", err);
-    return res.status(500).json({ message: "Sunucu hatası" });
+    console.error("N11 LIVE ERROR:", err?.response?.data || err);
+    return res.status(500).json({
+      success: false,
+      message: "N11 canlı sipariş verisi alınamadı",
+      error: err?.response?.data || err?.message || String(err),
+    });
   }
 }

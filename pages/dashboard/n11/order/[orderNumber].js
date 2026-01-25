@@ -1,11 +1,10 @@
 // 📁 /pages/dashboard/n11/order/[orderNumber].js
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import dbConnect from "@/lib/mongodb";
 import N11Order from "@/models/N11Order";
 import Cari from "@/models/Cari";
 import { n11StatusMap } from "@/utils/n11StatusMap";
-
 
 export async function getServerSideProps(context) {
   const { orderNumber } = context.params;
@@ -173,21 +172,28 @@ export async function getServerSideProps(context) {
     if (doc.accountId) {
       const c = await Cari.findById(doc.accountId).lean();
       if (c) {
-        linkedCari = {
-          _id: c._id.toString(),
-          ad: c.ad,
-          telefon: c.telefon,
-          email: c.email,
-        };
-      }
+  linkedCari = {
+    _id: c._id?.toString() || null,
+    ad: c.ad ?? null,
+    telefon: c.telefon ?? null,
+    email: c.email ?? null,
+  };
+}
+
     }
 
+    // ✅ JSON SERIALIZE FIX (ObjectId/string/date düzeltmeleri)
     const order = {
       ...doc,
       _id: doc._id ? doc._id.toString() : null,
+
       accountId: doc.accountId ? doc.accountId.toString() : null,
-      createdAt: doc.createdAt ? doc.createdAt.toISOString() : null,
-      updatedAt: doc.updatedAt ? doc.updatedAt.toISOString() : null,
+      companyId: doc.companyId ? doc.companyId.toString() : null,
+      createdBy: doc.createdBy ? doc.createdBy.toString() : null,
+      userId: doc.userId ? doc.userId.toString() : null,
+
+      createdAt: doc.createdAt ? new Date(doc.createdAt).toISOString() : null,
+      updatedAt: doc.updatedAt ? new Date(doc.updatedAt).toISOString() : null,
       fromLive,
     };
 
@@ -204,45 +210,77 @@ export async function getServerSideProps(context) {
 }
 
 export default function N11OrderDetailPage({ order, linkedCari }) {
+  const raw = order.raw || {};
   const buyer = order.buyer || {};
   const addr = order.shippingAddress || {};
-  const items = order.items || [];
-  const raw = order.raw || {};
 
-  // 🔹 N11 shipmentInfo (otomatik kargo verisi)
-  const shipmentInfo =
-    raw?.orderItemList?.orderItem?.shipmentInfo ||
-    raw?.orderItemList?.orderItem?.shipmentInfo ||
-    {};
-  const shipmentCompanyName = shipmentInfo?.shipmentCompany?.name || "";
-  const shipmentCode = shipmentInfo?.shipmentCode || "";
-  const trackingNumber = shipmentInfo?.trackingNumber || "";
-  const campaignNumber = shipmentInfo?.campaignNumber || "";
-  const barcodeUrl = shipmentCode
-    ? `https://img.n11.com.tr/OrderShipment/Barcode/${shipmentCode}.png`
-    : "";
+  // ✅ buyerName fix (RAW fallback)
+  const buyerName =
+    buyer.fullName ||
+    buyer.name ||
+    raw.customerfullName ||
+    raw.customerFullName ||
+    addr.fullName ||
+    raw.shippingAddress?.fullName ||
+    raw.billingAddress?.fullName ||
+    "-";
 
-  const firstItem = items[0] || raw?.orderItemList?.orderItem || {};
-  const quantity =
-    Number(firstItem.quantity || firstItem.amount || 1) || 1;
-  const productName =
-    firstItem.productName ||
-    firstItem.title ||
-    "N11 Ürünü";
+  const buyerPhone =
+    buyer.gsm ||
+    buyer.phone ||
+    addr.gsm ||
+    raw.shippingAddress?.gsm ||
+    raw.billingAddress?.gsm ||
+    "-";
 
-  const buyerName = buyer.fullName || buyer.name || addr.fullName || "-";
-  const buyerPhone = buyer.gsm || addr.gsm || buyer.phone || "-";
+  const buyerEmail = buyer.email || raw.customerEmail || "-";
+
   const fullAddress =
     addr.address ||
     addr.fullAddress?.address ||
+    raw.shippingAddress?.address ||
     raw.billingAddress?.address ||
     "-";
-  const city = addr.city || raw.billingAddress?.city || "";
+
+  const city =
+    addr.city || raw.shippingAddress?.city || raw.billingAddress?.city || "-";
+
   const district =
     addr.district ||
     addr.fullAddress?.district ||
+    raw.shippingAddress?.district ||
     raw.billingAddress?.district ||
-    "";
+    "-";
+
+  // ✅ Ürünler: order.items boşsa raw.lines fallback
+  const items = useMemo(() => {
+    const localItems = Array.isArray(order.items) ? order.items : [];
+    if (localItems.length > 0) return localItems;
+
+    // REST format
+    const lines = raw?.lines;
+    if (!lines) return [];
+
+    const arr = Array.isArray(lines) ? lines : [lines];
+    return arr.map((l) => ({
+      productName: l.productName,
+      stockCode: l.stockCode,
+      quantity: Number(l.quantity || 1),
+      price: Number(l.price || 0),
+    }));
+  }, [order.items, raw]);
+
+  const totalPrice =
+    order.totalPrice != null
+      ? Number(order.totalPrice)
+      : raw.totalAmount != null
+      ? Number(raw.totalAmount)
+      : 0;
+
+  // Kargo alanları (REST)
+  const shipmentCompanyName = raw?.cargoProviderName || raw?.cargoProvider || "";
+  const trackingNumber =
+    raw?.cargoTrackingNumber || raw?.cargoSenderNumber || "";
 
   // 📦 MANUEL KARGO POPUP STATES
   const [showShipmentModal, setShowShipmentModal] = useState(false);
@@ -258,9 +296,15 @@ export default function N11OrderDetailPage({ order, linkedCari }) {
   const [currentCari, setCurrentCari] = useState(linkedCari);
   const hasLinkedCari = !!currentCari;
 
-  // 🧾 BARKOD MODAL STATES
-  const [showBarcodeModal, setShowBarcodeModal] = useState(false);
-  const [barcodeTab, setBarcodeTab] = useState("standard"); // "standard" | "advanced"
+  // ✅ ERP PUSH STATES
+const [erpLoading, setErpLoading] = useState(false);
+const [erpMessage, setErpMessage] = useState("");
+
+
+  // 🧾 RAW JSON Toggle (default gizli)
+  const [showRaw, setShowRaw] = useState(false);
+
+
 
   const sendShipment = async () => {
     if (!shipmentCompany || !trackingInputNumber) {
@@ -294,17 +338,34 @@ export default function N11OrderDetailPage({ order, linkedCari }) {
     setIsSendingShipment(false);
   };
 
-  // 🔍 Cari arama
+  // ✅ TOKEN FIX: token tanımlı değil hatası buradan geliyordu
+  const getToken = () => {
+  if (typeof window === "undefined") return null;
+
+  const t1 = localStorage.getItem("token");
+  if (t1) return t1;
+
+  const match = document.cookie.match(/(^| )token=([^;]+)/);
+  return match ? match[2] : null;
+};
+
+
+  // 🔍 Cari arama (RAW fallback ile)
   const searchCari = async () => {
     setCariLoading(true);
     try {
+      const token = getToken();
+
       const res = await fetch("/api/cari/search", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
-          email: buyer.email || "",
-          phone: buyer.gsm || "",
-          fullName: buyer.fullName || "",
+          email: buyer.email || raw.customerEmail || "",
+          phone: buyer.gsm || addr.gsm || raw.shippingAddress?.gsm || "",
+          fullName: buyer.fullName || raw.customerfullName || buyerName || "",
         }),
       });
 
@@ -330,18 +391,29 @@ export default function N11OrderDetailPage({ order, linkedCari }) {
     searchCari();
   };
 
-  // 🔗 Siparişi cariye bağla (cariId yoksa backend otomatik yeni cari oluşturabilir)
   const linkOrderToCari = async () => {
     setCariLoading(true);
     try {
-      const res = await fetch("/api/cari/link-order", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          orderNumber: order.orderNumber,
-          cariId: selectedCariId || undefined,
-        }),
-      });
+
+      if (!selectedCariId) {
+  alert("Lütfen bir cari seçin");
+  return;
+}
+      const token = localStorage.getItem("token");
+
+const res = await fetch("/api/cari/link-order", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
+  },
+  body: JSON.stringify({
+  orderNumber: order.orderNumber,
+  cariId: selectedCariId,
+
+  }),
+});
+
 
       const data = await res.json();
       if (!data.success) {
@@ -360,111 +432,72 @@ export default function N11OrderDetailPage({ order, linkedCari }) {
     setCariLoading(false);
   };
 
-  // 🖨 Yazdır fonksiyonu (yeni pencere aç + print)
-  const printHtml = (html) => {
-    const win = window.open("", "_blank");
-    if (!win) return;
-    win.document.write(`
-      <html>
-        <head>
-          <title>N11 Kargo Etiketi</title>
-          <meta charSet="utf-8" />
-          <style>
-            body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding: 16px; }
-            .label-card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; max-width: 650px; margin: 0 auto; }
-            .title { font-size: 18px; font-weight: 600; margin-bottom: 12px; }
-            .row { font-size: 12px; margin-bottom: 4px; }
-            .section-title { margin-top: 8px; margin-bottom: 4px; font-size: 13px; font-weight: 600; }
-            .barcode { margin-top: 12px; max-width: 100%; height: auto; }
-          </style>
-        </head>
-        <body>${html}</body>
-      </html>
-    `);
-    win.document.close();
-    win.focus();
-    win.print();
-  };
+  const pushToERP = async () => {
+  try {
+    setErpLoading(true);
+    setErpMessage("");
 
-  const standardLabelHtml = `
-    <div class="label-card">
-      <div class="title">N11 Kargo Barkodu</div>
-      <div class="row"><b>Sipariş No:</b> ${order.orderNumber || "-"}</div>
-      <div class="row"><b>Kargo Firması:</b> ${shipmentCompanyName || "-"}</div>
-      <div class="row"><b>Takip No:</b> ${trackingNumber || "-"}</div>
-      <div class="row"><b>Barkod No:</b> ${shipmentCode || "-"}</div>
-      ${
-        barcodeUrl
-          ? `<img class="barcode" src="${barcodeUrl}" alt="N11 Barkod" />`
-          : ""
-      }
-    </div>
-  `;
+    const token = getToken();
+    if (!token) {
+      setErpMessage("❌ Token bulunamadı. Lütfen tekrar giriş yap.");
+      return;
+    }
 
-  const advancedLabelHtml = `
-    <div class="label-card">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-        <div class="title">N11 Kargo Etiketi (Detaylı)</div>
-        <!-- LOGO ALANI (ileride /public/logo.png ile doldurulabilir) -->
-        <div style="width:80px;height:40px;border:1px dashed #ccc;border-radius:8px;font-size:9px;display:flex;align-items:center;justify-content:center;color:#999;">
-          LOGO
-        </div>
-      </div>
+    const res = await fetch("/api/n11/orders/create-erp", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        orderNumber: order?.orderNumber || raw?.orderNumber,
+      }),
+    });
 
-      <div class="section-title">Ürün</div>
-      <div class="row"><b>Ürün Adı:</b> ${productName}</div>
-      <div class="row"><b>Miktar:</b> ${quantity}</div>
+    const data = await res.json();
 
-      <div class="section-title">Müşteri</div>
-      <div class="row"><b>Ad Soyad:</b> ${buyerName}</div>
-      <div class="row"><b>Telefon:</b> ${buyerPhone}</div>
-      <div class="row"><b>Adres:</b> ${fullAddress} ${district ? " - " + district : ""} ${city ? " / " + city : ""}</div>
+    if (!res.ok || !data.success) {
+      setErpMessage(`❌ ERP Aktarım Hatası: ${data.message || "Bilinmeyen hata"}`);
+      return;
+    }
 
-      <div class="section-title">Sipariş / Kargo</div>
-      <div class="row"><b>Sipariş No:</b> ${order.orderNumber || "-"}</div>
-      <div class="row"><b>Kargo Firması:</b> ${shipmentCompanyName || "-"}</div>
-      <div class="row"><b>Takip No:</b> ${trackingNumber || "-"}</div>
-      <div class="row"><b>Barkod No:</b> ${shipmentCode || "-"}</div>
-      ${
-        campaignNumber
-          ? `<div class="row"><b>Kampanya No:</b> ${campaignNumber}</div>`
-          : ""
-      }
+    const saleNoText = data.saleNo ? `SaleNo: ${data.saleNo}` : "";
+    const txText = data.transactionId ? `TransactionId: ${data.transactionId}` : "";
 
-      ${
-        barcodeUrl
-          ? `<img class="barcode" src="${barcodeUrl}" alt="N11 Barkod" />`
-          : ""
-      }
-    </div>
-  `;
-
-  let trackingUrl = "";
-  if (
-    shipmentCompanyName &&
-    shipmentCompanyName.toLowerCase().includes("yurtiçi") &&
-    trackingNumber
-  ) {
-    trackingUrl = `https://www.yurticikargo.com/tr/online-servisler/gonderi-sorgula?code=${trackingNumber}`;
+    setErpMessage(`✅ ERP’ye aktarıldı! ${saleNoText} ${txText}`);
+  } catch (err) {
+    setErpMessage(`❌ ERP Aktarım Hatası: ${err?.message || String(err)}`);
+  } finally {
+    setErpLoading(false);
   }
+};
+
+  // Durum rengi
+  const statusText =
+    n11StatusMap[order.status] || n11StatusMap[raw.status] || order.status || "-";
+
+  const statusColor =
+    String(statusText).toLowerCase().includes("iptal")
+      ? "bg-red-100 text-red-700"
+      : String(statusText).toLowerCase().includes("kargo")
+      ? "bg-blue-100 text-blue-700"
+      : "bg-gray-100 text-gray-700";
 
   return (
     <div className="p-4 md:p-6">
       {/* Üst başlık */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-5">
         <div>
-          <h1 className="text-2xl font-bold text-orange-600">
-            N11 Sipariş Detayı
-          </h1>
+          <h1 className="text-2xl font-bold text-orange-600">N11 Sipariş Detayı</h1>
           <p className="text-sm text-gray-500">
-            Sipariş No:{" "}
-            <span className="font-semibold">{order.orderNumber}</span>
+            Sipariş No: <span className="font-semibold">{order.orderNumber}</span>
           </p>
+
           {hasLinkedCari && (
             <p className="text-xs text-green-700 mt-1">
-              🔗 Bağlı Cari:{" "}
-              <span className="font-semibold">{currentCari.ad}</span> (
-              {currentCari.telefon || currentCari.email || "-"})
+              🔗 Bağlı Cari: <span className="font-semibold">{currentCari?.ad || "-"}</span>
+
+              ({currentCari.telefon || currentCari.email || "-"})
             </p>
           )}
         </div>
@@ -477,71 +510,50 @@ export default function N11OrderDetailPage({ order, linkedCari }) {
         </button>
       </div>
 
-      {/* Üst bilgi kartları */}
+      {/* Bilgi Kartları */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        {/* Sipariş Özeti */}
         <div className="bg-white border rounded-lg p-4 shadow-sm">
           <h2 className="font-semibold mb-2 text-gray-800">Sipariş Özeti</h2>
           <div className="text-sm space-y-1">
             <p>
-              <span className="font-medium">Sipariş No:</span>{" "}
-              {order.orderNumber}
-            </p>
-            <p>
               <span className="font-medium">Durum:</span>{" "}
-              
-<span className="inline-flex px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-700">
-  {n11StatusMap[order.status] || n11StatusMap[raw.status] || order.status || "-"}
-</span>
-            </p>
-            <p>
-              <span className="font-medium">Sipariş Tarihi:</span>{" "}
-              {raw.createDate || "-"}
+              <span className={`inline-flex px-2 py-1 rounded-full text-xs ${statusColor}`}>
+                {statusText}
+              </span>
             </p>
             <p>
               <span className="font-medium">Toplam Tutar:</span>{" "}
-              {order.totalPrice != null
-                ? `${Number(order.totalPrice).toFixed(2)} ₺`
-                : raw.totalAmount
-                ? `${raw.totalAmount} ₺`
-                : "-"}
+              {totalPrice ? `${totalPrice.toFixed(2)} ₺` : "-"}
+            </p>
+            <p>
+              <span className="font-medium">Kargo:</span> {shipmentCompanyName || "-"}
+            </p>
+            <p>
+              <span className="font-medium">Takip No:</span> {trackingNumber || "-"}
             </p>
           </div>
         </div>
 
-        {/* Müşteri Bilgileri */}
         <div className="bg-white border rounded-lg p-4 shadow-sm">
-          <h2 className="font-semibold mb-2 text-gray-800">
-            Müşteri Bilgileri
-          </h2>
+          <h2 className="font-semibold mb-2 text-gray-800">Müşteri Bilgileri</h2>
           <div className="text-sm space-y-1">
             <p>
-              <span className="font-medium">Ad Soyad:</span>{" "}
-              {buyerName || "-"}
+              <span className="font-medium">Ad Soyad:</span> {buyerName}
             </p>
             <p>
-              <span className="font-medium">Telefon:</span>{" "}
-              {buyerPhone || "-"}
+              <span className="font-medium">Telefon:</span> {buyerPhone}
             </p>
             <p>
-              <span className="font-medium">E-posta:</span>{" "}
-              {buyer.email || "-"}
+              <span className="font-medium">E-posta:</span> {buyerEmail}
             </p>
           </div>
         </div>
 
-        {/* Teslimat Adresi */}
         <div className="bg-white border rounded-lg p-4 shadow-sm">
-          <h2 className="font-semibold mb-2 text-gray-800">
-            Teslimat Adresi
-          </h2>
+          <h2 className="font-semibold mb-2 text-gray-800">Teslimat Adresi</h2>
           <div className="text-sm space-y-1">
             <p>
-              <span className="font-medium">Alıcı:</span> {buyerName}
-            </p>
-            <p>
-              <span className="font-medium">İl / İlçe:</span> {city} /{" "}
-              {district}
+              <span className="font-medium">İl / İlçe:</span> {city} / {district}
             </p>
             <p className="break-words">
               <span className="font-medium">Adres:</span> {fullAddress}
@@ -554,179 +566,109 @@ export default function N11OrderDetailPage({ order, linkedCari }) {
         </div>
       </div>
 
-      {/* ÜRÜNLER */}
+      {/* Ürünler */}
       <div className="bg-white border rounded-lg p-4 shadow-sm mb-6">
-        <h2 className="font-semibold mb-3 text-gray-800">Sipariş Ürünleri</h2>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead className="bg-gray-100 text-xs uppercase text-gray-600">
-              <tr>
-                <th className="px-3 py-2 text-left">Ürün Adı</th>
-                <th className="px-3 py-2 text-left">SKU</th>
-                <th className="px-3 py-2 text-right">Adet</th>
-                <th className="px-3 py-2 text-right">Fiyat</th>
-                <th className="px-3 py-2 text-right">Tutar</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((it, idx) => {
-                const q = Number(it.quantity || 1);
-                const unitPrice = Number(it.price || 0);
-                const total = q * unitPrice;
-
-                return (
-                  <tr key={idx} className="border-t hover:bg-gray-50">
-                    <td className="px-3 py-2">
-                      {it.productName || it.title || "-"}
-                    </td>
-                    <td className="px-3 py-2">
-                      {it.sellerProductCode || it.stockCode || "-"}
-                    </td>
-                    <td className="px-3 py-2 text-right">{q}</td>
-                    <td className="px-3 py-2 text-right">
-                      {unitPrice.toFixed(2)} ₺
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      {total.toFixed(2)} ₺
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-semibold text-gray-800">Sipariş Ürünleri</h2>
+          <span className="text-xs text-gray-500">{items.length} ürün</span>
         </div>
+
+        {items.length === 0 ? (
+          <div className="text-sm text-gray-500 border rounded-md p-3 bg-gray-50">
+            Bu siparişte ürün bulunamadı. (N11 response içindeki alan adı farklı olabilir)
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-100 text-xs uppercase text-gray-600">
+                <tr>
+                  <th className="px-3 py-2 text-left">Ürün Adı</th>
+                  <th className="px-3 py-2 text-left">SKU</th>
+                  <th className="px-3 py-2 text-right">Adet</th>
+                  <th className="px-3 py-2 text-right">Fiyat</th>
+                  <th className="px-3 py-2 text-right">Tutar</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((it, idx) => {
+                  const q = Number(it.quantity || 1);
+                  const unitPrice = Number(it.price || 0);
+                  const total = q * unitPrice;
+
+                  return (
+                    <tr key={idx} className="border-t hover:bg-gray-50">
+                      <td className="px-3 py-2">{it.productName || "-"}</td>
+                      <td className="px-3 py-2">{it.stockCode || it.sellerProductCode || "-"}</td>
+                      <td className="px-3 py-2 text-right">{q}</td>
+                      <td className="px-3 py-2 text-right">{unitPrice.toFixed(2)} ₺</td>
+                      <td className="px-3 py-2 text-right">{total.toFixed(2)} ₺</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      {/* 🔶 OTOMATİK N11 KARGO KARTI */}
-      {barcodeUrl && (
-        <div className="bg-white border rounded-lg p-4 shadow-sm mb-6">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div>
-              <h2 className="font-semibold mb-1 text-gray-800">
-                📦 N11 Otomatik Kargo Bilgisi
-              </h2>
-              <div className="text-sm space-y-1">
-                <p>
-                  <span className="font-medium">Kargo Firması:</span>{" "}
-                  {shipmentCompanyName || "-"}
-                </p>
-                <p>
-                  <span className="font-medium">Takip No:</span>{" "}
-                  {trackingNumber || "-"}
-                </p>
-                <p>
-                  <span className="font-medium">Barkod No:</span>{" "}
-                  {shipmentCode || "-"}
-                </p>
-                {campaignNumber && (
-                  <p>
-                    <span className="font-medium">Kampanya No:</span>{" "}
-                    {campaignNumber}
-                  </p>
-                )}
-              </div>
+      {/* İşlemler */}
+      <div className="bg-white border rounded-lg p-4 shadow-sm mb-6">
+        <h2 className="font-semibold mb-3 text-gray-800">İşlemler</h2>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => setShowShipmentModal(true)}
+            className="px-3 py-2 text-sm rounded-md bg-orange-500 text-white hover:bg-orange-600"
+          >
+            📦 Kargoya Ver (Manuel)
+          </button>
+
+          <button
+            onClick={openCariModal}
+            className="px-3 py-2 text-sm rounded-md bg-blue-500 text-white hover:bg-blue-600"
+          >
+            🔗 Cari ile Eşleştir
+          </button>
+
+          <button
+  onClick={pushToERP}
+  disabled={erpLoading}
+  className="px-3 py-2 text-sm rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+>
+  {erpLoading ? "ERP’ye Aktarılıyor..." : "✅ ERP’ye Aktar"}
+</button>
+
+{erpMessage && (
+  <div className="mt-3 text-sm p-3 rounded-md border bg-gray-50">
+    {erpMessage}
+  </div>
+)}
+
+
+          <button
+            onClick={() => setShowRaw((s) => !s)}
+            className="px-3 py-2 text-sm rounded-md bg-gray-100 text-gray-800 hover:bg-gray-200 border"
+          >
+            🧾 Teknik JSON {showRaw ? "Gizle" : "Göster"}
+          </button>
+        </div>
+
+        {showRaw && (
+          <div className="mt-4">
+            <div className="text-xs text-gray-500 mb-2">
+              Bu alan sadece geliştirme amaçlıdır (N11 ham response).
             </div>
-
-            <div className="flex flex-col items-center gap-2">
-              <div className="border rounded-md bg-white p-2 shadow-sm max-w-[200px]">
-                {/* Küçük barkod önizleme */}
-                <img
-                  src={barcodeUrl}
-                  alt="N11 Barkod"
-                  className="max-h-24 w-full object-contain"
-                />
-              </div>
-              <div className="flex flex-wrap justify-center gap-2">
-                <button
-                  onClick={() => {
-                    setBarcodeTab("standard");
-                    setShowBarcodeModal(true);
-                  }}
-                  className="px-3 py-1.5 text-xs rounded-md bg-orange-500 text-white hover:bg-orange-600"
-                >
-                  🔍 Barkodu Görüntüle
-                </button>
-                {trackingUrl && (
-                  <a
-                    href={trackingUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-3 py-1.5 text-xs rounded-md bg-blue-500 text-white hover:bg-blue-600"
-                  >
-                    🚚 Kargo Takip
-                  </a>
-                )}
-                <a
-                  href={barcodeUrl}
-                  download={`n11-barkod-${shipmentCode || order.orderNumber}.png`}
-                  className="px-3 py-1.5 text-xs rounded-md bg-gray-100 text-gray-800 hover:bg-gray-200 border"
-                >
-                  ⬇ PNG İndir
-                </a>
-              </div>
-            </div>
+            <pre className="text-[11px] max-h-72 overflow-auto bg-gray-50 border rounded-md p-3">
+              {JSON.stringify(raw, null, 2)}
+            </pre>
           </div>
-        </div>
-      )}
-
-      {/* İŞLEMLER + RAW JSON */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* İŞLEMLER */}
-        <div className="bg-white border rounded-lg p-4 shadow-sm">
-          <h2 className="font-semibold mb-3 text-gray-800">İşlemler</h2>
-          <div className="flex flex-wrap gap-2">
-            {/* Manuel kargo popup (kalsın) */}
-            <button
-              onClick={() => setShowShipmentModal(true)}
-              className="px-3 py-2 text-sm rounded-md bg-orange-500 text-white hover:bg-orange-600"
-            >
-              📦 Kargoya Ver (Manuel)
-            </button>
-
-            {/* Cari eşleştirme */}
-            <button
-              onClick={openCariModal}
-              className="px-3 py-2 text-sm rounded-md bg-blue-500 text-white hover:bg-blue-600"
-            >
-              🔗 Cari ile Eşleştir
-            </button>
-
-            {/* Barkod modalını hızlı açmak için */}
-            {barcodeUrl && (
-              <button
-                onClick={() => {
-                  setBarcodeTab("advanced");
-                  setShowBarcodeModal(true);
-                }}
-                className="px-3 py-2 text-sm rounded-md bg-gray-100 text-gray-800 hover:bg-gray-200 border"
-              >
-                🖨 Barkod Etiketi (Detaylı)
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* RAW JSON */}
-        <div className="bg-white border rounded-lg p-4 shadow-sm">
-          <h2 className="font-semibold mb-2 text-gray-800 text-sm">
-            Teknik Detay (Raw JSON)
-          </h2>
-          <p className="text-xs text-gray-500 mb-2">
-            Sadece geliştirici amaçlıdır. N11&apos;den gelen ham veriyi gösterir.
-          </p>
-          <pre className="text-[11px] max-h-64 overflow-auto bg-gray-50 border rounded-md p-2">
-            {JSON.stringify(raw, null, 2)}
-          </pre>
-        </div>
+        )}
       </div>
 
       {/* 📦 MANUEL KARGO MODAL */}
       {showShipmentModal && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-lg p-6 w-[400px]">
-            <h2 className="text-xl font-bold mb-4 text-orange-600">
-              📦 Kargoya Ver (Manuel)
-            </h2>
+            <h2 className="text-xl font-bold mb-4 text-orange-600">📦 Kargoya Ver (Manuel)</h2>
 
             <label className="block font-semibold mb-1">Kargo Firması</label>
             <select
@@ -775,15 +717,13 @@ export default function N11OrderDetailPage({ order, linkedCari }) {
       {showCariModal && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-lg p-6 w-[520px] max-h-[80vh] overflow-auto">
-            <h2 className="text-xl font-bold mb-4 text-blue-600">
-              🔗 Cari ile Eşleştir
-            </h2>
+            <h2 className="text-xl font-bold mb-4 text-blue-600">🔗 Cari ile Eşleştir</h2>
 
             <div className="mb-3 text-sm bg-gray-50 border rounded p-3">
               <p className="font-semibold mb-1">N11 Müşteri Bilgisi</p>
               <p>Ad Soyad: {buyerName}</p>
               <p>Telefon: {buyerPhone}</p>
-              <p>E-posta: {buyer.email || "-"}</p>
+              <p>E-posta: {buyerEmail}</p>
             </div>
 
             <div className="flex items-center justify-between mb-2">
@@ -800,15 +740,13 @@ export default function N11OrderDetailPage({ order, linkedCari }) {
 
             <div className="border rounded-md max-h-56 overflow-auto mb-4">
               {cariLoading && (
-                <p className="text-sm text-center py-3 text-gray-500">
-                  Aranıyor...
-                </p>
+                <p className="text-sm text-center py-3 text-gray-500">Aranıyor...</p>
               )}
 
               {!cariLoading && cariResults.length === 0 && (
                 <p className="text-sm text-center py-3 text-gray-500">
-                  Eşleşen cari bulunamadı. Cari seçmeden kaydederseniz backend
-                  otomatik yeni cari oluşturur.
+                  Eşleşen cari bulunamadı. Cari seçmeden kaydederseniz backend otomatik yeni
+                  cari oluşturur.
                 </p>
               )}
 
@@ -829,9 +767,7 @@ export default function N11OrderDetailPage({ order, linkedCari }) {
                       <p className="font-semibold">
                         {c.ad}{" "}
                         {c.score > 0 && (
-                          <span className="text-xs text-green-700 ml-1">
-                            (puan: {c.score})
-                          </span>
+                          <span className="text-xs text-green-700 ml-1">(puan: {c.score})</span>
                         )}
                       </p>
                       <p className="text-xs text-gray-600">
@@ -859,202 +795,6 @@ export default function N11OrderDetailPage({ order, linkedCari }) {
               >
                 {cariLoading ? "Kaydediliyor..." : "Seçilen / Yeni Cari ile Bağla"}
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 🧾 BARKOD MODALI (STANDART + GELİŞMİŞ) */}
-      {showBarcodeModal && barcodeUrl && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
-          <div className="bg-white rounded-2xl shadow-2xl w-[90vw] max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-semibold text-gray-800">
-                  📦 N11 Kargo Barkod Etiketi
-                </h2>
-                <span className="text-xs text-gray-500">
-                  (Sipariş: {order.orderNumber})
-                </span>
-              </div>
-              <button
-                onClick={() => setShowBarcodeModal(false)}
-                className="text-sm px-3 py-1 rounded-md border hover:bg-gray-100"
-              >
-                Kapat ✕
-              </button>
-            </div>
-
-            {/* Sekmeler */}
-            <div className="flex border-b text-sm">
-              <button
-                onClick={() => setBarcodeTab("standard")}
-                className={`flex-1 px-4 py-2 ${
-                  barcodeTab === "standard"
-                    ? "border-b-2 border-orange-500 text-orange-600 font-semibold bg-orange-50"
-                    : "text-gray-600 hover:bg-gray-50"
-                }`}
-              >
-                Standart Barkod
-              </button>
-              <button
-                onClick={() => setBarcodeTab("advanced")}
-                className={`flex-1 px-4 py-2 ${
-                  barcodeTab === "advanced"
-                    ? "border-b-2 border-blue-500 text-blue-600 font-semibold bg-blue-50"
-                    : "text-gray-600 hover:bg-gray-50"
-                }`}
-              >
-                Detaylı Etiket
-              </button>
-            </div>
-
-            {/* İçerik */}
-            <div className="flex-1 overflow-auto p-4 bg-gray-50">
-              {barcodeTab === "standard" && (
-                <div className="bg-white rounded-xl shadow-sm p-4 max-w-xl mx-auto">
-                  <h3 className="text-sm font-semibold text-gray-800 mb-3">
-                    Standart Barkod Görünümü
-                  </h3>
-                  <p className="text-xs text-gray-500 mb-3">
-                    N11 tarafından üretilen barkod. Depoda hızlı işlem için
-                    kullanın.
-                  </p>
-                  <div className="text-xs space-y-1 mb-3">
-                    <p>
-                      <span className="font-medium">Kargo Firması:</span>{" "}
-                      {shipmentCompanyName || "-"}
-                    </p>
-                    <p>
-                      <span className="font-medium">Takip No:</span>{" "}
-                      {trackingNumber || "-"}
-                    </p>
-                    <p>
-                      <span className="font-medium">Barkod No:</span>{" "}
-                      {shipmentCode || "-"}
-                    </p>
-                  </div>
-                  <div className="border rounded-lg bg-white p-3 flex justify-center">
-                    <img
-                      src={barcodeUrl}
-                      alt="N11 Barkod"
-                      className="max-h-40 w-full object-contain"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {barcodeTab === "advanced" && (
-                <div className="bg-white rounded-xl shadow-sm p-4 max-w-xl mx-auto">
-                  <h3 className="text-sm font-semibold text-gray-800 mb-3">
-                    Detaylı Kargo Etiketi (Ürün + Müşteri + Adres)
-                  </h3>
-                  <p className="text-xs text-gray-500 mb-3">
-                    Bu şablon, depo için ürün ve müşteri detaylarını da içerir.
-                  </p>
-                  <div className="border rounded-lg p-3 text-xs space-y-2">
-                    <div className="flex justify-between items-start mb-1">
-                      <div>
-                        <p className="font-semibold text-sm">
-                          N11 Kargo Etiketi
-                        </p>
-                        <p className="text-[11px] text-gray-500">
-                          Sipariş No: {order.orderNumber}
-                        </p>
-                      </div>
-                      <div className="w-20 h-10 border border-dashed border-gray-300 rounded-md flex items-center justify-center text-[9px] text-gray-400">
-                        LOGO
-                      </div>
-                    </div>
-
-                    <div>
-                      <p className="font-semibold text-[11px] mt-1 mb-1">
-                        Ürün
-                      </p>
-                      <p>
-                        <b>Ad:</b> {productName}
-                      </p>
-                      <p>
-                        <b>Miktar:</b> {quantity}
-                      </p>
-                    </div>
-
-                    <div>
-                      <p className="font-semibold text-[11px] mt-1 mb-1">
-                        Müşteri
-                      </p>
-                      <p>
-                        <b>Ad Soyad:</b> {buyerName}
-                      </p>
-                      <p>
-                        <b>Telefon:</b> {buyerPhone}
-                      </p>
-                      <p>
-                        <b>Adres:</b> {fullAddress}{" "}
-                        {district ? ` - ${district}` : ""}{" "}
-                        {city ? ` / ${city}` : ""}
-                      </p>
-                    </div>
-
-                    <div>
-                      <p className="font-semibold text-[11px] mt-1 mb-1">
-                        Sipariş / Kargo
-                      </p>
-                      <p>
-                        <b>Kargo Firması:</b> {shipmentCompanyName || "-"}
-                      </p>
-                      <p>
-                        <b>Takip No:</b> {trackingNumber || "-"}
-                      </p>
-                      <p>
-                        <b>Barkod No:</b> {shipmentCode || "-"}
-                      </p>
-                      {campaignNumber && (
-                        <p>
-                          <b>Kampanya No:</b> {campaignNumber}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="border rounded-md bg-white p-2 flex justify-center mt-1">
-                      <img
-                        src={barcodeUrl}
-                        alt="N11 Barkod"
-                        className="max-h-40 w-full object-contain"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Alt butonlar */}
-            <div className="border-t bg-white px-4 py-3 flex justify-between items-center text-xs">
-              <div className="text-[11px] text-gray-500">
-                Barkodu yazdırdığınızda tarayıcıdan &quot;PDF olarak
-                kaydet&quot; seçeneğiyle PDF oluşturabilirsiniz.
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() =>
-                    printHtml(
-                      barcodeTab === "standard"
-                        ? standardLabelHtml
-                        : advancedLabelHtml
-                    )
-                  }
-                  className="px-3 py-1.5 rounded-md bg-orange-500 text-white hover:bg-orange-600"
-                >
-                  🖨 Yazdır / PDF
-                </button>
-                <a
-                  href={barcodeUrl}
-                  download={`n11-barkod-${shipmentCode || order.orderNumber}.png`}
-                  className="px-3 py-1.5 rounded-md bg-gray-100 text-gray-800 hover:bg-gray-200 border"
-                >
-                  ⬇ PNG İndir
-                </a>
-              </div>
             </div>
           </div>
         </div>

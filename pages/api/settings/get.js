@@ -1,6 +1,5 @@
-// 📁 /pages/api/settings/get.js
-import clientPromise from "../../../lib/mongodb";
 import jwt from "jsonwebtoken";
+import { connectToDatabase } from "@/lib/mongodb";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
@@ -8,7 +7,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 🔐 Token kontrolü
     const token = req.headers.authorization?.split(" ")[1];
     if (!token) {
       return res.status(401).json({ message: "Token gerekli" });
@@ -16,33 +14,37 @@ export default async function handler(req, res) {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const userId = decoded.userId;
+    const companyId = decoded.companyId || null;
 
-    const client = await clientPromise;
-    const db = client.db("satistakip");
+    const { db } = await connectToDatabase();
 
-    // 🧩 Ayarları bul
-    const settings = await db.collection("settings").findOne({ userId });
+    const query = companyId ? { companyId } : { userId };
 
-    if (!settings) {
+    const settingsDoc = await db.collection("settings").findOne(query);
+
+    if (!settingsDoc) {
       return res.status(200).json({ settings: null });
     }
 
-    // 🔄 Eksik alanlar varsa boş string ile doldur
     const safeSettings = {
-      hepsiburadaMerchantId: settings.hepsiburada?.merchantId || "",
-      hepsiburadaSecretKey: settings.hepsiburada?.secretKey || "",
-      hepsiburadaUserAgent: settings.hepsiburada?.userAgent || "",
-      trendyolSupplierId: settings.trendyol?.supplierId || "",
-      trendyolApiKey: settings.trendyol?.apiKey || "",
-      trendyolApiSecret: settings.trendyol?.apiSecret || "",
-      n11AppKey: settings.n11?.appKey || "",
-      n11AppSecret: settings.n11?.appSecret || "",
-      n11Environment: settings.n11?.environment || "production",
+      hbMerchantId: settingsDoc.hepsiburada?.merchantId || "",
+      hbSecretKey: settingsDoc.hepsiburada?.secretKey || "",
+      hbUserAgent: settingsDoc.hepsiburada?.userAgent || "",
+
+      trendyolSupplierId: settingsDoc.trendyol?.supplierId || "",
+      trendyolApiKey: settingsDoc.trendyol?.apiKey || "",
+      trendyolApiSecret: settingsDoc.trendyol?.apiSecret || "",
+
+      n11AppKey: settingsDoc.n11?.appKey || "",
+      n11AppSecret: settingsDoc.n11?.appSecret || "",
+      n11Environment: settingsDoc.n11?.environment || "production",
     };
 
-    res.status(200).json({ settings: safeSettings });
+    return res.status(200).json({ settings: safeSettings });
   } catch (error) {
     console.error("API Ayarları getirme hatası:", error);
-    res.status(500).json({ message: "Sunucu hatası", error: error.message });
+    return res
+      .status(500)
+      .json({ message: "Sunucu hatası", error: error.message });
   }
 }

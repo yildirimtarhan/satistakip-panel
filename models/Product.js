@@ -17,8 +17,16 @@ const VariantSchema = new mongoose.Schema({
 const ProductSchema = new mongoose.Schema(
   {
     // 🌐 Çoklu kullanıcı / firma desteği
-    userId: { type: String, required: true },
-    companyId: { type: String, default: null },
+   // 🌐 Çoklu kullanıcı / firma desteği
+userId: { type: String, required: true },
+
+companyId: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "CompanySettings",
+  required: true,
+},
+
+
 
     // 🟦 GENEL BİLGİLER
     name: { type: String, required: true },
@@ -55,7 +63,8 @@ const ProductSchema = new mongoose.Schema(
         preparingDay: { type: Number, default: 3 },
         shipmentTemplate: { type: String, default: "" },
         domestic: { type: Boolean, default: true },
-        attributes: { type: Object, default: {} },
+        attributes: { type: Array, default: [] },
+
       },
 
       trendyol: {

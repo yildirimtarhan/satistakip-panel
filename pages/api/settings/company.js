@@ -19,15 +19,19 @@ export default async function handler(req, res) {
     return res.status(401).json({ message: "Geçersiz token" });
   }
 
-  const userId = decoded.userId || decoded._id;
+  const userId = decoded.userId || decoded._id || decoded.id;
+  const companyId = decoded.companyId || null;
 
   try {
-    // 🔥 Mongoose uyumlu bağlantı
     const { db } = await connectToDatabase();
     const col = db.collection("company_settings");
 
+    // ✅ Multi-tenant query (companyId varsa onu baz al, yoksa userId)
+    // Eski kayıtlar için fallback
+    const query = companyId ? { companyId } : { userId };
+
     if (req.method === "GET") {
-      const doc = await col.findOne({ userId });
+      const doc = await col.findOne(query);
 
       return res.status(200).json(
         doc || {
@@ -57,22 +61,34 @@ export default async function handler(req, res) {
         logo = "",
       } = req.body || {};
 
+      // ✅ $set içine multi-tenant alanlarını düzgün ekle
+      const $set = {
+        firmaAdi,
+        yetkili,
+        telefon,
+        eposta,
+        web,
+        vergiDairesi,
+        vergiNo,
+        adres,
+        logo,
+        updatedAt: new Date(),
+
+        // tenant alanları
+        userId: String(userId || ""),
+      };
+
+      if (companyId) {
+        $set.companyId = String(companyId);
+      }
+
       await col.updateOne(
-        { userId },
+        query,
         {
-          $set: {
-            firmaAdi,
-            yetkili,
-            telefon,
-            eposta,
-            web,
-            vergiDairesi,
-            vergiNo,
-            adres,
-            logo,
-            updatedAt: new Date(),
+          $set,
+          $setOnInsert: {
+            createdAt: new Date(),
           },
-          $setOnInsert: { createdAt: new Date() },
         },
         { upsert: true }
       );

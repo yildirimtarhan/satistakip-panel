@@ -1,50 +1,44 @@
-import clientPromise from "@/lib/mongodb";
+import dbConnect from "@/lib/mongodb";
+import Product from "@/models/Product";
 import jwt from "jsonwebtoken";
-import XLSX from "xlsx";
-
-export const config = { api: { bodyParser: false } };
 
 export default async function handler(req, res) {
-  if (req.method !== "POST")
-    return res.status(405).json({ message: "Method not allowed" });
-
   try {
+    await dbConnect();
+
     const token = req.headers.authorization?.split(" ")[1];
+    if (!token) return res.status(401).json({ message: "Token yok" });
+
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const userId = decoded.userId || decoded.id;
+    const companyId = decoded.companyId;
 
-    const buffer = await new Promise((resolve, reject) => {
-      let chunks = [];
-      req.on("data", (c) => chunks.push(c));
-      req.on("end", () => resolve(Buffer.concat(chunks)));
-      req.on("error", reject);
-    });
+    if (!companyId) {
+      return res.status(400).json({ message: "companyId bulunamadı (token)" });
+    }
 
-    const workbook = XLSX.read(buffer, { type: "buffer" });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet);
+    const products = req.body;
 
-    const formatted = rows.map((r) => ({
-      ad: r.ad,
-      kategori: r.kategori || "",
-      barkod: r.barkod || "",
-      sku: r.sku || "",
-      birim: r.birim || "Adet",
-      alisFiyati: Number(r.alisFiyati) || 0,
-      satisFiyati: Number(r.satisFiyati) || 0,
-      stok: Number(r.stok) || 0,
-      paraBirimi: r.paraBirimi || "TRY",
-      kdvOrani: Number(r.kdvOrani) || 20,
-      userId: decoded.userId,
+    if (!Array.isArray(products)) {
+      return res.status(400).json({ message: "Geçersiz ürün verisi (array değil)" });
+    }
+
+    const docs = products.map((p) => ({
+      ...p,
+      userId,
+      companyId,
+      createdBy: userId,
       createdAt: new Date(),
-      updatedAt: new Date(),
     }));
 
-    const client = await clientPromise;
-    const db = client.db("satistakip");
-    await db.collection("products").insertMany(formatted);
+    await Product.insertMany(docs);
 
-    res.json({ success: true, count: formatted.length });
+    return res.status(200).json({
+      message: "✅ Ürünler başarıyla içe aktarıldı",
+      count: docs.length,
+    });
   } catch (err) {
-    res.status(500).json({ message: "Import error", error: err.message });
+    console.error("IMPORT ERROR:", err);
+    return res.status(500).json({ message: "Import hatası", error: err.message });
   }
 }

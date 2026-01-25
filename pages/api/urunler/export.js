@@ -1,35 +1,26 @@
-import clientPromise from "@/lib/mongodb";
+import dbConnect from "@/lib/mongodb";
+import Product from "@/models/Product";
 import jwt from "jsonwebtoken";
-import XLSX from "xlsx";
 
 export default async function handler(req, res) {
   try {
+    await dbConnect();
+
     const token = req.headers.authorization?.split(" ")[1];
+    if (!token) return res.status(401).json({ message: "Token yok" });
+
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const companyId = decoded.companyId;
 
-    const client = await clientPromise;
-    const db = client.db("satistakip");
+    if (!companyId) {
+      return res.status(400).json({ message: "companyId bulunamadı (token)" });
+    }
 
-    const data = await db
-      .collection("products")
-      .find({ userId: decoded.userId })
-      .project({ _id: 0 })
-      .toArray();
+    const products = await Product.find({ companyId }).sort({ createdAt: -1 });
 
-    const worksheet = XLSX.utils.json_to_sheet(data);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Ürünler");
-
-    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
-
-    res.setHeader("Content-Disposition", 'attachment; filename="urunler.xlsx"');
-    res.setHeader(
-      "Content-Type",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    );
-
-    res.send(buffer);
+    return res.status(200).json(products);
   } catch (err) {
-    res.status(500).json({ message: "Export error", error: err.message });
+    console.error("EXPORT ERROR:", err);
+    return res.status(500).json({ message: "Export hatası", error: err.message });
   }
 }

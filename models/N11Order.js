@@ -1,40 +1,70 @@
-// models/N11Order.js
 import mongoose from "mongoose";
 
 const N11OrderSchema = new mongoose.Schema(
   {
-    orderNumber: String,
-
-    buyer: {
-      fullName: String,
-      email: String,
-      gsm: String,
-      taxId: String,
-      taxOffice: String,
+    // ✅ Multi-tenant zorunlu alan
+    companyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Company",
+      required: true,
+      index: true,
     },
 
-    shippingAddress: {
-      city: String,
-      district: String,
-      neighborhood: String,
-      address: String,
+    // ✅ Bu siparişi kim çekti / işlemi kim yaptı
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
     },
 
-    items: Array,
+    // ✅ İstersen ayrıca createdBy ayrı tutabilirsin (opsiyonel)
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
 
-    orderStatus: String,
-    itemStatus: String,
+    // ✅ N11 sipariş no
+    orderNumber: {
+      type: String,
+      required: true,
+      index: true,
+    },
 
-    totalPrice: Number,
+    // ✅ Cari bağlantısı
+    accountId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Cari",
+      default: null,
+      index: true,
+    },
 
-    accountId: { type: mongoose.Types.ObjectId, ref: "Cari" },
+    // ✅ N11 temel bilgiler
+    status: { type: String, default: "" },
+    buyerName: { type: String, default: "" },
+    trackingNumber: { type: String, default: "" },
+    cargoCompany: { type: String, default: "" },
 
-    userId: String,
+    quantity: { type: Number, default: 0 },
+    totalAmount: { type: Number, default: 0 },
 
-    raw: {},
+    currency: { type: String, default: "TRY" },
+
+    // ✅ ERP push kontrolü
+    erpPushed: { type: Boolean, default: false },
+    erpPushedAt: { type: Date, default: null },
+
+    // ✅ Ham veri (N11 response)
+    raw: { type: Object, default: {} },
+
+    // ✅ Log / not
+    note: { type: String, default: "" },
   },
   { timestamps: true }
 );
+
+// ✅ Aynı şirkette aynı orderNumber 1 kez kayıt edilsin
+N11OrderSchema.index({ companyId: 1, orderNumber: 1 }, { unique: true });
 
 export default mongoose.models.N11Order ||
   mongoose.model("N11Order", N11OrderSchema);

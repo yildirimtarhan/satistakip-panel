@@ -7,7 +7,7 @@ const UserSchema = new mongoose.Schema(
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
 
     // Telefon → opsiyonel ama unique
-    phone: { type: String, unique: true, sparse: true }, 
+    phone: { type: String, unique: true, sparse: true },
     // sparse = telefon olmayan kullanıcıları da unique hatası olmadan kaydeder
 
     password: { type: String, required: true },
@@ -21,8 +21,8 @@ const UserSchema = new mongoose.Schema(
     // 🛑 Admin Onayı
     approved: { type: Boolean, default: false },
 
-    // Firma ID — İleride çoklu firma desteği için
-    companyId: { type: String },
+    // Firma ID — çoklu firma desteği için
+    companyId: { type: String, default: "", index: true },
 
     // Hepsiburada API
     hepsiburadaApi: {

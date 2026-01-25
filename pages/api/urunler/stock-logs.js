@@ -1,55 +1,26 @@
-// 📁 /pages/api/urunler/stock-logs.js
-import clientPromise from "@/lib/mongodb";
-import { ObjectId } from "mongodb";
+import dbConnect from "@/lib/mongodb";
+import StockLog from "@/models/StockLog";
+import jwt from "jsonwebtoken";
 
 export default async function handler(req, res) {
   try {
-    const client = await clientPromise;
-    const db = client.db("satistakip");
-    const stockLogs = db.collection("stock_logs");
-    const products = db.collection("products");
+    await dbConnect();
 
-    if (req.method === "GET") {
-      const { productId } = req.query;
-      if (!productId) {
-        return res.status(400).json({ message: "Ürün ID gerekli." });
-      }
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) return res.status(401).json({ message: "Token yok" });
 
-      const productObjectId = new ObjectId(productId);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const companyId = decoded.companyId;
 
-      // 🔍 Logları çek
-      const logs = await stockLogs
-        .aggregate([
-          { $match: { productId: productObjectId } },
-          {
-            $lookup: {
-              from: "accounts",
-              localField: "accountId",
-              foreignField: "_id",
-              as: "account",
-            },
-          },
-          { $sort: { createdAt: -1 } },
-        ])
-        .toArray();
-
-      const formatted = logs.map((l) => ({
-        _id: l._id,
-        type: l.type === "sale" ? "Satış" : "Alış",
-        quantity: l.quantity,
-        unitPrice: l.unitPrice,
-        total: l.total,
-        account: l.account[0]?.ad || "Bilinmiyor",
-        source: l.source || "manuel",
-        date: l.createdAt,
-      }));
-
-      return res.status(200).json(formatted);
+    if (!companyId) {
+      return res.status(400).json({ message: "companyId bulunamadı (token)" });
     }
 
-    return res.status(405).json({ message: "Yalnızca GET desteklenir." });
+    const logs = await StockLog.find({ companyId }).sort({ createdAt: -1 });
+
+    return res.status(200).json(logs);
   } catch (err) {
-    console.error("🔥 Stok log API hatası:", err);
-    return res.status(500).json({ message: "Sunucu hatası", error: err.message });
+    console.error("STOCK LOGS ERROR:", err);
+    return res.status(500).json({ message: "Stock log hatası", error: err.message });
   }
 }

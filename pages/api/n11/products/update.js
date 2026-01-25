@@ -1,22 +1,30 @@
 // 📁 /pages/api/n11/products/update.js
 import axios from "axios";
 import xml2js from "xml2js";
+import { getN11SettingsFromRequest } from "@/lib/n11Settings";
 
 export default async function handler(req, res) {
   if (req.method !== "POST")
     return res.status(405).json({ success: false, message: "Only POST allowed" });
 
   try {
-    const { productId, sellerCode, price, stock } = req.body;
+    const { sellerCode, price, stock } = req.body;
 
     if (!sellerCode)
       return res.status(400).json({ success: false, message: "sellerCode gerekli (SKU)" });
 
-    // N11 Credentials
-    const APP_KEY = process.env.N11_APP_KEY;
-    const APP_SECRET = process.env.N11_APP_SECRET;
+    const cfg = await getN11SettingsFromRequest(req);
 
-    // 🔥 N11 Batch Update API (Price & Stock)
+    const APP_KEY = cfg.appKey || process.env.N11_APP_KEY;
+    const APP_SECRET = cfg.appSecret || process.env.N11_APP_SECRET;
+
+    if (!APP_KEY || !APP_SECRET) {
+      return res.status(400).json({
+        success: false,
+        message: "N11 API bilgileri bulunamadı. API Ayarları veya ENV gerekli.",
+      });
+    }
+
     const xmlRequest = `
       <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
         xmlns:sch="http://www.n11.com/ws/schemas">
@@ -52,6 +60,7 @@ export default async function handler(req, res) {
       success: true,
       message: "N11 stok & fiyat güncelleme isteği gönderildi",
       raw: resBody,
+      source: cfg.source || "env",
     });
   } catch (err) {
     console.error("N11 UPDATE ERROR:", err);

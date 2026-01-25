@@ -1,50 +1,57 @@
-// /pages/api/n11/orders/shipment.js
 import axios from "axios";
-import jwt from "jsonwebtoken";
-import xml2js from "xml2js";
+import { getN11SettingsFromRequest } from "@/lib/n11Settings";
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).end();
+  if (req.method !== "POST") {
+    return res
+      .status(405)
+      .json({ success: false, message: "Only POST allowed" });
+  }
 
   try {
-    const token = req.headers.authorization?.split(" ")[1];
-    if (!token) return res.status(401).json({ message: "Token gerekli" });
+    // ✅ DB settings + ENV fallback
+    const cfg = await getN11SettingsFromRequest(req);
 
-    jwt.verify(token, process.env.JWT_SECRET);
+    const appKey = cfg.appKey || process.env.N11_APP_KEY || "";
+    const appSecret = cfg.appSecret || process.env.N11_APP_SECRET || "";
 
-    const { orderItemId, trackingNumber, trackingUrl, shipmentCompany } = req.body;
+    if (!appKey || !appSecret) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "N11 API bilgileri bulunamadı. API Ayarları veya ENV girilmelidir.",
+      });
+    }
 
-    const xmlRequest = `
-      <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sch="http://www.n11.com/ws/schemas">
-        <soapenv:Header/>
-        <soapenv:Body>
-          <sch:OrderItemShipmentRequest>
-            <auth>
-              <appKey>${process.env.N11_API_KEY}</appKey>
-              <appSecret>${process.env.N11_API_SECRET}</appSecret>
-            </auth>
-            <orderItemId>${orderItemId}</orderItemId>
-            <shipmentInfo>
-              <trackingNumber>${trackingNumber}</trackingNumber>
-              <trackingUrl>${trackingUrl}</trackingUrl>
-              <shipmentCompany>${shipmentCompany}</shipmentCompany>
-            </shipmentInfo>
-          </sch:OrderItemShipmentRequest>
-        </soapenv:Body>
-      </soapenv:Envelope>
-    `;
+    const { shipmentPackageId } = req.body || {};
+    if (!shipmentPackageId) {
+      return res.status(400).json({
+        success: false,
+        message: "shipmentPackageId zorunlu",
+      });
+    }
 
-    const response = await axios.post(
-      process.env.N11_BASE_URL,
-      xmlRequest,
-      { headers: { "Content-Type": "text/xml" } }
-    );
+    const url = `https://api.n11.com/rest/delivery/v1/shipmentPackages/${shipmentPackageId}`;
 
-    const result = await xml2js.parseStringPromise(response.data);
+    const response = await axios.get(url, {
+      headers: {
+        appKey,
+        appSecret,
+      },
+      timeout: 30000,
+    });
 
-    return res.status(200).json({ success: true, result });
-
+    return res.status(200).json({
+      success: true,
+      source: cfg.source || "env",
+      data: response.data,
+    });
   } catch (err) {
-    return res.status(500).json({ message: "Sunucu hatası" });
+    console.error("N11 SHIPMENT ERROR:", err?.response?.data || err);
+    return res.status(500).json({
+      success: false,
+      message: "N11 shipment detayı alınamadı",
+      error: err?.response?.data || err?.message || String(err),
+    });
   }
 }
