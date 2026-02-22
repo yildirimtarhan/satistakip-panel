@@ -19,7 +19,8 @@ export default async function handler(req, res) {
     const token = auth.replace("Bearer ", "");
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const userId = decoded.id || decoded._id;
+   const userId = decoded.userId || decoded.id || decoded._id;
+
     const companyIdRaw = decoded.companyId || null;
     const role = decoded.role || "user";
 
@@ -35,88 +36,105 @@ export default async function handler(req, res) {
     const endDate = end ? new Date(end) : new Date();
     endDate.setHours(23, 59, 59, 999);
 
-    // 🧾 CARİ
-    const cari = await Cari.findById(accountObjectId);
-    if (!cari) {
-      return res.status(404).json({ message: "Cari bulunamadı" });
-    }
+   // 🧾 CARİ (TOLERANSLI)
+const cari = await Cari.findOne({
+  _id: accountObjectId,
+  $or: [
+    { companyId: new mongoose.Types.ObjectId(companyIdRaw) },
+    { companyId: String(companyIdRaw) },
+     { companyId: { $exists: false } }, // ✅ BUNU EKLE
+  ],
+});
 
-    // 🧠 TENANT FILTER
-    const trxFilter = {
-      accountId: accountObjectId,
-      date: { $gte: startDate, $lte: endDate },
-    };
+if (!cari) {
+  console.error("❌ Cari bulunamadı:", {
+    accountId: accountObjectId.toString(),
+    companyIdRaw,
+  });
+  return res.status(404).json({ message: "Cari bulunamadı" });
+}
 
-    if (role !== "admin" && companyIdRaw) {
-      trxFilter.companyId = new mongoose.Types.ObjectId(companyIdRaw);
-    }
 
-    // 📚 TRANSACTIONS
-    const txs = await Transaction.find(trxFilter).sort({ date: 1 }).lean();
+// 🧠 TENANT FILTER
+const trxFilter = {
+  accountId: accountObjectId,
+  date: { $gte: startDate, $lte: endDate },
+};
+
+
+
+
+// 📚 TRANSACTIONS
+const txs = await Transaction.find(trxFilter).sort({ date: 1 }).lean();
 
     // 🧮 EKSTRE
     let bakiye = 0;
     const rows = [];
 
     for (const t of txs) {
-      // ✅ TL bazında miktar (mevcut sistemin)
-      const amountTRY = Number(t.amount || t.totalTRY || 0);
-      const borc = t.direction === "borc" ? amountTRY : 0;
-      const alacak = t.direction === "alacak" ? amountTRY : 0;
+  // 1) Kur / Para birimi toleranslı
+  const currency = (t.currency || "TRY").toString().toUpperCase();
+  const fxRate = Number(t.fxRate ?? t.rate ?? t.exchangeRate ?? 1) || 1;
 
-      bakiye = bakiye + borc - alacak;
+  // 2) TRY tutar (mevcut sistemin: amount veya totalTRY)
+  const amountTRY = Number(t.totalTRY ?? t.amount ?? 0) || 0;
 
-      // ✅ Döviz bilgileri (yeni ek)
-      const currency = t.currency || "TRY";
-      const fxRate = Number(t.fxRate || 1);
+  // 3) FCY tutar:
+  //    - Eğer DB’de totalFCY/amountFCY varsa onu kullan
+  //    - Yoksa (currency TRY değilse) TRY / kur’dan üret
+  const amountFCYraw = Number(t.totalFCY ?? t.amountFCY ?? 0) || 0;
+  const amountFCY =
+    currency === "TRY"
+      ? amountTRY
+      : (amountFCYraw > 0 ? amountFCYraw : (fxRate > 0 ? amountTRY / fxRate : 0));
 
-      // ✅ Döviz borç/alacak (FCY)
-      // totalFCY yoksa TRY kabul edilir
-      const amountFCY =
-        currency === "TRY"
-          ? amountTRY
-          : Number(t.totalFCY || t.amountFCY || 0);
+  // 4) Borç/Alacak TRY
+  const borc = t.direction === "borc" ? amountTRY : 0;
+  const alacak = t.direction === "alacak" ? amountTRY : 0;
 
-      const borcFCY = t.direction === "borc" ? amountFCY : 0;
-      const alacakFCY = t.direction === "alacak" ? amountFCY : 0;
+  bakiye = bakiye + borc - alacak;
 
-      rows.push({
-        tarih: t.date,
+  // 5) Borç/Alacak FCY
+  const borcFCY = t.direction === "borc" ? amountFCY : 0;
+  const alacakFCY = t.direction === "alacak" ? amountFCY : 0;
 
-        // ✅ SADECE BU KISIM GENİŞLETİLDİ
-        aciklama:
-          t.type === "sale"
-            ? "Satış"
-            : t.type === "sale_return"
-            ? "Satış İadesi"
-            : t.type === "sale_cancel"
-            ? "Satış İptali"
-            : t.type === "payment"
-            ? "Tahsilat"
-            : t.type === "purchase"
-            ? "Alış"
-            : t.type === "expense"
-            ? "Gider"
-            : t.direction === "borc"
-            ? "Ödeme"
-            : t.direction === "alacak"
-            ? "Tahsilat"
-            : "-",
+  // 6) Açıklama (asla boş kalmasın)
+  const aciklama =
+    t.type === "sale" ? "Satış" :
+    t.type === "sale_return" ? "Satış İadesi" :
+    t.type === "sale_cancel" ? "Satış İptali" :
+    t.type === "payment" ? "Tahsilat" :
+    t.type === "purchase" ? "Alış" :
+    t.type === "expense" ? "Gider" :
+    t.direction === "borc" ? "Ödeme" :
+    t.direction === "alacak" ? "Tahsilat" :
+    (t.note || "-");
 
-        // ✅ TL kolonları (mevcut)
-        borc,
-        alacak,
-        bakiye,
+ rows.push({
+  // 🖥 Dashboard için (MEVCUT – DOKUNMADIK)
+  tarih: t.date || t.createdAt || new Date(),
+  aciklama,
 
-        // ✅ EKLENDİ: Para / Kur / Döviz Borç-Alacak
-        currency,
-        fxRate,
-        borcFCY,
-        alacakFCY,
+  borc,
+  alacak,
+  bakiye,
 
-        _id: t._id,
-      });
-    }
+  currency,
+  fxRate,
+  borcFCY,
+  alacakFCY,
+
+  _id: t._id,
+
+  // 🧾 PDF Engine için (YENİ – EKLENDİ)
+  date: t.date || t.createdAt || new Date(),
+  description: aciklama,
+
+  borcDoviz: borcFCY,
+  alacakDoviz: alacakFCY,
+});
+
+}
 
     return res.status(200).json({
       success: true,

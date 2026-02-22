@@ -72,6 +72,9 @@ export default async function handler(req, res) {
       subTotal += lineSub;
       vatTotal += lineVat;
 
+      const itemCurrency = i.currency || currency;
+      const itemFxRate = itemCurrency === "TRY" ? 1 : Number(i.fxRate || fxRate || 1);
+
       return {
         productId: i.productId,
         name: i.name,
@@ -79,6 +82,8 @@ export default async function handler(req, res) {
         sku: i.sku,
         quantity: qty,
         unitPrice: price,
+        currency: itemCurrency,
+        fxRate: itemFxRate,
         vatRate,
         total: lineSub + lineVat,
       };

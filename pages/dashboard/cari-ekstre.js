@@ -59,6 +59,19 @@ export default function CariEkstrePage() {
     [rows]
   );
 
+  // ✅ TOPLAMLAR (Döviz - para birimine göre)
+  const toplamDoviz = useMemo(() => {
+    const map = {};
+    rows.forEach((r) => {
+      if (r.currency && r.currency !== "TRY") {
+        if (!map[r.currency]) map[r.currency] = { borc: 0, alacak: 0 };
+        map[r.currency].borc += Number(r.borcFCY || 0);
+        map[r.currency].alacak += Number(r.alacakFCY || 0);
+      }
+    });
+    return map;
+  }, [rows]);
+
   const sonBakiye = useMemo(() => {
     if (!rows.length) return Number(bakiye || 0);
     const last = rows[rows.length - 1];
@@ -372,8 +385,22 @@ export default function CariEkstrePage() {
 
               {!!rows.length && (
                 <tr className="border-t bg-orange-50">
-                  <td className="p-2 font-bold" colSpan={6}>
+                  <td className="p-2 font-bold" colSpan={4}>
                     TOPLAM
+                  </td>
+                  <td className="p-2 text-right font-bold text-red-600">
+                    {Object.entries(toplamDoviz).map(([cur, v]) =>
+                      v.borc > 0 ? (
+                        <div key={cur}>{tl(v.borc)} {cur}</div>
+                      ) : null
+                    )}
+                  </td>
+                  <td className="p-2 text-right font-bold text-green-600">
+                    {Object.entries(toplamDoviz).map(([cur, v]) =>
+                      v.alacak > 0 ? (
+                        <div key={cur}>{tl(v.alacak)} {cur}</div>
+                      ) : null
+                    )}
                   </td>
                   <td className="p-2 text-right font-bold text-red-600">
                     {tl(toplamBorc)}

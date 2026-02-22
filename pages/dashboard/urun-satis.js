@@ -188,6 +188,7 @@ export default function UrunSatisPage() {
   // data
   const [cariler, setCariler] = useState([]);
   const [products, setProducts] = useState([]);
+  const [tcmbRates, setTcmbRates] = useState({ USD: 1, EUR: 1 });
 
   // form
   const [accountId, setAccountId] = useState("");
@@ -215,6 +216,34 @@ export default function UrunSatisPage() {
   const [cart, setCart] = useState([]);
 
   const barcodeRef = useRef(null);
+
+  // TCMB kur çek (sayfa açılışında)
+  useEffect(() => {
+    fetch("https://api.exchangerate-api.com/v4/latest/TRY")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.rates) {
+          const usd = data.rates.USD > 0 ? 1 / data.rates.USD : 1;
+          const eur = data.rates.EUR > 0 ? 1 / data.rates.EUR : 1;
+          setTcmbRates({ USD: usd, EUR: eur });
+        }
+      })
+      .catch(() => {
+        // TCMB fallback: EVDS proxy yoksa sessizce geç
+      });
+  }, []);
+
+  // Currency değişince kur otomatik ata (manuel mod açık değilse)
+  useEffect(() => {
+    if (manualRate) return;
+    if (currency === "TRY") {
+      setFxRate(1);
+    } else if (currency === "USD" && tcmbRates.USD > 1) {
+      setFxRate(Number(tcmbRates.USD.toFixed(4)));
+    } else if (currency === "EUR" && tcmbRates.EUR > 1) {
+      setFxRate(Number(tcmbRates.EUR.toFixed(4)));
+    }
+  }, [currency, tcmbRates, manualRate]);
 
   // loaders
   const loadCariler = async (t) => {
@@ -456,7 +485,6 @@ export default function UrunSatisPage() {
   partialPaymentTRY: safeNum(partialPaymentTRY, 0),
   note,
 
-  // 🔥 ÜRÜN SATIRLARI (TOTAL DAHİL)
   items: cart.map((x) => {
     const qty = safeNum(x.quantity, 1);
     const price = safeNum(x.unitPrice, 0);
@@ -469,8 +497,10 @@ export default function UrunSatisPage() {
       sku: x.sku,
       quantity: qty,
       unitPrice: price,
+      currency,
+      fxRate: safeNum(fxRate, 1),
       vatRate: safeNum(x.vatRate, 20),
-      total: lineTotal, // ❗ ÇOK ÖNEMLİ
+      total: lineTotal,
     };
   }),
 };

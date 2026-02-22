@@ -41,15 +41,10 @@ export default async function handler(req, res) {
     // 📥 BODY
     const {
       accountId,
-
-      // TL tutar (frontend her zaman TL amount gönderiyor)
       amount,
-
-      // ✅ EKLENDİ: Döviz alanları
       currency,
       fxRate,
       amountFCY,
-
       note,
       date,
       type: bodyType,
@@ -65,49 +60,41 @@ export default async function handler(req, res) {
         ? "odeme"
         : "");
 
-    // ✅ paymentMethod fix
     const paymentMethod = req.body.paymentMethod || req.body.method || "cash";
 
     if (!accountId || !type || !amount) {
       return res.status(400).json({ message: "Zorunlu alanlar eksik" });
     }
 
-    // ✅ Tarih fix
     const trxDate = date ? new Date(date) : new Date();
 
-    // ✅ Cari bul
-    const cari = await Cari.findById(accountId);
+    // ✅ Cari bul (ESKİ GİBİ - sadece userId ile)
+    const cari = await Cari.findOne({ _id: accountId, userId });
     if (!cari) {
       return res.status(404).json({ message: "Cari bulunamadı" });
     }
 
-    // ✅ Direction: Tahsilat = alacak, Ödeme = borc
-    const trxDirection = type === "tahsilat" ? "alacak" : "borc";
+    // ✅ DÜZELTİLDİ: Tahsilat = alacak, Ödeme = borc
+    // Eğer frontend "alacak" gönderiyorsa tahsilat, "borc" gönderiyorsa ödeme
+    const trxDirection = direction === "alacak" ? "alacak" : "borc";
 
-    // ✅ EKLENDİ: Döviz hesapları
+    // ✅ Döviz hesapları
     const cur = currency || "TRY";
     const fx = cur === "TRY" ? 1 : Number(fxRate || 0);
     const fcy = cur === "TRY" ? Number(amount || 0) : Number(amountFCY || 0);
+    const totalTRY = cur === "TRY" ? Number(amount || 0) : Number(fcy) * Number(fx || 0);
 
-    const totalTRY =
-      cur === "TRY" ? Number(amount || 0) : Number(fcy) * Number(fx || 0);
-
-    // ✅ Transaction oluştur
+    // ✅ Transaction oluştur (ESKİ GİBİ - companyId yok)
     const trx = await Transaction.create({
       userId,
       accountId,
-      type,
-      direction: trxDirection,
-
-      // TL alanları (ekstre/bakiye)
+      type,                    // "tahsilat" veya "odeme"
+      direction: trxDirection, // "alacak" veya "borc"
       amount: Number(Number(totalTRY).toFixed(2)),
       totalTRY: Number(Number(totalTRY).toFixed(2)),
-
-      // ✅ Döviz alanları (ekstre pdf + para/kur)
       currency: cur,
       fxRate: Number(fx || 1),
       totalFCY: Number(Number(fcy).toFixed(2)),
-
       paymentMethod,
       note: note || "",
       date: trxDate,
@@ -115,14 +102,24 @@ export default async function handler(req, res) {
       isDeleted: false,
     });
 
-    // ✅ Cari bakiye güncelle (TL üzerinden)
-    if (type === "tahsilat") {
+     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // ✅ BAKİYE GÜNCELLEME - BURAYA YAPIŞTIR (Satır ~115-125)
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    
+    // Tahsilat (alacak): Cari bize borçlu, bakiye azalır (-)
+    // Ödeme (borc): Biz cariye borçlu, bakiye artar (+)
+    
+    if (trxDirection === "alacak") {
+      // Tahsilat aldık, carinin borcu azalır
       cari.bakiye = Number(cari.bakiye || 0) - Number(totalTRY);
     } else {
+      // Ödeme yaptık, cariye borçlandık
       cari.bakiye = Number(cari.bakiye || 0) + Number(totalTRY);
     }
 
     await cari.save();
+
+    
 
     // ✅ MAİL (GERÇEK ZOHO) + BAKİYE + PDF LİNK
     try {
@@ -226,7 +223,7 @@ export default async function handler(req, res) {
     }
 
     // ✅ Response
-    return res.status(200).json({
+   return res.status(200).json({
       message: "Başarılı",
       trx,
       newBalance: cari.bakiye,

@@ -530,80 +530,98 @@ export default function CariTahsilat() {
                   </td>
                 </tr>
               ) : (
-                payments.map((p) => {
-                  const isCancelled =
-                    p?.isDeleted === true || p?.status === "cancelled";
+                // ... önceki kodlar aynı ...
 
-                  return (
-                    <tr
-                      key={p._id}
-                      className={isCancelled ? "bg-gray-100 text-gray-400" : ""}
-                    >
-                      <td className="border p-2">
-                        {p.date
-                          ? new Date(p.date).toLocaleDateString("tr-TR")
-                          : "-"}
-                      </td>
+// ✅ Düzeltilmiş liste render kısmı
+payments.map((p) => {
+  // ✅ DÜZELTİLDİ: İptal kontrolü
+  const isCancelled =
+    p?.isDeleted === true || 
+    p?.status === "cancelled" ||
+    p?.type?.includes('cancel');
 
-                      <td className="border p-2">
-                        {p.direction === "alacak" ? "Tahsilat" : "Ödeme"}
+  // ✅ DÜZELTİLDİ: Yön belirleme
+  // type tahsilat_cancel ise görünümde borç göster (ters)
+  let displayType = p.direction === "alacak" ? "Tahsilat" : "Ödeme";
+  let displayClass = "";
+  
+  if (isCancelled) {
+    displayType = p.type === "tahsilat_cancel" ? "Tahsilat (İptal)" : "Ödeme (İptal)";
+    displayClass = "line-through opacity-60";
+  }
 
-                        {isCancelled && (
-                          <span
-                            title={`İptal Nedeni: ${p?.cancelReason || "-"}`}
-                            className="ml-2 px-2 py-1 text-xs rounded bg-red-100 text-red-600 font-semibold"
-                          >
-                            İPTAL EDİLDİ
-                          </span>
-                        )}
-                      </td>
+  return (
+    <tr
+      key={p._id}
+      className={isCancelled ? "bg-gray-100 text-gray-400" : ""}
+    >
+      <td className="border p-2">
+        {p.date ? new Date(p.date).toLocaleDateString("tr-TR") : "-"}
+      </td>
 
-                      {/* ✅ Dövizli gösterim */}
-                      <td className="border p-2">
-                        {p.currency && p.currency !== "TRY" ? (
-                          <>
-                            {fmt(p.totalFCY)} {p.currency}{" "}
-                            <span className="text-gray-400">
-                              (Kur: {Number(p.fxRate || 0).toFixed(4)} |{" "}
-                              {fmt(p.amount)} TRY)
-                            </span>
-                          </>
-                        ) : (
-                          `${fmt(p.amount)} TRY`
-                        )}
-                      </td>
+      <td className="border p-2">
+        <span className={displayClass}>
+          {displayType}
+        </span>
+        
+        {isCancelled && (
+          <span
+            title={`İptal Nedeni: ${p?.cancelReason || p?.note || "-"}`}
+            className="ml-2 px-2 py-1 text-xs rounded bg-red-100 text-red-600 font-semibold"
+          >
+            İPTAL EDİLDİ
+          </span>
+        )}
+      </td>
 
-                      <td className="border p-2">
-                        {formatMethod(p.paymentMethod)}
-                      </td>
+      {/* Tutar - İptal ise parantez içinde göster */}
+      <td className={`border p-2 ${isCancelled ? 'line-through' : ''}`}>
+        {p.currency && p.currency !== "TRY" ? (
+          <>
+            {fmt(p.totalFCY)} {p.currency}{" "}
+            <span className="text-gray-400">
+              (Kur: {Number(p.fxRate || 0).toFixed(4)} |{" "}
+              {fmt(p.amount || p.totalTRY)} TRY)
+            </span>
+          </>
+        ) : (
+          `${fmt(p.amount || p.totalTRY)} TRY`
+        )}
+      </td>
 
-                      <td className="border p-2">{p.note || "-"}</td>
+      <td className="border p-2">
+        {formatMethod(p.paymentMethod)}
+      </td>
 
-                      <td className="border p-2 text-center">
-                        <button
-                          className="text-blue-600 underline"
-                          onClick={() => openPdfForPayment(p._id)}
-                        >
-                          PDF
-                        </button>
-                      </td>
+      <td className="border p-2">{p.note || "-"}</td>
 
-                      <td className="border p-2 text-center">
-                        <button
-                          disabled={isCancelled}
-                          className={`underline ${
-                            isCancelled
-                              ? "text-gray-400 cursor-not-allowed"
-                              : "text-red-600"
-                          }`}
-                          onClick={() => cancelPayment(p._id)}
-                        >
-                          {isCancelled ? "Geri Alındı" : "Geri Al"}
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
+      <td className="border p-2 text-center">
+        <button
+          className="text-blue-600 underline"
+          onClick={() => openPdfForPayment(p._id)}
+        >
+          PDF
+        </button>
+      </td>
+
+      <td className="border p-2 text-center">
+        <button
+          disabled={isCancelled}
+          className={`underline ${
+            isCancelled
+              ? "text-gray-400 cursor-not-allowed"
+              : "text-red-600"
+          }`}
+          onClick={() => cancelPayment(p._id)}
+        >
+          {isCancelled ? "Geri Alındı" : "Geri Al"}
+        </button>
+      </td>
+    </tr>
+  );
+})
+
+// ... sonraki kodlar aynı ...
               )}
             </tbody>
           </table>

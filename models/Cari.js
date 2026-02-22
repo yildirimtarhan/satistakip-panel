@@ -2,7 +2,23 @@ import mongoose from "mongoose";
 
 const CariSchema = new mongoose.Schema(
   {
-    // ✅ TİCARİ ÜNVAN (ARTIK STANDART)
+    // ✅ Firma (Multi-Tenant)
+    companyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "CompanySettings",
+      required: false, // 🔥 Migration bitince true yapacağız
+      index: true,
+    },
+
+    // ✅ Cariyi oluşturan kullanıcı
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: false,
+      index: true,
+    },
+
+    // ✅ Ticari Ünvan
     unvan: { type: String, default: "" },
 
     ad: String,
@@ -30,10 +46,10 @@ const CariSchema = new mongoose.Schema(
     bakiye: { type: Number, default: 0 },
     totalSales: { type: Number, default: 0 },
     totalPurchases: { type: Number, default: 0 },
-
-    userId: String,
   },
   { timestamps: true }
 );
 
-export default mongoose.models.Cari || mongoose.model("Cari", CariSchema);
+export default mongoose.models.Cari ||
+  mongoose.model("Cari", CariSchema, "cari");
+

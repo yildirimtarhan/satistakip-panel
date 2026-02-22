@@ -90,12 +90,14 @@ export default async function handler(req, res) {
 
     const computedItems = items.map((item) => {
       const quantity = Number(item?.quantity || 0);
+      // item'da currency yoksa transaction üst seviyesinden al (eski kayıtlar için)
+      const currency = item?.currency || sale.currency || "TRY";
+      const fxRate = currency === "TRY" ? 1 : Number(item?.fxRate || sale.fxRate || 1);
       const unitPrice = Number(item?.unitPrice || 0);
-
-      // ✅ item içinde yoksa default 20
+      const unitPriceTRY = currency === "TRY" ? unitPrice : unitPrice * fxRate;
       const vatRate = Number(item?.vatRate ?? 20);
 
-      const net = quantity * unitPrice;
+      const net = quantity * unitPriceTRY;
       const vatAmount = (net * vatRate) / 100;
       const gross = net + vatAmount;
 
@@ -103,16 +105,10 @@ export default async function handler(req, res) {
       kdvToplam += vatAmount;
       genelToplam += gross;
 
-      return {
-        ...item,
-        quantity,
-        unitPrice,
-        vatRate,
-        net,
-        vatAmount,
-        total: gross,
-      };
+      return { ...item, quantity, unitPrice, unitPriceTRY, currency, fxRate, vatRate, net, vatAmount, total: gross };
     });
+
+    const hasFX = computedItems.some((i) => i.currency && i.currency !== "TRY");
 
     // =========================
     // 📦 TABLO BAŞLIK
@@ -120,12 +116,23 @@ export default async function handler(req, res) {
     doc.rect(40, y, 510, 20).fill("#f2f2f2");
     doc.fillColor("#000").fontSize(9);
 
-    doc.text("Ürün", 45, y + 6);
-    doc.text("Adet", 255, y + 6, { width: 40, align: "right" });
-    doc.text("Birim", 305, y + 6, { width: 55, align: "right" });
-    doc.text("KDV%", 370, y + 6, { width: 45, align: "right" });
-    doc.text("KDV₺", 420, y + 6, { width: 55, align: "right" });
-    doc.text("Toplam", 475, y + 6, { width: 70, align: "right" });
+    if (hasFX) {
+      doc.text("Ürün",    45, y + 6, { width: 145 });
+      doc.text("Adet",   190, y + 6, { width: 35, align: "right" });
+      doc.text("Birim",  225, y + 6, { width: 60, align: "right" });
+      doc.text("Para",   285, y + 6, { width: 30, align: "right" });
+      doc.text("Kur",    315, y + 6, { width: 50, align: "right" });
+      doc.text("KDV%",   365, y + 6, { width: 35, align: "right" });
+      doc.text("KDV₺",   400, y + 6, { width: 45, align: "right" });
+      doc.text("Toplam", 445, y + 6, { width: 100, align: "right" });
+    } else {
+      doc.text("Ürün",    45, y + 6);
+      doc.text("Adet",   255, y + 6, { width: 40,  align: "right" });
+      doc.text("Birim",  305, y + 6, { width: 55,  align: "right" });
+      doc.text("KDV%",   370, y + 6, { width: 45,  align: "right" });
+      doc.text("KDV₺",   420, y + 6, { width: 55,  align: "right" });
+      doc.text("Toplam", 475, y + 6, { width: 70,  align: "right" });
+    }
 
     y += 25;
 
@@ -135,15 +142,27 @@ export default async function handler(req, res) {
     for (const item of computedItems) {
       doc.fontSize(9).fillColor("#000");
 
-      doc.text(item?.name || "-", 45, y, { width: 190 });
+      if (hasFX) {
+        const birimStr = item.currency !== "TRY"
+          ? `${item.unitPrice.toFixed(2)} ${item.currency}`
+          : item.unitPrice.toFixed(2);
 
-      doc.text(String(item.quantity || 0), 255, y, { width: 40, align: "right" });
-      doc.text(item.unitPrice.toFixed(2), 305, y, { width: 55, align: "right" });
-
-      doc.text(String(item.vatRate || 0), 370, y, { width: 45, align: "right" });
-      doc.text(item.vatAmount.toFixed(2), 420, y, { width: 55, align: "right" });
-
-      doc.text(item.total.toFixed(2), 475, y, { width: 70, align: "right" });
+        doc.text(item?.name || "-",  45, y, { width: 145 });
+        doc.text(String(item.quantity), 190, y, { width: 35, align: "right" });
+        doc.text(birimStr,            225, y, { width: 60, align: "right" });
+        doc.text(item.currency,       285, y, { width: 30, align: "right" });
+        doc.text(item.currency !== "TRY" ? item.fxRate.toFixed(4) : "-", 315, y, { width: 50, align: "right" });
+        doc.text(String(item.vatRate), 365, y, { width: 35, align: "right" });
+        doc.text(item.vatAmount.toFixed(2), 400, y, { width: 45, align: "right" });
+        doc.text(item.total.toFixed(2) + " TL", 445, y, { width: 100, align: "right" });
+      } else {
+        doc.text(item?.name || "-", 45, y, { width: 190 });
+        doc.text(String(item.quantity), 255, y, { width: 40,  align: "right" });
+        doc.text(item.unitPrice.toFixed(2), 305, y, { width: 55, align: "right" });
+        doc.text(String(item.vatRate),  370, y, { width: 45, align: "right" });
+        doc.text(item.vatAmount.toFixed(2), 420, y, { width: 55, align: "right" });
+        doc.text(item.total.toFixed(2), 475, y, { width: 70, align: "right" });
+      }
 
       y += 16;
 
@@ -164,6 +183,17 @@ export default async function handler(req, res) {
       align: "right",
     });
     y += 14;
+
+    if (hasFX) {
+      const fxCurrencies = [...new Set(computedItems.filter(i => i.currency !== "TRY").map(i => i.currency))];
+      for (const cur of fxCurrencies) {
+        const curItems = computedItems.filter(i => i.currency === cur);
+        const fxNetTotal = curItems.reduce((s, i) => s + Number(i.quantity) * Number(i.unitPrice), 0);
+        const rate = curItems[0]?.fxRate || 1;
+        doc.fontSize(9).text(`(${fxNetTotal.toFixed(2)} ${cur} × ${rate.toFixed(4)} kur)`, 350, y, { align: "right" });
+        y += 13;
+      }
+    }
 
     doc.fontSize(10).text(`KDV Toplam: ${kdvToplam.toFixed(2)} TL`, 350, y, {
       align: "right",

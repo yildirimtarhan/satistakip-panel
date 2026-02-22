@@ -33,6 +33,7 @@ export default async function handler(req, res) {
     }
 
     const userId = decoded?.userId || decoded?.id || decoded?._id;
+    const companyId = decoded?.companyId || null;
     if (!userId) return res.status(401).json({ message: "Yetki bilgisi eksik (userId)" });
 
     const { accountId, invoiceDate, invoiceNo, orderNo, note, items } = req.body || {};
@@ -113,6 +114,7 @@ const grandTotalFCY =
 const tx = await Transaction.create({
   userId,
   accountId,
+  ...(companyId ? { companyId } : {}),
 
   type: "purchase",
   direction: "borc",

@@ -132,11 +132,18 @@ export default function NewProductPage() {
 
   // 🔥 Kategoriye göre N11 marka listesi
   // 🔥 N11 Marka listesi yükle
+  // 🔥 N11 Marka listesi yükle
 const loadBrandsByCategory = async (categoryId) => {
   try {
+    const token = localStorage.getItem("token");
 
     // Yeni backend yapısına uygun endpoint
-    const res = await fetch(`/api/n11/brands`);
+     
+    const res = await fetch(`/api/n11/brands?categoryId=${categoryId}`, {
+  headers: { Authorization: `Bearer ${token}` },
+});
+
+
     const data = await res.json();
 
     // Hem data.brands hem data.data olasılıklarını yönetiyoruz
@@ -151,7 +158,6 @@ const loadBrandsByCategory = async (categoryId) => {
     } else {
       setBrands([]);
     }
-
   } catch (err) {
     console.error("N11 marka listesi çekilemedi:", err);
     setBrands([]);
@@ -265,34 +271,58 @@ const loadBrandsByCategory = async (categoryId) => {
       console.log("🟦 PRODUCT ADD BODY:", payload);
 
       const res = await fetch("/api/products/add", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-      });
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
 
-      const data = await res.json().catch(() => ({}));
+    const data = await res.json().catch(() => ({}));
 
-      if (!res.ok || data.success === false) {
-        alert("❌ Ürün kaydedilemedi: " + (data.message || "Bilinmeyen Hata"));
-        setIsSubmitting(false);
-        return;
+    if (!res.ok || data.success === false) {
+      alert("❌ Ürün kaydedilemedi: " + (data.message || "Bilinmeyen Hata"));
+      setIsSubmitting(false);
+      return;
+    }
+
+    alert("✅ Ürün başarıyla ERP'ye kaydedildi!");
+
+    const createdProductId = data?.product?._id;
+
+    // ✅ N11 seçildiyse otomatik gönder
+    if (createdProductId && form?.sendTo?.n11) {
+      try {
+        const sendRes = await fetch("/api/n11/products/create", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ productId: createdProductId }),
+        });
+
+        const sendData = await sendRes.json().catch(() => ({}));
+
+        if (!sendRes.ok || sendData.success === false) {
+          alert(`❌ N11 gönderim hatası:\n${sendData.message || "Bilinmeyen hata"}`);
+        } else {
+          alert(`✅ N11 gönderimi kuyruğa alındı!\nTaskId: ${sendData.taskId}`);
+        }
+      } catch (err) {
+        console.error("N11 otomatik gönderim hatası:", err);
+        alert("❌ N11 otomatik gönderim hatası (console kontrol et)");
       }
-
-      alert("✔ Ürün başarıyla ERP'ye kaydedildi!");
-
-      setTimeout(() => {
-        router.push("/dashboard/urunler");
-      }, 400);
-    } catch (err) {
-      console.error("Ürün kayıt hatası:", err);
-      alert("❌ Beklenmeyen bir hata oluştu.");
     }
 
     setIsSubmitting(false);
-  };
+  } catch (err) {
+    console.error("handleSubmit error:", err);
+    alert("❌ Bir hata oluştu (console kontrol et)");
+    setIsSubmitting(false);
+  }
+};
 
   return (
     <div className="p-6 max-w-6xl mx-auto">

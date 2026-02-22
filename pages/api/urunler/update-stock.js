@@ -28,16 +28,22 @@ export default async function handler(req, res) {
     const product = await Product.findOne({ _id: productId, companyId });
 
     if (!product) {
-      return res.status(404).json({ message: "Ürün bulunamadı (bu firmaya ait değil)" });
+      return res
+        .status(404)
+        .json({ message: "Ürün bulunamadı (bu firmaya ait değil)" });
     }
 
     const q = Number(quantity);
 
+    // ✅ DOĞRU ALAN: stock
     if (type === "in") {
-      product.stok = Number(product.stok || 0) + q;
+      product.stock = Number(product.stock || 0) + q;
     } else {
-      product.stok = Number(product.stok || 0) - q;
+      product.stock = Number(product.stock || 0) - q;
     }
+
+    // stok negatif olmasın istersen:
+    if (product.stock < 0) product.stock = 0;
 
     await product.save();
 
@@ -54,10 +60,13 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       message: "✅ Stok güncellendi",
-      stok: product.stok,
+      stock: product.stock,
     });
   } catch (err) {
     console.error("UPDATE STOCK ERROR:", err);
-    return res.status(500).json({ message: "Stok güncelleme hatası", error: err.message });
+    return res.status(500).json({
+      message: "Stok güncelleme hatası",
+      error: err.message,
+    });
   }
 }

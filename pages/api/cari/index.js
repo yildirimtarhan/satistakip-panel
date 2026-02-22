@@ -1,7 +1,9 @@
 import dbConnect from "@/lib/mongodb";
 import jwt from "jsonwebtoken";
 import { Types } from "mongoose";
+
 import Cari from "@/models/Cari";
+import Transaction from "@/models/Transaction";
 
 export default async function handler(req, res) {
   res.setHeader("Allow", "GET,POST,PUT,DELETE,OPTIONS");
@@ -10,7 +12,7 @@ export default async function handler(req, res) {
   try {
     await dbConnect();
 
-    // 🔐 TOKEN KONTROLÜ
+    // 🔐 TOKEN
     const authHeader = req.headers.authorization || "";
     const token = authHeader.startsWith("Bearer ")
       ? authHeader.split(" ")[1]
@@ -26,39 +28,90 @@ export default async function handler(req, res) {
     }
 
     const userId = decoded.userId;
+    const companyId = decoded.companyId || null;
 
     // ============================================================
-    // 📌 GET → Cari Listesi
+    // 📌 GET → Cari Listesi (Bakiye Transaction'dan Hesaplanır)
     // ============================================================
-    if (req.method === "GET") {
-      
-      // 🟢 ADMIN → TÜM CARİLERİ GETİR
-      if (decoded.role === "admin") {
-        const allCariler = await Cari.find().sort({ createdAt: -1 }).lean();
-        return res.status(200).json(allCariler);
-      }
+    // ============================================================
+// 📌 GET → Cari Listesi (Geçiş Modu)
+// ============================================================
+if (req.method === "GET") {
+  let query = {};
 
-      // 🟡 USER → SADECE KENDİ CARİLERİ
-      const cariler = await Cari.find({ userId }).sort({ createdAt: -1 }).lean();
+  // 🟢 ADMIN → tüm cariler
+  if (decoded.role === "admin") {
+    query = {};
+  } else {
+    // 🟡 USER → kendi carileri + geçiş desteği
+    query = {
+      userId,
+    };
 
-      const fixed = cariler.map((c) => ({
-        ...c,
-        bakiye: Number(c.bakiye || 0),
-        totalSales: Number(c.totalSales || 0),
-        totalPurchases: Number(c.totalPurchases || 0),
-      }));
-
-      return res.status(200).json(fixed);
+    // ✅ Multi-tenant geçiş filtresi
+    if (companyId) {
+      query.$or = [
+        { companyId: new Types.ObjectId(companyId) }, // yeni kayıtlar
+        { companyId: { $exists: false } },            // eski kayıtlar
+      ];
     }
+  }
+
+  // 1) Carileri çek
+  const cariler = await Cari.find(query).sort({ createdAt: -1 }).lean();
+
+  // 2) Transaction’dan bakiye hesapla
+  const cariIds = cariler.map((c) => c._id);
+
+  const txs = await Transaction.aggregate([
+    {
+      $match: {
+        accountId: { $in: cariIds },
+        ...(companyId
+          ? { companyId: new Types.ObjectId(companyId) }
+          : {}),
+      },
+    },
+    {
+      $group: {
+        _id: "$accountId",
+        borc: {
+          $sum: {
+            $cond: [{ $eq: ["$direction", "borc"] }, "$amount", 0],
+          },
+        },
+        alacak: {
+          $sum: {
+            $cond: [{ $eq: ["$direction", "alacak"] }, "$amount", 0],
+          },
+        },
+      },
+    },
+  ]);
+
+  // 3) Map oluştur
+  const balanceMap = {};
+  txs.forEach((t) => {
+    balanceMap[t._id.toString()] = t.borc - t.alacak;
+  });
+
+  // 4) Carilere doğru bakiye bas
+  const fixed = cariler.map((c) => ({
+    ...c,
+    bakiye: balanceMap[c._id.toString()] || 0,
+  }));
+
+  return res.status(200).json(fixed);
+}
 
     // ============================================================
-    // 📌 POST → Yeni Cari Ekle
+    // 📌 POST → Yeni Cari
     // ============================================================
     if (req.method === "POST") {
       const b = req.body || {};
 
       if (!b.ad) {
-        return res.status(400).json({ message: "Lütfen 'ad' alanını doldurun." });
+        return res.status(400).json({ message: "Cari adı zorunludur." });
       }
 
       const doc = {
@@ -66,29 +119,14 @@ export default async function handler(req, res) {
         tur: b.tur || "Müşteri",
         telefon: b.telefon || "",
         email: b.email || "",
-        vergiTipi: b.vergiTipi || "TCKN",
-        vergiNo: b.vergiNo || "",
-        vergiDairesi: b.vergiDairesi || "",
         adres: b.adres || "",
         il: b.il || "",
         ilce: b.ilce || "",
-        postaKodu: b.postaKodu || "",
-        paraBirimi: b.paraBirimi || "TRY",
-
-        trendyolCustomerId: b.trendyolCustomerId || "",
-        hbCustomerId: b.hbCustomerId || "",
-        n11CustomerId: b.n11CustomerId || "",
-        amazonCustomerId: b.amazonCustomerId || "",
-        pttCustomerId: b.pttCustomerId || "",
-        idefixCustomerId: b.idefixCustomerId || "",
-        ciceksepetiCustomerId: b.ciceksepetiCustomerId || "",
 
         bakiye: 0,
-        totalSales: 0,
-        totalPurchases: 0,
 
-        // 🟢 EKLENDİ → Multi Firmalar için çok kritik!
         userId,
+        ...(companyId ? { companyId: new Types.ObjectId(companyId) } : {}),
 
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -100,63 +138,6 @@ export default async function handler(req, res) {
         message: "Cari başarıyla eklendi",
         _id: yeni._id,
       });
-    }
-
-    // ============================================================
-    // 📌 PUT → Cari Güncelle
-    // ============================================================
-    if (req.method === "PUT") {
-      const { cariId } = req.query;
-
-      if (!cariId) return res.status(400).json({ message: "cariId zorunludur." });
-
-      const _id = new Types.ObjectId(cariId);
-      const b = req.body || {};
-
-      const updateDoc = {
-        ...(b.ad !== undefined && { ad: b.ad }),
-        ...(b.tur !== undefined && { tur: b.tur }),
-        ...(b.telefon !== undefined && { telefon: b.telefon }),
-        ...(b.email !== undefined && { email: b.email }),
-        ...(b.vergiTipi !== undefined && { vergiTipi: b.vergiTipi }),
-        ...(b.vergiNo !== undefined && { vergiNo: b.vergiNo }),
-        ...(b.vergiDairesi !== undefined && { vergiDairesi: b.vergiDairesi }),
-        ...(b.adres !== undefined && { adres: b.adres }),
-        ...(b.il !== undefined && { il: b.il }),
-        ...(b.ilce !== undefined && { ilce: b.ilce }),
-        ...(b.postaKodu !== undefined && { postaKodu: b.postaKodu }),
-        ...(b.paraBirimi !== undefined && { paraBirimi: b.paraBirimi }),
-        ...(b.trendyolCustomerId !== undefined && { trendyolCustomerId: b.trendyolCustomerId }),
-        ...(b.hbCustomerId !== undefined && { hbCustomerId: b.hbCustomerId }),
-        ...(b.n11CustomerId !== undefined && { n11CustomerId: b.n11CustomerId }),
-        ...(b.amazonCustomerId !== undefined && { amazonCustomerId: b.amazonCustomerId }),
-        ...(b.pttCustomerId !== undefined && { pttCustomerId: b.pttCustomerId }),
-        ...(b.idefixCustomerId !== undefined && { idefixCustomerId: b.idefixCustomerId }),
-        ...(b.ciceksepetiCustomerId !== undefined && { ciceksepetiCustomerId: b.ciceksepetiCustomerId }),
-
-        updatedAt: new Date(),
-      };
-
-      await Cari.updateOne({ _id, userId }, { $set: updateDoc });
-
-      return res.status(200).json({ message: "Cari güncellendi" });
-    }
-
-    // ============================================================
-    // 📌 DELETE → Cari Sil
-    // ============================================================
-    if (req.method === "DELETE") {
-      const { cariId } = req.query;
-
-      if (!cariId)
-        return res.status(400).json({ message: "cariId zorunludur." });
-
-      await Cari.deleteOne({
-        _id: new Types.ObjectId(cariId),
-        userId,
-      });
-
-      return res.status(200).json({ message: "Cari silindi" });
     }
 
     return res.status(405).json({ message: "Method not allowed" });

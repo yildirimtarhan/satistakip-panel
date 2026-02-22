@@ -9,6 +9,9 @@ export default async function handler(req, res) {
 
   try {
     const { sellerCode, price, stock } = req.body;
+    // ✅ Stok sadece alış/satış ile değişir (Edit ekranı stoğu bozmasın)
+if (req.body?.stock !== undefined) delete req.body.stock;
+if (req.body?.stok !== undefined) delete req.body.stok;
 
     if (!sellerCode)
       return res.status(400).json({ success: false, message: "sellerCode gerekli (SKU)" });

@@ -4,7 +4,6 @@ import dbConnect, { connectToDatabase } from "@/lib/mongodb";
 import Transaction from "@/models/Transaction";
 import Cari from "@/models/Cari";
 
-// ✅ Senin proje yapında doğru yol burası:
 import tahsilatMakbuzuTemplate from "../../../lib/pdf/templates/tahsilatMakbuzu";
 
 const fmt = (n) =>
@@ -38,40 +37,78 @@ export default async function handler(req, res) {
 
     const userId = decoded.userId || decoded._id || decoded.id;
     const companyId = decoded.companyId || null;
-    const role = decoded.role || "user";
 
     if (!userId) return res.status(401).json({ message: "Kullanıcı bulunamadı" });
-    if (role === "admin") return res.status(403).json({ message: "Admin ERP işlemi yapamaz" });
 
     const { id } = req.query;
     if (!id) return res.status(400).json({ message: "id gerekli" });
 
-    // ✅ Transaction bul (multi-tenant)
-    const trx = await Transaction.findOne({
-  _id: id,
-  ...(companyId ? { companyId } : { userId }),
-  direction: { $in: ["alacak", "borc"] },
-}).lean();
+    console.log("PDF REQUEST:", { id, userId, companyId });
 
-if (!trx) return res.status(404).json({ message: "Kayıt bulunamadı" });
+    // ✅ DÜZELTİLDİ: Önce companyId ile dene, bulamazsan userId ile dene
+    let trx = null;
+    
+    if (companyId) {
+      // 1. CompanyId ile ara (yeni kayıtlar)
+      trx = await Transaction.findOne({
+        _id: id,
+        companyId: companyId,
+        direction: { $in: ["alacak", "borc"] },
+      }).lean();
+      
+      console.log("CompanyId ile arama:", trx ? "Bulundu" : "Bulunamadı");
+    }
+    
+    if (!trx) {
+      // 2. UserId ile ara (eski kayıtlar veya companyId yoksa)
+      trx = await Transaction.findOne({
+        _id: id,
+        userId: userId,
+        direction: { $in: ["alacak", "borc"] },
+      }).lean();
+      
+      console.log("UserId ile arama:", trx ? "Bulundu" : "Bulunamadı");
+    }
 
-console.log("PDF REQUEST ID:", id, "companyId:", companyId, "userId:", userId);
+    if (!trx) {
+      return res.status(404).json({ message: "Kayıt bulunamadı" });
+    }
 
-    // ✅ Cari bul
-    const cari = await Cari.findOne({
-      _id: trx.accountId,
-      ...(companyId ? { companyId } : { userId }),
-    }).lean();
+    console.log("Transaction bulundu:", trx._id, "Type:", trx.type, "Direction:", trx.direction);
+
+    // ✅ Cari bul - Aynı mantık (önce companyId, sonra userId)
+    let cari = null;
+    
+    if (companyId) {
+      cari = await Cari.findOne({
+        _id: trx.accountId,
+        companyId: companyId,
+      }).lean();
+    }
+    
+    if (!cari) {
+      cari = await Cari.findOne({
+        _id: trx.accountId,
+        userId: userId,
+      }).lean();
+    }
 
     const cariAd =
       cari?.unvan || cari?.firmaAdi || cari?.ad || cari?.name || cari?.email || "-";
 
-    // ✅ Firma ayarlarını çek (senin settings endpoint’inle aynı mantık)
-    // pages/api/settings/company.js aynı şekilde kullanıyor :contentReference[oaicite:1]{index=1}
+    // ✅ Firma ayarlarını çek
     const { db } = await connectToDatabase();
     const col = db.collection("company_settings");
 
-    const companyDoc = await col.findOne({ userId });
+    // Önce companyId ile dene
+    let companyDoc = null;
+    if (companyId) {
+      companyDoc = await col.findOne({ companyId: companyId });
+    }
+    // Bulamazsan userId ile dene
+    if (!companyDoc) {
+      companyDoc = await col.findOne({ userId: userId });
+    }
 
     const company = companyDoc || {
       firmaAdi: "",
@@ -85,34 +122,61 @@ console.log("PDF REQUEST ID:", id, "companyId:", companyId, "userId:", userId);
       logo: "",
     };
 
-    const title = trx.direction === "alacak" ? "TAHSİLAT MAKBUZU" : "ÖDEME MAKBUZU";
+    // ✅ DÜZELTİLDİ: Makbuz başlığı (direction'a göre değil, type'a göre)
+    // Tahsilat = alacak, Ödeme = borc
+    let title = "MAKBUZ";
+    if (trx.type === "tahsilat" || (trx.type !== "odeme" && trx.direction === "alacak")) {
+      title = "TAHSİLAT MAKBUZU";
+    } else {
+      title = "ÖDEME MAKBUZU";
+    }
+
+    // ✅ Güncel bakiye hesapla (cari'nin tüm işlemlerinin toplamı)
+    let currentBalance = 0;
+    try {
+      const allTrx = await Transaction.find({
+        accountId: trx.accountId,
+        isDeleted: { $ne: true },
+        status: { $ne: "cancelled" },
+      }).lean();
+
+      currentBalance = allTrx.reduce((sum, t) => {
+        const amount = Number(t.totalTRY || t.amount || 0);
+        return t.direction === "borc" ? sum + amount : sum - amount;
+      }, 0);
+    } catch (e) {
+      console.error("Bakiye hesaplanamadı:", e);
+    }
 
     const html = tahsilatMakbuzuTemplate({
       title,
       date: trx.date ? new Date(trx.date).toLocaleDateString("tr-TR") : "-",
       cari: cariAd,
-      amount: fmt(trx.amount),
+      amount: fmt(trx.totalTRY || trx.amount),
+      currency: trx.currency || "TRY",
+      fxRate: trx.fxRate,
+      totalFCY: trx.totalFCY,
       method:
-  trx.paymentMethod === "cash"
-    ? "Nakit"
-    : trx.paymentMethod === "eft"
-    ? "EFT / Havale"
-    : trx.paymentMethod === "kredi_karti"
-    ? "Kredi Kartı"
-    : trx.paymentMethod || "-",
-
+        trx.paymentMethod === "cash"
+          ? "Nakit"
+          : trx.paymentMethod === "eft"
+          ? "EFT / Havale"
+          : trx.paymentMethod === "kredi_karti" || trx.paymentMethod === "kart"
+          ? "Kredi Kartı"
+          : trx.paymentMethod === "bank"
+          ? "Banka"
+          : trx.paymentMethod || "-",
       note: trx.note || "",
       docId: String(trx._id),
       company,
+      currentBalance: fmt(currentBalance),
     });
 
-    // ✅ Ortama göre puppeteer seç
+    // ✅ Puppeteer ile PDF oluştur
     const isRender = !!process.env.RENDER;
-
     let browser;
 
     if (isRender) {
-      // ✅ Render/Linux: puppeteer-core + chromium
       const puppeteer = (await import("puppeteer-core")).default;
       const chromium = (await import("@sparticuz/chromium")).default;
 
@@ -123,12 +187,8 @@ console.log("PDF REQUEST ID:", id, "companyId:", companyId, "userId:", userId);
         headless: chromium.headless,
       });
     } else {
-      // ✅ Local/Windows: puppeteer
       const puppeteer = (await import("puppeteer")).default;
-
-      browser = await puppeteer.launch({
-        headless: "new",
-      });
+      browser = await puppeteer.launch({ headless: "new" });
     }
 
     const page = await browser.newPage();
@@ -141,19 +201,17 @@ console.log("PDF REQUEST ID:", id, "companyId:", companyId, "userId:", userId);
 
     await browser.close();
 
-    // ✅ Dosya adı ASCII güvenli
     const safeName =
-      trx.direction === "alacak"
+      title === "TAHSİLAT MAKBUZU"
         ? `tahsilat-makbuzu-${Date.now()}.pdf`
         : `odeme-makbuzu-${Date.now()}.pdf`;
 
-    // ✅ Header
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename="${safeName}"`);
-
-    // ✅ EN ÖNEMLİ FIX: Binary düzgün dönsün (sayı sayı gözükme hatası biter)
     res.setHeader("Content-Length", pdfBuffer.length);
+    
     return res.status(200).send(Buffer.from(pdfBuffer));
+    
   } catch (err) {
     console.error("❌ TAHSILAT PDF HATASI:", err);
     return res.status(500).json({ message: "PDF oluşturulamadı", error: err.message });

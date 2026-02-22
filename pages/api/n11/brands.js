@@ -1,6 +1,6 @@
-// 📁 /pages/api/n11/brands.js
-import axios from "axios";
-import xml2js from "xml2js";
+import dbConnect from "@/lib/mongodb";
+import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
@@ -10,100 +10,117 @@ export default async function handler(req, res) {
   }
 
   try {
-    const APP_KEY = process.env.N11_APP_KEY;
-    const APP_SECRET = process.env.N11_APP_SECRET;
+    await dbConnect();
 
-    if (!APP_KEY || !APP_SECRET) {
-      return res.status(500).json({
+    
+    const authHeader = req.headers.authorization || "";
+const token = authHeader.startsWith("Bearer ")
+  ? authHeader.split(" ")[1]
+  : null;
+
+
+    if (!token) {
+      return res.status(401).json({
         success: false,
-        message: "❌ N11 APP_KEY veya APP_SECRET tanımlı değil.",
+        message: "Token eksik",
       });
     }
 
-    // 🔹 N11 GetBrandListRequest – pagingData ile
-    const xml = `
-      <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-        xmlns:sch="http://www.n11.com/ws/schemas">
-        <soapenv:Header/>
-        <soapenv:Body>
-          <sch:GetBrandListRequest>
-            <auth>
-              <appKey>${APP_KEY}</appKey>
-              <appSecret>${APP_SECRET}</appSecret>
-            </auth>
-            <pagingData>
-              <currentPage>0</currentPage>
-              <pageSize>500</pageSize>
-            </pagingData>
-          </sch:GetBrandListRequest>
-        </soapenv:Body>
-      </soapenv:Envelope>
-    `;
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const companyId = decoded.companyId;
 
-    const response = await axios.post(
-      "https://api.n11.com/ws/ProductService.svc",
-      xml,
-      {
-        headers: {
-          "Content-Type": "text/xml;charset=UTF-8",
-          SOAPAction: "http://www.n11.com/ws/GetBrandList",
-        },
-        timeout: 30000,
-      }
-    );
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "companyId bulunamadı",
+      });
+    }
 
-    // 🔹 XML → JS
-    const parsed = await xml2js.parseStringPromise(response.data, {
-      explicitArray: false,
+    // ✅ 1) Önce DB'den oku
+    const brandsFromDb = await mongoose.connection.db
+      .collection("n11brands")
+      .find({ companyId: new mongoose.Types.ObjectId(companyId) })
+      .sort({ name: 1 })
+      .toArray();
+
+    // ✅ DB doluysa direkt dön
+    if (brandsFromDb && brandsFromDb.length > 0) {
+      return res.status(200).json({
+        success: true,
+        brands: brandsFromDb.map((b) => ({
+          id: b.id,
+          name: b.name,
+        })),
+        count: brandsFromDb.length,
+        source: "db",
+      });
+    }
+
+    // ✅ 2) DB boşsa fallback: N11 CDN üzerinden kategoriye göre marka çek
+    const { categoryId } = req.query;
+
+    if (!categoryId) {
+      // DB boş + categoryId yok → boş dön
+      return res.status(200).json({
+        success: true,
+        brands: [],
+        count: 0,
+        source: "db-empty",
+      });
+    }
+
+    // settings collection içinden appKey al
+    const settings = await mongoose.connection.db
+      .collection("settings")
+      .findOne({ companyId: new mongoose.Types.ObjectId(companyId) });
+
+    const appKey = settings?.n11?.appKey;
+
+    if (!appKey) {
+      return res.status(400).json({
+        success: false,
+        message: "N11 appKey bulunamadı (settings)",
+      });
+    }
+
+    const url = `https://api.n11.com/cdn/category/${categoryId}/attribute`;
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        appkey: appKey,
+      },
     });
 
-    // N11’in tipik response yapısı şu yönde:
-    // Envelope → Body → GetBrandListResponse → result → status / errorMessage
-    // brandList → brand
-    const body =
-      parsed["s:Envelope"]?.["s:Body"] ||
-      parsed["soap:Envelope"]?.["soap:Body"] ||
-      parsed["Envelope"]?.["Body"];
-
-    const resp =
-      body?.GetBrandListResponse || body?.getBrandListResponse || body;
-
-    const result = resp?.result;
-    const status = result?.status || result?.Status;
-
-    if (status && status !== "SUCCESS") {
-      const errMsg =
-        result?.errorMessage || result?.ErrorMessage || "N11 hata döndürdü";
-      console.error("❌ N11 GetBrandList status ERROR:", errMsg);
+    if (!response.ok) {
+      const text = await response.text();
       return res.status(500).json({
         success: false,
-        message: "N11 marka listesi alınamadı",
-        error: errMsg,
+        message: "N11 attribute API hata",
+        detail: text,
       });
     }
 
-    const brandListNode = resp?.brandList?.brand || resp?.brandList || [];
-    const brandsArray = Array.isArray(brandListNode)
-      ? brandListNode
-      : brandListNode
-      ? [brandListNode]
-      : [];
+    const data = await response.json();
 
-    const brands = brandsArray.map((b) => ({
-      id: b.id || b.brandId || "",
-      name: b.name || "",
-    }));
+    const attrs = data?.categoryAttributes || [];
+    const markaAttr = attrs.find(
+      (a) => (a?.attributeName || "").toLowerCase() === "marka"
+    );
+
+    const brands = markaAttr?.attributeValues || [];
 
     return res.status(200).json({
       success: true,
-      brands,
+      brands: brands.map((b) => ({
+        id: b.id,
+        name: b.value,
+      })),
       count: brands.length,
+      source: "cdn",
     });
   } catch (error) {
-    console.error(
-      "❌ N11 marka listeleme hatası (backend):",
-      error.response?.data || error.message || error
-    );
+    console.error("❌ /api/n11/brands error:", error);
 
     return res.status(500).json({
       success: false,

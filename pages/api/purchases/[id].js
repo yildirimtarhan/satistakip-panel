@@ -56,11 +56,15 @@ export default async function handler(req, res) {
     const { id } = req.query;
     if (!id) return res.status(400).json({ message: "ID yok" });
 
-    // Transaction modelinde companyId alanı yoksa filtrelemeyelim
-    const baseFilter = { _id: id, type: "purchase", userId };
-    if (companyId && ("companyId" in (Transaction.schema?.paths || {}))) {
-      baseFilter.companyId = companyId;
-    }
+    // companyId varsa toleranslı filtre (eski kayıtlar companyId olmadan oluşturulmuş olabilir)
+    const baseFilter = {
+      _id: id,
+      type: "purchase",
+      $or: [
+        { userId },
+        ...(companyId ? [{ companyId }] : []),
+      ],
+    };
 
     // =========================
     // ✅ GET (DETAY)

@@ -14,9 +14,7 @@ export default async function handler(req, res) {
     if (!token) return res.status(401).json({ message: "Yetkisiz" });
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
     const userId = decoded.userId;
-    const tenantId = decoded.tenantId || decoded.companyId || decoded.firmaId;
 
     const { accountId } = req.query;
 
@@ -24,23 +22,24 @@ export default async function handler(req, res) {
       return res.status(400).json({ message: "accountId zorunlu" });
     }
 
-    // ✅ Liste filtresi
-    // B seçeneği: iptal edilenler de listede görünsün
+    // ✅ DÜZELTİLDİ: Sadece userId ile filtrele (companyId yok)
     const match = {
       userId,
       accountId,
     };
 
-    // ✅ multi-tenant varsa ekle (bozmuyoruz)
-    if (tenantId) {
-      match.tenantId = tenantId;
-    }
+    // ✅ Tüm tahsilat/ödeme tipleri
+    match.type = { 
+      $in: ["tahsilat", "odeme", "payment", "collection", "tahsilat_cancel", "odeme_cancel"] 
+    };
 
-    // ✅ sadece tahsilat/ödeme kayıtları gelsin (sale vb gelmesin)
-    // Eğer senin sistemde type alanı farklıysa burayı genişletiriz
-    match.type = { $in: ["tahsilat", "odeme", "payment", "collection", "tahsilat_cancel"] };
+    console.log("TAHSILAT LIST QUERY:", match);
 
-    const list = await Transaction.find(match).sort({ date: -1 }).lean();
+    const list = await Transaction.find(match)
+      .sort({ date: -1, createdAt: -1 })
+      .lean();
+
+    console.log(`✅ ${list.length} kayıt bulundu`);
 
     return res.json(list);
   } catch (err) {

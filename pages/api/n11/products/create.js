@@ -1,98 +1,118 @@
-// /pages/api/n11/products/create.js
 import dbConnect from "@/lib/mongodb";
-import jwt from "jsonwebtoken";
 import Product from "@/models/Product";
-import { n11CreateProduct } from "@/lib/n11Service";
+import jwt from "jsonwebtoken";
+import { n11CreateProduct } from "@/lib/marketplaces/n11Service";
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ success: false, message: "Only POST allowed" });
-  }
-
   try {
-    const authHeader = req.headers.authorization || "";
-    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
-
-    if (!token) {
-      return res.status(401).json({ success: false, message: "Token eksik" });
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const companyId = decoded.companyId;
-    if (!companyId) {
-      return res.status(400).json({ success: false, message: "companyId bulunamadı" });
-    }
-
-    const { productId } = req.body || {};
-    if (!productId) {
-      return res.status(400).json({ success: false, message: "productId zorunlu" });
-    }
-
     await dbConnect();
 
-    // ✅ Multi-tenant güvenli
-    const p = await Product.findOne({ _id: productId, companyId });
-    if (!p) {
-      return res.status(404).json({ success: false, message: "Ürün bulunamadı" });
+    if (req.method !== "POST") {
+      return res.status(405).json({
+        success: false,
+        message: "Method Not Allowed",
+      });
     }
 
-    const n11 = p.marketplaceSettings?.n11 || {};
-    if (!n11.categoryId) {
-      return res.status(400).json({ success: false, message: "N11 categoryId boş (ürüne kategori seç)" });
-    }
-    if (!n11.preparingDay && n11.preparingDay !== 0) {
-      return res.status(400).json({ success: false, message: "N11 preparingDay boş" });
-    }
-    if (!n11.shipmentTemplate) {
-      return res.status(400).json({ success: false, message: "N11 shipmentTemplate boş" });
-    }
+    // ✅ TOKEN KONTROL
+    const authHeader = req.headers.authorization || "";
+    const token = authHeader.startsWith("Bearer ")
+      ? authHeader.split(" ")[1]
+      : null;
 
-    // ✅ attributes array format kontrolü
-    const attributes = Array.isArray(n11.attributes) ? n11.attributes : [];
-    // Zorunlu değil ama canlıda lazım olabiliyor:
-    // if (attributes.length === 0) return res.status(400).json({ success:false, message:"N11 attributes boş" });
-
-    // n11Service beklediği normalize product (senin alanlarına göre)
-    const payloadProduct = {
-      _id: p._id,
-      name: p.name,
-      sku: p.sku,
-      barcode: p.barcode || "",
-      description: p.description || "",
-      priceTl: Number(p.priceTl || 0),
-      discountPriceTl: p.discountPriceTl ? Number(p.discountPriceTl) : null,
-      vatRate: Number(p.vatRate || 20),
-      stock: Number(p.stock || 0),
-      images: Array.isArray(p.images) ? p.images : [],
-      modelCode: p.modelCode || p.sku,
-      brand: p.brand || "",
-      marketplaceSettings: {
-        ...(p.marketplaceSettings || {}),
-        n11: {
-          ...(n11 || {}),
-          attributes, // ✅
-        },
-      },
-    };
-
-    const result = await n11CreateProduct(req, payloadProduct);
-
-    if (!result.success) {
-      return res.status(400).json({ success: false, ...result });
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: "Token eksik",
+      });
     }
 
-    // ✅ product içine taskId/status yaz (istersen)
-    p.marketplaces = p.marketplaces || {};
-    p.marketplaces.n11 = {
-      status: "Sent",
-      taskId: result.taskId,
-      sentAt: new Date(),
-    };
-    await p.save();
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({
+        success: false,
+        message: "Token geçersiz",
+      });
+    }
 
-    return res.status(200).json({ success: true, ...result });
-  } catch (err) {
-    console.error("N11 CREATE ERROR:", err);
-    return res.status(500).json({ success: false, message: err.message || "Server error" });
+    const companyId = decoded.companyId;
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "companyId bulunamadı",
+      });
+    }
+
+    // ✅ BODY KONTROL
+    const { productId } = req.body || {};
+    if (!productId) {
+      return res.status(400).json({
+        success: false,
+        message: "productId zorunludur",
+      });
+    }
+
+    // ✅ ÜRÜN BUL
+    const product = await Product.findOne({
+      _id: productId,
+      companyId,
+    });
+
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: "Ürün bulunamadı",
+      });
+    }
+
+    // ✅ N11 CREATE ÇAĞRISI
+    const result = await n11CreateProduct(req, product);
+
+    /**
+     * ======================================================
+     * 🔥 TASK STATUS ZİNCİRİ – EN KRİTİK YAMA
+     * ======================================================
+     * taskId GELİR GELMEZ DB'YE YAZIYORUZ
+     * aksi halde task-status endpoint'i çalışmaz
+     */
+    if (result?.success && result?.taskId) {
+      await Product.findByIdAndUpdate(productId, {
+        n11TaskId: result.taskId,
+        n11TaskStatus: "IN_QUEUE",
+        n11TaskReason: "",
+        n11LastCheckAt: new Date(),
+      });
+    }
+
+    // ✅ integrationStatus (mevcut yapıyı BOZMADAN)
+    product.integrationStatus = product.integrationStatus || {};
+
+    if (result?.success) {
+      product.integrationStatus.n11 = {
+        status: "success",
+        taskId: result.taskId || null,
+        sentAt: new Date(),
+        message: result.message || "N11'e gönderildi",
+      };
+    } else {
+      product.integrationStatus.n11 = {
+        status: "error",
+        taskId: result?.taskId || null,
+        sentAt: new Date(),
+        message: result?.message || "N11 gönderim hatası",
+      };
+    }
+
+    await product.save();
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("N11 CREATE API ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Sunucu hatası",
+    });
   }
 }

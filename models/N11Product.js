@@ -12,6 +12,16 @@ const N11ProductSchema = new mongoose.Schema(
     imageUrls: [String],
     categoryFullPath: String,
 
+    erpProductId: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "Product",
+},
+erpMatched: {
+  type: Boolean,
+  default: false,
+},
+
+
     raw: {}, // N11’den gelen tüm veri
 
   },

@@ -1,157 +1,88 @@
-// 📁 /pages/api/products/update.js
-
-import dbConnect from "@/lib/mongodb";
+import dbConnect from "@/lib/dbConnect";
 import Product from "@/models/Product";
 import jwt from "jsonwebtoken";
 
 export default async function handler(req, res) {
-  // ❗ Sadece PUT
   if (req.method !== "PUT") {
-    return res
-      .status(405)
-      .json({ success: false, message: "Only PUT method allowed" });
+    return res.status(405).json({ success: false, message: "Method not allowed" });
   }
 
   try {
     await dbConnect();
 
-    const { id } = req.query;
-
-    if (!id) {
-      return res.status(400).json({
-        success: false,
-        message: "Product ID is required",
-      });
-    }
-
-    // -------------------------------
-    // 🔐 TOKEN KONTROLÜ
-    // -------------------------------
-    const authHeader = req.headers.authorization || "";
-    const token = authHeader.startsWith("Bearer ")
-      ? authHeader.split(" ")[1]
-      : null;
-
+    /* ===============================
+       🔐 AUTH
+    =============================== */
+    const token = req.headers.authorization?.split(" ")[1];
     if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: "Unauthorized: Token required",
-      });
+      return res.status(401).json({ success: false, message: "Token yok" });
     }
 
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (err) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid token",
-      });
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const { userId, companyId } = decoded;
+
+    if (!companyId) {
+      return res.status(400).json({ success: false, message: "CompanyId yok" });
     }
 
-    const userId = decoded.id || decoded._id || decoded.userId;
-    const companyId = decoded.companyId || null;
-
-    // -------------------------------
-    // 📦 ÖNCE ÜRÜNÜ BUL
-    // -------------------------------
-    const existingProduct = await Product.findById(id);
-
-    if (!existingProduct) {
-      return res.status(404).json({
-        success: false,
-        message: "Product not found",
-      });
+    const { id } = req.query;
+    if (!id) {
+      return res.status(400).json({ success: false, message: "Ürün ID yok" });
     }
 
-    // Çoklu firma / kullanıcı kontrolü
-    if (
-      existingProduct.userId &&
-      String(existingProduct.userId) !== String(userId)
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: "Bu ürünü güncelleme yetkiniz yok",
-      });
-    }
+    /* ===============================
+       🧠 SAFE UPDATE PAYLOAD
+    =============================== */
+    const body = req.body || {};
+    const updateData = {};
 
-    if (
-      companyId &&
-      existingProduct.companyId &&
-      String(existingProduct.companyId) !== String(companyId)
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: "Bu firmaya ait olmayan ürünü güncelleyemezsiniz",
-      });
-    }
-
-    // -------------------------------
-    // 📝 GÜNCELLENECEK VERİ
-    // -------------------------------
-    const updateData = { ...req.body };
-
-    // Güvenlik: bazı alanlar asla güncellenmesin
-    delete updateData._id;
-    delete updateData.userId;
-    delete updateData.companyId;
-    delete updateData.marketplaces; // Pazaryeri status alanlarını ezmeyelim
-
-    // Görselleri normalize et
-    if (updateData.images) {
-      if (!Array.isArray(updateData.images)) {
-        updateData.images = [updateData.images].filter(Boolean);
-      } else {
-        updateData.images = updateData.images
-          .map((x) => (x || "").toString().trim())
-          .filter(Boolean);
-      }
-    }
-
-    // Sayısal alanları number’a çevir
-    const numberFields = [
-      "priceTl",
-      "discountPriceTl",
-      "vatRate",
-      "usdPrice",
-      "eurPrice",
-      "profitMargin",
-      "riskFactor",
-      "calculatedPrice",
-      "stock",
-      "n11PreparingDay",
+    // ❗ İzin verilen alanlar
+    const allowedFields = [
+      "title",
+      "description",
+      "sku",
+      "barcode",
+      "brand",
+      "category",
+      "images",
+      "sendTo",
+      "marketplaceSettings",
+      "n11CategoryId",
+      "n11BrandId",
+      "n11SellerCode",
     ];
 
-    numberFields.forEach((field) => {
-      if (updateData[field] !== undefined) {
-        updateData[field] = Number(updateData[field] || 0);
+    for (const key of allowedFields) {
+      if (body[key] !== undefined) {
+        updateData[key] = body[key];
       }
-    });
-
-    // marketplaceSettings varsa sadece set et (status alanlarının olduğu "marketplaces" ile karışmasın)
-    if (updateData.marketplaceSettings) {
-      // burada özel bir işleme gerek yok, direkt kaydedebiliriz
     }
 
-    // -------------------------------
-    // 🔧 DB'DE ÜRÜNÜ GÜNCELLE
-    // -------------------------------
-    const updatedProduct = await Product.findByIdAndUpdate(
-      id,
+    // ❌ ERP kritik alanları ASLA burada update edilmez
+    delete updateData.stock;
+    delete updateData.price;
+    delete updateData.purchasePrice;
+    delete updateData.salePrice;
+
+    /* ===============================
+       💾 DB UPDATE
+    =============================== */
+    const product = await Product.findOneAndUpdate(
+      { _id: id, companyId },
       { $set: updateData },
       { new: true }
     );
 
-    return res.status(200).json({
-      success: true,
-      message: "Product updated successfully",
-      product: updatedProduct,
-    });
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Ürün bulunamadı" });
+    }
+
+    return res.json({ success: true, product });
   } catch (err) {
-    console.error("UPDATE PRODUCT ERROR:", err);
+    console.error("PRODUCT UPDATE ERROR:", err);
     return res.status(500).json({
       success: false,
-      message: "Server error",
+      message: "Sunucu hatası",
       error: err.message,
     });
   }

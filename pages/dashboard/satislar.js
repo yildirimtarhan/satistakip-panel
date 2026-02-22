@@ -142,6 +142,7 @@ async function openPdf(saleNo) {
                   <th className="p-2 text-left">Satış No</th>
                   <th className="p-2 text-left">Tarih</th>
                   <th className="p-2 text-left">Cari</th>
+                  <th className="p-2 text-center">Para</th>
                   <th className="p-2 text-right">Toplam (TRY)</th>
                   <th className="p-2"></th>
                 </tr>
@@ -155,6 +156,15 @@ async function openPdf(saleNo) {
                       {r?.date ? new Date(r.date).toLocaleDateString("tr-TR") : "-"}
                     </td>
                     <td className="p-2">{r.accountName || "-"}</td>
+                    <td className="p-2 text-center">
+                      {r.currency && r.currency !== "TRY" ? (
+                        <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs font-semibold">
+                          {r.currency}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 text-xs">TRY</span>
+                      )}
+                    </td>
                     <td className="p-2 text-right font-semibold">{fmt(r.totalTRY)}</td>
                     <td className="p-2 text-right space-x-2">
                       <button

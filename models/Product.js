@@ -11,11 +11,18 @@ const VariantSchema = new mongoose.Schema({
   images: [{ type: String }],
 });
 
+
 // ----------------------------------------------
 //   ANA ÜRÜN MODELİ
 // ----------------------------------------------
 const ProductSchema = new mongoose.Schema(
   {
+
+    n11TaskId: { type: Number },
+  n11TaskStatus: { type: String }, // IN_QUEUE | COMPLETED | FAILED
+  n11TaskReason: { type: String },
+  n11LastCheckAt: { type: Date },
+  
     // 🌐 Çoklu kullanıcı / firma desteği
    // 🌐 Çoklu kullanıcı / firma desteği
 userId: { type: String, required: true },

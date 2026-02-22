@@ -1,6 +1,7 @@
 import dbConnect from "@/lib/mongodb";
 import jwt from "jsonwebtoken";
 import Transaction from "@/models/Transaction";
+import Cari from "@/models/Cari";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -21,18 +22,21 @@ export default async function handler(req, res) {
       return res.status(400).json({ message: "paymentId zorunlu" });
     }
 
-    // ✅ Tahsilat kaydını bul
-    const payDoc = await Transaction.findById(paymentId).lean();
+    // ✅ ESKİ GİBİ: Sadece userId ile ara
+    const payDoc = await Transaction.findOne({ 
+      _id: paymentId, 
+      userId 
+    }).lean();
+
     if (!payDoc) {
       return res.status(404).json({ message: "Kayıt bulunamadı" });
     }
 
-    // ✅ zaten iptal edilmiş mi?
-    if (payDoc.isDeleted === true) {
+    if (payDoc.isDeleted === true || payDoc.status === "cancelled") {
       return res.status(409).json({ message: "Bu kayıt zaten geri alınmış" });
     }
 
-    // ✅ asıl tahsilatı sil (isDeleted)
+    // ✅ Orijinal kaydı iptal et
     await Transaction.updateOne(
       { _id: paymentId },
       {
@@ -46,24 +50,37 @@ export default async function handler(req, res) {
       }
     );
 
-    // ✅ ters fiş oluştur (cari ekstresini düzeltir)
+    // ✅ DÜZELTİLDİ: Ters fiş oluştur
     const cancelTx = await Transaction.create({
       userId: payDoc.userId,
-      tenantId: payDoc.tenantId, // multi-tenant için kritik
       accountId: payDoc.accountId,
-
-      type: "tahsilat_cancel",
-      direction: payDoc.direction === "alacak" ? "borc" : "alacak",
-
+      type: payDoc.type === "tahsilat" ? "tahsilat_cancel" : "odeme_cancel",
+      direction: payDoc.direction === "alacak" ? "borc" : "alacak", // Ters yön
       amount: payDoc.amount,
+      totalTRY: payDoc.totalTRY,
+      currency: payDoc.currency || "TRY",
+      fxRate: payDoc.fxRate || 1,
+      totalFCY: payDoc.totalFCY || 0,
       date: new Date(),
-
-      note: `TAHSILAT GERI ALINDI: ${reason || "-"}`,
-      paymentMethod: payDoc.paymentMethod || payDoc.method || "cash",
-
+      note: `${payDoc.type === 'tahsilat' ? 'TAHSILAT' : 'ODEME'} GERI ALINDI: ${reason || "-"}`,
+      paymentMethod: payDoc.paymentMethod || "cash",
       refPaymentId: payDoc._id,
       isDeleted: false,
+      status: "active",
     });
+
+    // ✅ DÜZELTİLDİ: Cari bakiyeyi tersine çevir
+    const cari = await Cari.findOne({ _id: payDoc.accountId, userId });
+    if (cari) {
+      if (payDoc.type === "tahsilat") {
+        // Tahsilat geri alınınca bakiye artar (borçlandık)
+        cari.bakiye = Number(cari.bakiye || 0) + Number(payDoc.totalTRY || payDoc.amount || 0);
+      } else {
+        // Ödeme geri alınınca bakiye azalır (alacaklandık)
+        cari.bakiye = Number(cari.bakiye || 0) - Number(payDoc.totalTRY || payDoc.amount || 0);
+      }
+      await cari.save();
+    }
 
     return res.status(200).json({
       message: "✅ Tahsilat geri alındı",

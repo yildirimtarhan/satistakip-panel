@@ -91,107 +91,127 @@ export default function EditProductPage() {
 
   // Sayfa açıldığında N11 kategori & marka verilerini çek
   useEffect(() => {
-    loadLevel1();
-    loadBrands();
-  }, []);
+  loadLevel1();
+}, []);
 
-  // Ürün detayını çek
-  useEffect(() => {
-    if (!router.isReady || !id) return;
+useEffect(() => {
+  if (form.n11CategoryId) {
+    // kategori değişti → brand listesini yenile
+    loadBrands(form.n11CategoryId);
 
-    const fetchProduct = async () => {
-      try {
-        const token =
-          typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    // kategori değiştiğinde eski marka seçimi geçersiz olabilir
+    setForm((prev) => ({ ...prev, n11BrandId: "" }));
+  } else {
+    setBrands([]);
+    setForm((prev) => ({ ...prev, n11BrandId: "" }));
+  }
+}, [form.n11CategoryId]);
 
-        if (!token) {
-          alert("❌ Oturum bulunamadı. Lütfen tekrar giriş yapın.");
-          router.push("/auth/login");
-          return;
-        }
 
-        const res = await fetch(`/api/products/get?id=${id}`, {
+// ✅ Ürün detayını çek + N11 Marka listesini doğru categoryId ile çek
+useEffect(() => {
+  if (!router.isReady || !id) return;
+
+  const fetchProduct = async () => {
+  setLoading(true);
+
+  try {
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+      alert("❌ Oturum bulunamadı. Lütfen tekrar giriş yapın.");
+      router.push("/auth/login");
+      return;
+    }
+
+    // ✅ 1) Ürünü getir
+    const res = await fetch(`/api/products/get?id=${id}`, {
+  method: "GET",
+  headers: {
+    Authorization: `Bearer ${token}`,
+    "Cache-Control": "no-cache",
+  },
+  cache: "no-store",
+});
+
+
+    const data = await res.json().catch(() => ({}));
+
+   const p = data?.product || data?.data || data;
+
+if (!res.ok || data?.success === false || !p?._id) {
+  alert(data?.message || "❌ Ürün getirilemedi.");
+  console.log("❌ API cevap:", data);
+  return;
+}
+
+
+    // ✅ 2) Ürünü forma bas
+    setForm((prev) => ({
+      ...prev,
+      name: p.name || "",
+      sku: p.sku || "",
+      barcode: p.barcode || "",
+      brand: p.brand || "",
+      modelCode: p.modelCode || "",
+      category: p.category || "",
+      description: p.description || "",
+      images: Array.isArray(p.images) ? p.images : [],
+
+      priceTl: p.priceTl ?? "",
+      discountPriceTl: p.discountPriceTl ?? "",
+      vatRate: p.vatRate ?? 20,
+
+      usdPrice: p.usdPrice ?? "",
+      eurPrice: p.eurPrice ?? "",
+      profitMargin: p.profitMargin ?? 20,
+      riskFactor: p.riskFactor ?? 1.05,
+      fxSource: p.fxSource || "tcmb",
+
+      n11CategoryId: p.marketplaceSettings?.n11?.categoryId || "",
+      n11BrandId: p.marketplaceSettings?.n11?.brandId || "",
+      n11ShipmentTemplate: p.marketplaceSettings?.n11?.shipmentTemplate || "",
+      n11PreparingDay: p.marketplaceSettings?.n11?.preparingDay ?? 3,
+      n11Domestic:
+        typeof p.marketplaceSettings?.n11?.domestic === "boolean"
+          ? p.marketplaceSettings.n11.domestic
+          : true,
+
+      sendTo: p.sendTo || {},
+    }));
+
+    // ✅ 3) N11 categoryId varsa markaları çek
+    const categoryId = p.marketplaceSettings?.n11?.categoryId;
+
+    if (categoryId) {
+      const brandRes = await fetch(
+        `/api/n11/brands?categoryId=${categoryId}`,
+        {
           headers: {
             Authorization: `Bearer ${token}`,
           },
-        });
-
-        const data = await res.json().catch(() => ({}));
-
-        if (!res.ok || data.success === false || !data.product) {
-          alert("❌ Ürün getirilemedi.");
-          router.push("/dashboard/urunler");
-          return;
         }
+      );
 
-        const p = data.product;
+      const brandData = await brandRes.json().catch(() => ({}));
 
-        setForm((prev) => ({
-          ...prev,
-          name: p.name || "",
-          sku: p.sku || "",
-          barcode: p.barcode || "",
-          brand: p.brand || "",
-          modelCode: p.modelCode || "",
-          category: p.category || "",
-          description: p.description || "",
-          images: Array.isArray(p.images) ? p.images : [],
-
-          priceTl: p.priceTl ?? "",
-          discountPriceTl: p.discountPriceTl ?? "",
-          vatRate: p.vatRate ?? 20,
-
-          usdPrice: p.usdPrice ?? "",
-          eurPrice: p.eurPrice ?? "",
-          profitMargin: p.profitMargin ?? 20,
-          riskFactor: p.riskFactor ?? 1.05,
-          fxSource: p.fxSource || "tcmb",
-
-          n11CategoryId: p.marketplaceSettings?.n11?.categoryId || "",
-          n11BrandId: p.marketplaceSettings?.n11?.brandId || "",
-          n11ShipmentTemplate:
-            p.marketplaceSettings?.n11?.shipmentTemplate || "",
-          n11PreparingDay: p.marketplaceSettings?.n11?.preparingDay ?? 3,
-          n11Domestic:
-            typeof p.marketplaceSettings?.n11?.domestic === "boolean"
-              ? p.marketplaceSettings.n11.domestic
-              : true,
-
-          trendyolCategoryId:
-            p.marketplaceSettings?.trendyol?.categoryId || "",
-          trendyolBrandId: p.marketplaceSettings?.trendyol?.brandId || "",
-          trendyolCargoCompanyId:
-            p.marketplaceSettings?.trendyol?.cargoCompanyId || "",
-
-          hbCategoryId: p.marketplaceSettings?.hepsiburada?.categoryId || "",
-          hbMerchantSku: p.marketplaceSettings?.hepsiburada?.merchantSku || "",
-          hbDesi: p.marketplaceSettings?.hepsiburada?.desi || "",
-          hbKg: p.marketplaceSettings?.hepsiburada?.kg || "",
-
-          sendTo: {
-            n11: p.sendTo?.n11 ?? false,
-            trendyol: p.sendTo?.trendyol ?? false,
-            hepsiburada: p.sendTo?.hepsiburada ?? false,
-            amazon: p.sendTo?.amazon ?? false,
-            pazarama: p.sendTo?.pazarama ?? false,
-            ciceksepeti: p.sendTo?.ciceksepeti ?? false,
-            idefix: p.sendTo?.idefix ?? false,
-            pttavm: p.sendTo?.pttavm ?? false,
-          },
-
-          integrationStatus: p.integrationStatus || null,
-        }));
-      } catch (err) {
-        console.error("Ürün detay çekme hatası:", err);
-        alert("❌ Ürün getirilemedi.");
-        router.push("/dashboard/urunler");
-      } finally {
-        setLoading(false);
+      if (brandRes.ok && brandData.success) {
+        setBrands(brandData.brands || []);
+      } else {
+        console.log("N11 marka çekilemedi:", brandData);
       }
-    };
+    }
+  } catch (err) {
+    console.error("Ürün çekme hatası:", err);
+    alert("❌ Ürün getirilemedi.");
+    router.push("/dashboard/urunler");
+  } finally {
+    setLoading(false);
+  }
+};
 
-    fetchProduct();
-  }, [router.isReady, id, router]);
+  fetchProduct();
+}, [router.isReady, id]);
 
   const loadLevel1 = async () => {
     try {
@@ -233,23 +253,35 @@ export default function EditProductPage() {
     }
   };
 
-  const loadBrands = async () => {
-    try {
-      const res = await fetch("/api/n11/brands");
-      const data = await res.json();
+const loadBrands = async (categoryId) => {
+  try {
+    const token = localStorage.getItem("token");
+    if (!token || !categoryId) {
+      setBrands([]);
+      return;
+    }
 
-      if (data.success && Array.isArray(data.brands)) {
-        setBrands(data.brands);
-      } else if (data.success && Array.isArray(data.data)) {
-        setBrands(data.data);
-      } else {
-        setBrands([]);
-      }
-    } catch (err) {
-      console.error("N11 marka listesi çekilemedi:", err);
+    const res = await fetch(`/api/n11/brands?categoryId=${categoryId}`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Cache-Control": "no-cache",
+      },
+      cache: "no-store",
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.success) {
+      setBrands(data.brands || []);
+    } else {
       setBrands([]);
     }
-  };
+  } catch (err) {
+    console.error("N11 marka listesi çekilemedi:", err);
+    setBrands([]);
+  }
+};
+
 
   const handleChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -290,7 +322,7 @@ export default function EditProductPage() {
         images: (form.images || []).filter((x) => x && x.trim() !== ""),
 
         // STOK & FİYAT
-        stock: 0, // Düzenle ekranında stok ayrı modülden yönetilecek
+       
         priceTl: Number(form.priceTl || 0),
         discountPriceTl: Number(form.discountPriceTl || 0),
         vatRate: Number(form.vatRate || 20),
@@ -368,12 +400,18 @@ export default function EditProductPage() {
       });
 
       const data = await res.json().catch(() => ({}));
+      console.log("✅ STATUS:", res.status);
+console.log("✅ RAW DATA:", data);
+console.log("✅ PRODUCT:", data?.product);
 
-      if (!res.ok || data.success === false) {
-        alert("❌ Ürün güncellenemedi: " + (data.message || "Bilinmeyen Hata"));
-        setIsSubmitting(false);
-        return;
-      }
+
+      const p = data?.product || data?.data || data;
+
+if (!res.ok || data?.success === false || !p?._id) {
+  alert(data?.message || "❌ Ürün getirilemedi.");
+  console.log("❌ API cevap:", data);
+  return;
+}
 
       alert("✔ Ürün başarıyla güncellendi!");
 
@@ -387,6 +425,98 @@ export default function EditProductPage() {
 
     setIsSubmitting(false);
   };
+
+  const handleSaveAndSendMarketplaces = async () => {
+  try {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      alert("❌ Token bulunamadı. Tekrar giriş yapın.");
+      return;
+    }
+
+    // ✅ seçili pazaryerleri
+    const selected = Object.entries(form.sendTo || {})
+      .filter(([_, v]) => v === true)
+      .map(([k]) => k);
+
+    if (selected.length === 0) {
+      alert("❌ Gönderim için en az 1 pazaryeri seçmelisin.");
+      return;
+    }
+
+   // 🔒 ERP alanlarını korumak için güvenli kopya
+const safeForm = { ...form };
+delete safeForm.stock;
+delete safeForm.purchasePrice;
+delete safeForm.salePrice;
+
+const updateRes = await fetch(`/api/products/update?id=${id}`, {
+  method: "PUT",
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
+  },
+  body: JSON.stringify({
+    ...safeForm,
+    sendTo: form.sendTo,
+  }),
+});
+
+
+    const updateData = await updateRes.json().catch(() => ({}));
+
+    if (!updateRes.ok || updateData.success === false) {
+      alert(updateData.message || "❌ Ürün güncellenemedi.");
+      return;
+    }
+
+    const productId = updateData?.product?._id || id;
+
+    // ✅ 2) seçili pazaryerlerine gönder
+    let okList = [];
+    let failList = [];
+
+    // ✅ N11
+    if (form.sendTo?.n11) {
+      const n11Res = await fetch(`/api/n11/products/create`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ productId }),
+      });
+
+      const n11Data = await n11Res.json().catch(() => ({}));
+
+      if (n11Res.ok && n11Data.success) {
+        okList.push("N11 ✅");
+      } else {
+        failList.push("N11 ❌ " + (n11Data.message || "Bilinmeyen hata"));
+      }
+    }
+
+    // ✅ Trendyol (şimdilik hazır değilse dokunma)
+    if (form.sendTo?.trendyol) {
+      failList.push("Trendyol ⚠️ (Henüz bağlı değil)");
+    }
+
+    // ✅ Hepsiburada
+    if (form.sendTo?.hepsiburada) {
+      failList.push("Hepsiburada ⚠️ (Henüz bağlı değil)");
+    }
+
+    // ✅ Sonuç mesajı
+    alert(
+      "✅ Kaydedildi.\n\n" +
+        (okList.length ? okList.join("\n") : "") +
+        (failList.length ? "\n\n" + failList.join("\n") : "")
+    );
+  } catch (err) {
+    console.error("Seçili pazaryerlerine gönder hatası:", err);
+    alert("❌ Hata: " + err.message);
+  }
+};
 
   if (loading) {
     return (
@@ -890,22 +1020,33 @@ export default function EditProductPage() {
         </Tabs>
 
         <div className="flex justify-end mt-4 gap-3">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => router.push("/dashboard/urunler")}
-          >
-            Vazgeç
-          </Button>
+  <Button
+    type="button"
+    variant="outline"
+    onClick={() => router.push("/dashboard/urunler")}
+  >
+    Vazgeç
+  </Button>
 
-          <Button
-            type="submit"
-            disabled={isSubmitting}
-            className="bg-orange-600 hover:bg-orange-700"
-          >
-            {isSubmitting ? "Güncelleniyor..." : "Değişiklikleri Kaydet"}
-          </Button>
-        </div>
+  {/* ✅ YENİ BUTON */}
+  <Button
+    type="button"
+    disabled={isSubmitting}
+    className="bg-green-600 hover:bg-green-700"
+    onClick={handleSaveAndSendMarketplaces}
+  >
+    {isSubmitting ? "Gönderiliyor..." : "Seçili Pazaryerlerine Gönder"}
+  </Button>
+
+  <Button
+    type="submit"
+    disabled={isSubmitting}
+    className="bg-orange-600 hover:bg-orange-700"
+  >
+    {isSubmitting ? "Güncelleniyor..." : "Değişiklikleri Kaydet"}
+  </Button>
+</div>
+
       </form>
     </div>
   );

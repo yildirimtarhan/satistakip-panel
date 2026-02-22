@@ -44,7 +44,8 @@ export default function UrunAlis() {
       ad: "",
       adet: 1,
       fiyat: 0,
-      currency: "TRY", // TRY | USD | EUR
+      currency: "TRY",
+      fxRate: 1,
     }),
     []
   );
@@ -113,27 +114,27 @@ const EUR = Number(
     loadRates();
   }, [token]);
 
-  // ✅✅✅ FIX: Cari seçilince bakiye getir (Ek API YOK – 405 sorunu bitti)
+  // ✅✅✅ FIX: Cari seçilince bakiye getir (ekstre API'den hesaplanmış)
   useEffect(() => {
-    if (!cariId) {
+    if (!cariId || !token) {
       setCariBakiye(null);
       return;
     }
 
-    // loading state'i görsel için koruyalım
     setLoadingCariBakiye(true);
 
-    const selectedCari = cariler.find((c) => String(c._id) === String(cariId));
-
-    const bakiye =
-      selectedCari?.bakiye ??
-      selectedCari?.balance ??
-      selectedCari?.cariBakiye ??
-      0;
-
-    setCariBakiye(Number(bakiye || 0));
-    setLoadingCariBakiye(false);
-  }, [cariId, cariler]);
+    const today = new Date().toISOString().split("T")[0];
+    fetch(`/api/cari/ekstre?accountId=${cariId}&start=1970-01-01&end=${today}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        const b = typeof data?.bakiye === "number" ? data.bakiye : 0;
+        setCariBakiye(b);
+      })
+      .catch(() => setCariBakiye(0))
+      .finally(() => setLoadingCariBakiye(false));
+  }, [cariId, token]);
 
   const getFx = (currency) => {
     if (currency === "TRY") return 1;
@@ -155,8 +156,15 @@ const EUR = Number(
   const lineTotalTRY = (r) => {
     const qty = Number(r.adet || 0);
     const price = Number(r.fiyat || 0);
-    const fx = getFx(r.currency || "TRY");
+    const fx = Number(r.fxRate || getFx(r.currency || "TRY"));
     return qty * price * fx;
+  };
+
+  const onCurrencyChange = (i, currency) => {
+    const fx = getFx(currency);
+    const copy = [...rows];
+    copy[i] = { ...copy[i], currency, fxRate: fx };
+    setRows(copy);
   };
 
   const toplamTRY = useMemo(() => {
@@ -416,10 +424,7 @@ items.push({
                     ? "Yükleniyor..."
                     : cariBakiye === null
                     ? "-"
-                    : cariBakiye.toLocaleString("tr-TR", {
-                        style: "currency",
-                        currency: "TRY",
-                      })
+                    : `${Number(cariBakiye || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY`
                 }
                 className="w-full border rounded px-2 py-2 bg-gray-100"
               />
@@ -614,9 +619,7 @@ items.push({
                       <td className="border px-2 py-1 min-w-[90px]">
                         <select
                           value={r.currency || "TRY"}
-                          onChange={(e) =>
-                            updateRow(i, "currency", e.target.value)
-                          }
+                          onChange={(e) => onCurrencyChange(i, e.target.value)}
                           className="w-full border rounded px-2 py-1"
                         >
                           <option value="TRY">TRY</option>
@@ -625,8 +628,16 @@ items.push({
                         </select>
                       </td>
 
-                      <td className="border px-2 py-1 text-right min-w-[90px]">
-                        {fx.toLocaleString("tr-TR", { maximumFractionDigits: 4 })}
+                      <td className="border px-2 py-1 text-right min-w-[100px]">
+                        <input
+                          type="number"
+                          value={r.fxRate ?? getFx(r.currency || "TRY")}
+                          onChange={(e) => updateRow(i, "fxRate", Number(e.target.value))}
+                          className="w-full border rounded px-2 py-1 text-right"
+                          step="0.0001"
+                          min="0"
+                          disabled={r.currency === "TRY"}
+                        />
                       </td>
 
                       <td className="border px-2 py-1 text-right min-w-[120px]">

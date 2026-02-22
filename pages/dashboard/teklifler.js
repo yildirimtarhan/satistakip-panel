@@ -31,6 +31,7 @@ async function loadFontBase64(url) {
     const res = await fetch(url);
     if (!res.ok) return null;
     const buf = await res.arrayBuffer();
+    if (buf.byteLength < 100) return null; // boş/bozuk dosya kontrolü
     const bytes = new Uint8Array(buf);
     let binary = "";
     for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
@@ -40,7 +41,7 @@ async function loadFontBase64(url) {
   }
 }
 
-// jsPDF’e Roboto ekler; yoksa Helvetica
+// jsPDF'e Roboto ekler; Bold yoksa Regular'ı Bold olarak da kaydeder (Türkçe desteği için)
 async function ensureRoboto(doc) {
   const regularB64 = await loadFontBase64("/fonts/Roboto-Regular.ttf");
   const boldB64 = await loadFontBase64("/fonts/Roboto-Bold.ttf");
@@ -48,6 +49,10 @@ async function ensureRoboto(doc) {
   if (regularB64) {
     doc.addFileToVFS("Roboto-Regular.ttf", regularB64);
     doc.addFont("Roboto-Regular.ttf", "Roboto", "normal");
+    // Bold dosyası geçersizse Regular'ı Bold olarak da kaydet
+    if (!boldB64) {
+      doc.addFont("Roboto-Regular.ttf", "Roboto", "bold");
+    }
   }
   if (boldB64) {
     doc.addFileToVFS("Roboto-Bold.ttf", boldB64);
@@ -212,7 +217,7 @@ useEffect(() => {
       // Ürünler
       if (urunR.status === "fulfilled" && urunR.value.ok) {
         const d = await urunR.value.json();
-        setUrunler(Array.isArray(d) ? d : d?.items || []);
+        setUrunler(Array.isArray(d) ? d : d?.products || d?.items || []);
       }
 
       // Firma
@@ -398,139 +403,258 @@ const kaydet = async () => {
   const pdfOlustur = async (downloadOnly = true) => {
     try {
       const { jsPDF, autoTable } = await makeJsPDF();
-      const doc = new jsPDF({ unit: "pt", format: "a4", orientation: "landscape" });
-      doc.setCharSpace(0); // ✅ TR karakterlerde spacing sorunlarını azaltır
-      doc.setLineHeightFactor(1.4);
+      const doc = new jsPDF({ unit: "pt", format: "a4", orientation: "portrait" });
+      doc.setCharSpace(0);
+      doc.setLineHeightFactor(1.3);
       doc.setR2L(false);
 
+      const { setFont } = await ensureRoboto(doc);
 
-      const { hasRoboto, setFont } = await ensureRoboto(doc);
-if (!hasRoboto) console.warn("⚠️ Roboto font yüklenemedi! public/fonts içine Roboto-Regular.ttf ve Roboto-Bold.ttf ekleyin.");
-    
       const pageW = doc.internal.pageSize.getWidth();
       const pageH = doc.internal.pageSize.getHeight();
+      const margin = 40;
+      const cari = cariler.find((c) => c._id === cariId);
 
-      // Logo
+      // ── HEADER ARKAPLAN BANDI ──────────────────────────────
+      doc.setFillColor(30, 41, 59); // koyu lacivert
+      doc.rect(0, 0, pageW, 90, "F");
+
+      // Logo (varsa sol üst)
       if (logo) {
-        try {
-          doc.addImage(logo, "PNG", 40, 30, 110, 110);
-        } catch (err) {
-          console.warn("Logo eklenemedi:", err);
-        }
+        try { doc.addImage(logo, "PNG", margin, 10, 65, 65); } catch {}
       }
 
-      // Başlıklar
+      // Firma adı (header içinde beyaz)
       setFont("bold");
+      doc.setTextColor(255, 255, 255);
       doc.setFontSize(18);
-      doc.text("TEKLİF FORMU", pageW - 40, 58, { align: "right" });
+      doc.text(company?.firmaAdi || "Firma Adı", logo ? margin + 75 : margin, 38);
       setFont("normal");
-      doc.setFontSize(10);
-      doc.text(`Tarih: ${new Date().toLocaleDateString("tr-TR")}`, pageW - 40, 76, {
-        align: "right",
+      doc.setFontSize(9);
+      const subLine = [company?.vergiDairesi ? `Vergi D.: ${company.vergiDairesi}` : null,
+                       company?.vergiNo ? `VKN: ${company.vergiNo}` : null,
+                       company?.telefon || null,
+                       company?.eposta || null].filter(Boolean).join("   |   ");
+      if (subLine) doc.text(subLine, logo ? margin + 75 : margin, 54);
+
+      // "TEKLİF" etiketi (sağ üst)
+      doc.setFillColor(234, 88, 12); // turuncu
+      doc.roundedRect(pageW - 145, 12, 105, 38, 4, 4, "F");
+      setFont("bold");
+      doc.setFontSize(16);
+      doc.setTextColor(255, 255, 255);
+      doc.text("TEKLİF", pageW - 92, 37, { align: "center" });
+      setFont("normal");
+      doc.setFontSize(8);
+      doc.text(offerNumber || "", pageW - 92, 50, { align: "center" });
+
+      doc.setTextColor(0, 0, 0);
+
+      // ── BİLGİ BLOKLARI ────────────────────────────────────
+      let y = 108;
+
+      // Sol: MÜŞTERİ BİLGİSİ
+      const colW = (pageW - margin * 2 - 12) / 2;
+      doc.setFillColor(248, 250, 252);
+      doc.roundedRect(margin, y, colW, 72, 4, 4, "F");
+      doc.setDrawColor(203, 213, 225);
+      doc.roundedRect(margin, y, colW, 72, 4, 4, "S");
+
+      setFont("bold");
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text("MÜŞTERİ BİLGİSİ", margin + 10, y + 14);
+      setFont("bold");
+      doc.setFontSize(11);
+      doc.setTextColor(15, 23, 42);
+      const cariAd = cari
+        ? cari.unvan || cari.firmaAdi || cari.ad || cari.name || "Müşteri"
+        : "Müşteri Seçilmedi";
+      doc.text(cariAd, margin + 10, y + 30, { maxWidth: colW - 20 });
+      setFont("normal");
+      doc.setFontSize(9);
+      doc.setTextColor(71, 85, 105);
+      let infoY = y + 44;
+      if (cari?.telefon) { doc.text(`Tel: ${cari.telefon}`, margin + 10, infoY); infoY += 13; }
+      if (cari?.eposta) doc.text(`E-posta: ${cari.eposta}`, margin + 10, infoY);
+
+      // Sağ: TEKLİF DETAYI
+      const col2X = margin + colW + 12;
+      doc.setFillColor(248, 250, 252);
+      doc.roundedRect(col2X, y, colW, 72, 4, 4, "F");
+      doc.setDrawColor(203, 213, 225);
+      doc.roundedRect(col2X, y, colW, 72, 4, 4, "S");
+
+      setFont("bold");
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text("TEKLİF BİLGİSİ", col2X + 10, y + 14);
+      doc.setTextColor(15, 23, 42);
+      setFont("normal");
+      doc.setFontSize(9);
+      doc.setTextColor(71, 85, 105);
+      const validUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString("tr-TR");
+      const rows2 = [
+        ["Teklif No:", offerNumber || "-"],
+        ["Tarih:", new Date().toLocaleDateString("tr-TR")],
+        ["Geçerlilik:", validUntil],
+        ["Para Birimi:", currency],
+      ];
+      rows2.forEach(([label, val], i) => {
+        doc.setTextColor(100, 116, 139);
+        setFont("normal");
+        doc.text(label, col2X + 10, y + 30 + i * 13);
+        setFont("bold");
+        doc.setTextColor(15, 23, 42);
+        doc.text(val, col2X + 80, y + 30 + i * 13);
       });
-      if (offerNumber) doc.text(`Teklif No: ${offerNumber}`, pageW - 40, 92, { align: "right" });
 
-      // Firma bilgileri
-      let y = 130;
-      setFont("bold");
-      doc.setFontSize(12);
-      doc.text(company?.firmaAdi || "Kurumsal Tedarikçi", 40, y);
-      setFont("normal");
-      doc.setFontSize(10);
-      if (company?.adres) doc.text(String(company.adres), 40, y + 16, { maxWidth: pageW / 2 - 60 });
-      if (company?.telefon) doc.text(`Tel: ${company.telefon}`, 40, y + 40);
-      if (company?.eposta) doc.text(`E-posta: ${company.eposta}`, 40, y + 56);
+      // ── ÜRÜN TABLOSU ──────────────────────────────────────
+      y += 84;
 
-      // Müşteri bilgileri
-      setFont("bold");
-      doc.setFontSize(12);
-      const cari = cariler.find((c) => c._id === cariId);
-      doc.text(cari ? cari.ad || cari.name || "Müşteri" : "Müşteri", pageW / 2, y);
-      setFont("normal");
-      doc.setFontSize(10);
-      if (cari?.adres) doc.text(String(cari.adres), pageW / 2, y + 16, { maxWidth: pageW / 2 - 60 });
-      if (cari?.telefon) doc.text(`Tel: ${cari.telefon}`, pageW / 2, y + 40);
-      if (cari?.eposta) doc.text(`E-posta: ${cari.eposta}`, pageW / 2, y + 56);
-
-      // Ürün tablosu
       const bodyRows = (lines || []).map((it, i) => {
         const adet = Number(it.adet || 0);
         const fiyat = Number(it.fiyat || 0);
         const tutar = adet * fiyat;
-        const kdvSatir = (tutar * Number(it.kdv || 0)) / 100;
+        const kdvOran = Number(it.kdv || 0);
+        const kdvSatir = (tutar * kdvOran) / 100;
         return [
           i + 1,
           it.urunAd || "-",
           adet,
           `${fmt(fiyat)} ${currency}`,
+          `%${kdvOran}`,
           `${fmt(kdvSatir)} ${currency}`,
           `${fmt(tutar + kdvSatir)} ${currency}`,
         ];
       });
 
       autoTable(doc, {
-        startY: 220,
-        head: [["#", "Ürün", "Adet", "Birim Fiyat", "KDV", "Toplam"]],
-        body:
-          bodyRows.length > 0
-            ? bodyRows
-            : [[1, "-", 1, `0,00 ${currency}`, `0,00 ${currency}`, `0,00 ${currency}`]],
-        styles: { fontSize: 10, cellPadding: 6, lineWidth: 0.3 },
+        startY: y,
+        head: [["#", "Ürün / Hizmet", "Adet", "Birim Fiyat", "KDV %", "KDV Tutarı", "Toplam"]],
+        body: bodyRows.length > 0
+          ? bodyRows
+          : [[1, "-", 1, `0,00 ${currency}`, "%0", `0,00 ${currency}`, `0,00 ${currency}`]],
+        styles: { fontSize: 9, cellPadding: 7, lineWidth: 0.1, lineColor: [226, 232, 240] },
         headStyles: {
-          fillColor: [255, 140, 0],
+          fillColor: [30, 41, 59],
           textColor: 255,
           fontStyle: "bold",
           halign: "center",
+          fontSize: 9,
         },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
         columnStyles: {
-          0: { halign: "center", cellWidth: 28 },
-          2: { halign: "right", cellWidth: 60 },
-          3: { halign: "right", cellWidth: 100 },
-          4: { halign: "right", cellWidth: 100 },
-          5: { halign: "right", cellWidth: 110 },
+          0: { halign: "center", cellWidth: 24 },
+          2: { halign: "right", cellWidth: 40 },
+          3: { halign: "right", cellWidth: 80 },
+          4: { halign: "center", cellWidth: 45 },
+          5: { halign: "right", cellWidth: 75 },
+          6: { halign: "right", cellWidth: 80 },
         },
         theme: "grid",
+        margin: { left: margin, right: margin },
       });
 
-      // Toplamlar
-      y = doc.lastAutoTable.finalY + 22;
+      // ── TOPLAMLAR KUTUSU ──────────────────────────────────
+      y = doc.lastAutoTable.finalY + 16;
+      const boxW = 200;
+      const boxX = pageW - margin - boxW;
 
-      setFont("bold");
-      doc.setFontSize(12);
-      doc.text(`Ara Toplam: ${fmt(araToplam)} ${currency}`, pageW - 40, y, { align: "right" });
-      doc.text(`KDV: ${fmt(kdvTutar)} ${currency}`, pageW - 40, y + 18, { align: "right" });
-      doc.text(`Genel Toplam: ${fmt(genelToplam)} ${currency}`, pageW - 40, y + 36, { align: "right" });
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(203, 213, 225);
+      doc.roundedRect(boxX, y, boxW, 72, 4, 4, "FD");
 
-      // Geçerlilik
-      const validUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString("tr-TR");
-      setFont("normal");
-      doc.setFontSize(10);
-      doc.text(`Teklif geçerlilik tarihi: ${validUntil}`, 40, y + 36);
-
-      // Online onay linki (kayıt varsa)
-      if (savedTeklifId) {
-        const origin =
-          typeof window !== "undefined" && window.location?.origin
-            ? window.location.origin
-            : "https://www.satistakip.online";
-        const onayUrl = `${origin}/teklif/onay/${savedTeklifId}?ok=1`;
-
-        const linkY = pageH - 80;
-        setFont("bold");
-        doc.setFontSize(10);
-        doc.text("Online onay linki:", 40, linkY);
+      const totRows = [
+        ["Ara Toplam", `${fmt(araToplam)} ${currency}`],
+        ["KDV", `${fmt(kdvTutar)} ${currency}`],
+      ];
+      totRows.forEach(([label, val], i) => {
         setFont("normal");
-        doc.setTextColor(0, 0, 255);
-        doc.text(onayUrl, 40, linkY + 16, { maxWidth: pageW - 80 });
+        doc.setFontSize(9);
+        doc.setTextColor(71, 85, 105);
+        doc.text(label, boxX + 12, y + 18 + i * 16);
+        setFont("bold");
+        doc.setTextColor(15, 23, 42);
+        doc.text(val, boxX + boxW - 12, y + 18 + i * 16, { align: "right" });
+      });
+
+      // Genel toplam - turuncu çizgi + büyük yazı
+      doc.setDrawColor(234, 88, 12);
+      doc.setLineWidth(0.8);
+      doc.line(boxX + 12, y + 51, boxX + boxW - 12, y + 51);
+      setFont("bold");
+      doc.setFontSize(11);
+      doc.setTextColor(234, 88, 12);
+      doc.text("GENEL TOPLAM", boxX + 12, y + 64);
+      doc.text(`${fmt(genelToplam)} ${currency}`, boxX + boxW - 12, y + 64, { align: "right" });
+
+      doc.setLineWidth(0.2);
+      doc.setDrawColor(0);
+
+      // ── NOT ────────────────────────────────────────────────
+      if (not) {
+        const notY = y + 16;
+        doc.setFillColor(255, 251, 235);
+        doc.setDrawColor(251, 191, 36);
+        doc.roundedRect(margin, notY, boxX - margin - 12, 56, 4, 4, "FD");
+        setFont("bold");
+        doc.setFontSize(8);
+        doc.setTextColor(100, 116, 139);
+        doc.text("NOT", margin + 10, notY + 14);
+        setFont("normal");
+        doc.setFontSize(9);
+        doc.setTextColor(71, 85, 105);
+        doc.text(String(not), margin + 10, notY + 27, { maxWidth: boxX - margin - 32 });
+      }
+
+      // ── ONLINE ONAY LİNKİ ─────────────────────────────────
+      if (savedTeklifId) {
+        const origin = typeof window !== "undefined" && window.location?.origin
+          ? window.location.origin : "https://www.satistakip.online";
+        const onayUrl = `${origin}/teklif/onay/${savedTeklifId}?ok=1`;
+        const linkY = y + 92;
+        doc.setFillColor(239, 246, 255);
+        doc.setDrawColor(147, 197, 253);
+        doc.roundedRect(margin, linkY, pageW - margin * 2, 28, 4, 4, "FD");
+        setFont("bold");
+        doc.setFontSize(8);
+        doc.setTextColor(30, 64, 175);
+        doc.text("Online Onay Linki:", margin + 10, linkY + 12);
+        setFont("normal");
+        doc.setTextColor(37, 99, 235);
+        doc.text(onayUrl, margin + 105, linkY + 12, { maxWidth: pageW - margin * 2 - 115 });
         doc.setTextColor(0, 0, 0);
       }
 
-      // Footer
+      // ── İMZA ALANI ────────────────────────────────────────
+      const sigY = pageH - 100;
+      doc.setDrawColor(203, 213, 225);
+      doc.setLineWidth(0.5);
+      // Firma imzası
+      doc.line(margin, sigY + 28, margin + 140, sigY + 28);
       setFont("normal");
-      doc.setFontSize(9);
-      doc.text("Kurumsal Tedarikçi • www.tedarikci.org.tr", pageW / 2, pageH - 24, {
-        align: "center",
-      });
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text("Yetkili İmza / Kaşe", margin, sigY + 38);
+      doc.text(company?.firmaAdi || "", margin, sigY + 49);
+      // Müşteri imzası
+      const sig2X = pageW - margin - 140;
+      doc.line(sig2X, sigY + 28, sig2X + 140, sigY + 28);
+      doc.text("Müşteri Onayı", sig2X, sigY + 38);
+      doc.text(cariAd, sig2X, sigY + 49, { maxWidth: 140 });
+
+      // ── FOOTER ────────────────────────────────────────────
+      doc.setFillColor(30, 41, 59);
+      doc.rect(0, pageH - 32, pageW, 32, "F");
+      setFont("normal");
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      const footerLeft = [company?.adres, company?.telefon].filter(Boolean).join("  |  ");
+      const footerRight = company?.website || company?.eposta || "";
+      if (footerLeft) doc.text(footerLeft, margin, pageH - 13);
+      if (footerRight) doc.text(footerRight, pageW - margin, pageH - 13, { align: "right" });
+      doc.setTextColor(0, 0, 0);
 
       const fileName = `Teklif-${offerNumber || "musteri"}.pdf`;
 
@@ -814,19 +938,26 @@ setTeklifler(listData?.teklifler || []);
 
                       return (
                         <tr key={idx} className="border-t">
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-2 min-w-[220px]">
                             <select
                               value={l.urunId}
                               onChange={(e) => selectProduct(idx, e.target.value)}
-                              className="border rounded px-2 py-1 w-full"
+                              className="border rounded px-2 py-1 w-full text-sm"
                             >
-                              <option value="">Seçiniz...</option>
+                              <option value="">— Listeden seç —</option>
                               {urunler.map((u) => (
                                 <option key={u._id || u.id} value={u._id || u.id}>
                                   {u.ad || u.name || u.urunAd || u.title || u.urunAdi || "-"}
                                 </option>
                               ))}
                             </select>
+                            <input
+                              type="text"
+                              value={l.urunAd}
+                              onChange={(e) => updateLine(idx, "urunAd", e.target.value)}
+                              className="mt-1 border rounded px-2 py-1 w-full text-sm"
+                              placeholder="veya ürün / hizmet adı yaz..."
+                            />
                           </td>
 
                           <td className="px-3 py-2 text-right">
