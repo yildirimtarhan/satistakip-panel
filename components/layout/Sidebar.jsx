@@ -143,16 +143,29 @@ export default function Sidebar() {
         <MenuItem href="/dashboard/stok-raporu" icon="📊" label="Stok Raporu" />
 
         {role === "admin" && (
-          <>
-            <SectionTitle>Admin</SectionTitle>
-            <MenuItem href="/dashboard/admin/users" icon="🛡️" label="Kullanıcı Yönetimi" />
-            <MenuItem
-              href="/dashboard/admin/basvuru-onay"
-              icon="📤"
-              label="E-Belge Başvuru Onayı"
-            />
-          </>
-        )}
+  <>
+    <SectionTitle>Admin</SectionTitle>
+
+    <MenuItem
+      href="/dashboard/admin/users"
+      icon="🛡️"
+      label="Kullanıcı Yönetimi"
+    />
+
+    <MenuItem
+      href="/dashboard/admin/basvuru-onay"
+      icon="📤"
+      label="E-Belge Başvuru Onayı"
+    />
+
+    {/* 🔥 YENİ EKLENEN ERP API ENTEGRASYON */}
+    <MenuItem
+      href="/dashboard/integration-settings"
+      icon="🔗"
+      label="ERP API Entegrasyonu"
+    />
+  </>
+)}
       </nav>
 
       <button

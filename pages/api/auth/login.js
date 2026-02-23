@@ -59,12 +59,13 @@ export default async function handler(req, res) {
       });
     }
 
-    // 🔥 JWT oluştur (✅ Multi-tenant: companyId eklendi)
-    const token = jwt.sign(
+    // 🔥 JWT oluştur (✅ Multi-tenant + role eklendi)
+const token = jwt.sign(
   {
     userId: user._id.toString(),
     email: user.email,
-    companyId: user.companyId?.toString(), // ✅ EKLENECEK
+    companyId: user.companyId?.toString(),
+    role: user.role || "user", // 🔥 EKLENDİ
   },
   process.env.JWT_SECRET,
   { expiresIn: "7d" }
