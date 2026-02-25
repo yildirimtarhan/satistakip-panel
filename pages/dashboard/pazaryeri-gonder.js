@@ -87,7 +87,11 @@ export default function PazaryeriGonderPage() {
   const addImageRow    = () => setImageUrls((p) => [...p, ""]);
   const removeImageRow = (i) => setImageUrls((p) => p.filter((_, idx) => idx !== i));
   const updateImage    = (i, v) => setImageUrls((p) => p.map((u, idx) => (idx === i ? v : u)));
-  const validImages    = imageUrls.filter((u) => u.trim().startsWith("http"));
+
+  // N11/Trendyol: görsel URL direkt resim dosyası olmalı (.jpg/.png/.webp vb.)
+  const isDirectImageUrl = (u) => /\.(jpg|jpeg|png|webp|gif)(\?.*)?$/i.test(u) || u.includes("/image/") || u.includes("/img/") || u.includes("cdn");
+  const validImages = imageUrls.filter((u) => u.trim().startsWith("http"));
+  const warnImages  = validImages.filter((u) => !isDirectImageUrl(u));
 
   /* ── Gönderim ── */
   const handleSend = async () => {
@@ -225,6 +229,11 @@ export default function PazaryeriGonderPage() {
           </div>
         ))}
         <p className="text-xs text-gray-400">{validImages.length} geçerli görsel — HTTPS URL olmalı</p>
+        {warnImages.length > 0 && (
+          <p className="text-xs text-red-500 mt-1">
+            Uyarı: {warnImages.length} görsel HTML sayfa URL gibi görünüyor. N11/Trendyol direkt resim URL ister (.jpg, .png, .webp). akakce, hepsiburada ürün sayfaları kabul edilmez!
+          </p>
+        )}
       </div>
 
       {/* Pazaryeri Sekmeleri */}
