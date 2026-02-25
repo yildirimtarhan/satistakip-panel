@@ -96,38 +96,47 @@ export default function N11ProductsPage() {
   const bulkUpdateN11PriceStock = async () => {
     const token = localStorage.getItem("token");
 
-    const items = products
-      .filter((p) => p.sellerCode)
+    // N11'den gelen ürünlerde doğrudan stockCode (sellerCode) kullan
+    const skus = products
+      .filter((p) => p.sellerCode || p.stockCode)
       .map((p) => ({
-        sellerCode: p.sellerCode,
-        price: p.price,
-        stock: p.stock || 0,
+        stockCode: p.sellerCode || p.stockCode,
+        listPrice: Number(p.listPrice || (Number(p.price || 0) * 1.1).toFixed(2)),
+        salePrice: Number(p.price || 0),
+        quantity: Number(p.stock || p.quantity || 0),
+        currencyType: "TL",
       }));
 
-    if (items.length === 0) {
-      alert("Güncellenecek ürün bulunamadı");
+    if (skus.length === 0) {
+      alert("Güncellenecek ürün bulunamadı — SKU (sellerCode) olan ürün yok");
       return;
     }
 
     try {
       setUpdating(true);
-      await fetch("/api/n11/products/update-stock-price", {
+      const res = await fetch("/api/n11/products/bulk-price-stock", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ items }),
+        body: JSON.stringify({ skus }),
       });
-
+      const data = await res.json();
+      if (data.success) {
+        alert(`✅ ${data.updatedCount} ürün güncelleme kuyruğuna alındı. Task ID: ${data.taskId}`);
+      } else {
+        alert(`❌ Hata: ${data.message}`);
+      }
       fetchProducts();
     } catch (err) {
-      console.error(err);
+      alert("Hata: " + err.message);
     } finally {
       setUpdating(false);
-    
+    }
   };
-  }
+
+  
 
   /* ===============================
      ERP IMPORT
