@@ -157,9 +157,9 @@ export default function PazaryeriGonderPage() {
             const attr = n11Attrs.find((a) => a.id === attrId);
             if (attr?.values?.length) {
               const valObj = attr.values.find((v) => v.name === val || v.id === val);
-              return { attributeId: Number(attrId), attributeValueId: Number(valObj?.id || val) };
+              return { id: Number(attrId), valueId: Number(valObj?.id || val) };
             }
-            return { attributeId: Number(attrId), customAttributeValue: val };
+            return { id: Number(attrId), customValue: val };
           });
 
         // Görsel listesini de ürüne kaydet (bu çalışıyor çünkü "images" allowed)
