@@ -155,10 +155,12 @@ export default function PazaryeriGonderPage() {
           .filter(([, v]) => v)
           .map(([attrId, val]) => {
             const attr = n11Attrs.find((a) => a.id === attrId);
-            if (attr?.values?.length) {
-              const valObj = attr.values.find((v) => v.name === val || v.id === val);
-              return { id: Number(attrId), valueId: Number(valObj?.id || val) };
+            // customValue=false → valueId zorunlu (GetCategoryAttributeValue'dan gelen gerçek ID)
+            if (attr && !attr.allowCustom && attr.values?.length) {
+              const valObj = attr.values.find((v) => v.id === val || v.name === val);
+              if (valObj?.id) return { id: Number(attrId), valueId: Number(valObj.id) };
             }
+            // customValue=true → serbest metin veya öneri listesinden seçilen isim
             return { id: Number(attrId), customValue: val };
           });
 
@@ -352,23 +354,44 @@ export default function PazaryeriGonderPage() {
               {/* Dinamik Attribute Alanları */}
               {n11Attrs.length > 0 && (
                 <div className="border rounded-lg p-3 bg-yellow-50 border-yellow-200">
-                  <p className="text-xs font-semibold text-yellow-800 mb-3">Kategori Özellikleri</p>
+                  <p className="text-xs font-semibold text-yellow-800 mb-3">
+                    Kategori Özellikleri
+                    <span className="ml-2 text-yellow-600 font-normal">({n11Attrs.filter(a=>a.mandatory).length} zorunlu)</span>
+                  </p>
                   <div className="grid grid-cols-2 gap-3">
                     {n11Attrs.map((attr) => (
                       <div key={attr.id}>
                         <label className="block text-xs font-medium mb-1">
                           {attr.name}
                           {attr.mandatory && <span className="text-red-500 ml-1">*</span>}
+                          {attr.allowCustom && <span className="text-gray-400 ml-1 text-[10px]">(serbest)</span>}
                         </label>
-                        {attr.values?.length > 0 ? (
+                        {/* customValue=false → dropdown, ID zorunlu */}
+                        {!attr.allowCustom && attr.values?.length > 0 ? (
                           <select
-                            className="w-full border rounded p-2 text-sm"
+                            className="w-full border rounded p-2 text-sm bg-white"
                             value={n11AttrVals[attr.id] || ""}
                             onChange={(e) => setN11AttrVals((p) => ({ ...p, [attr.id]: e.target.value }))}>
-                            <option value="">Seçin...</option>
+                            <option value="">— Seçin —</option>
                             {attr.values.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
                           </select>
+                        ) : attr.allowCustom && attr.values?.length > 0 ? (
+                          /* customValue=true + öneri listesi → combo (datalist) */
+                          <>
+                            <input
+                              list={`dl-${attr.id}`}
+                              type="text"
+                              className="w-full border rounded p-2 text-sm bg-white"
+                              placeholder={`${attr.name} yazın veya seçin`}
+                              value={n11AttrVals[attr.id] || ""}
+                              onChange={(e) => setN11AttrVals((p) => ({ ...p, [attr.id]: e.target.value }))}
+                            />
+                            <datalist id={`dl-${attr.id}`}>
+                              {attr.values.map((v, i) => <option key={i} value={v.name} />)}
+                            </datalist>
+                          </>
                         ) : (
+                          /* Değer yok → serbest metin */
                           <input
                             type="text"
                             className="w-full border rounded p-2 text-sm"
