@@ -21,11 +21,10 @@ export default function PazaryeriGonderPage() {
 
   // N11 form
   const [n11Form, setN11Form] = useState({
-    categoryId: "", brandId: "", preparingDay: "3",
+    categoryId: "", brandId: "", brandName: "", preparingDay: "3",
     shipmentTemplate: "STANDART", vatRate: "20",
   });
   const [n11Categories, setN11Categories] = useState([]);
-  const [n11Brands, setN11Brands]         = useState([]);
 
   // Trendyol form
   const [tyForm, setTyForm] = useState({
@@ -66,6 +65,7 @@ export default function PazaryeriGonderPage() {
           setN11Form((f) => ({ ...f,
             categoryId: ms.categoryId || "",
             brandId: ms.brandId || "",
+            brandName: ms.brandName || "",
           }));
         }
         // Görselleri doldur
@@ -82,16 +82,6 @@ export default function PazaryeriGonderPage() {
       .then((d) => setN11Categories(d?.categories || []))
       .catch(() => {});
   }, []);
-
-  /* ── N11 markalar ── */
-  useEffect(() => {
-    if (!n11Form.categoryId) return;
-    setN11Brands([]);
-    fetch(`/api/n11/brands?categoryId=${n11Form.categoryId}`, { headers: headers() })
-      .then((r) => r.json())
-      .then((d) => setN11Brands(d?.brands || []))
-      .catch(() => {});
-  }, [n11Form.categoryId]);
 
   /* ── Görsel satır yönetimi ── */
   const addImageRow    = () => setImageUrls((p) => [...p, ""]);
@@ -117,6 +107,7 @@ export default function PazaryeriGonderPage() {
           body: JSON.stringify({
             "marketplaceSettings.n11.categoryId": n11Form.categoryId,
             "marketplaceSettings.n11.brandId": n11Form.brandId,
+            "marketplaceSettings.n11.brandName": n11Form.brandName,
             images: validImages,
           }),
         });
@@ -262,14 +253,26 @@ export default function PazaryeriGonderPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">Marka</label>
-                  <select className="w-full border rounded p-2" value={n11Form.brandId}
-                    onChange={(e) => setN11Form((f) => ({ ...f, brandId: e.target.value }))}>
-                    <option value="">Seçin...</option>
-                    {n11Brands.map((b) => (
-                      <option key={b.id} value={b.id}>{b.name || b.value || b.id}</option>
-                    ))}
-                  </select>
+                  <label className="block text-sm font-medium mb-1">Marka Adı *</label>
+                  <input
+                    type="text"
+                    className="w-full border rounded p-2"
+                    placeholder="Samsung, Apple, vb."
+                    value={n11Form.brandName}
+                    onChange={(e) => setN11Form((f) => ({ ...f, brandName: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    Marka ID <span className="text-gray-400 font-normal">(isteğe bağlı)</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full border rounded p-2"
+                    placeholder="N11 panelinden alın"
+                    value={n11Form.brandId}
+                    onChange={(e) => setN11Form((f) => ({ ...f, brandId: e.target.value }))}
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">KDV %</label>
@@ -285,7 +288,8 @@ export default function PazaryeriGonderPage() {
                 </div>
               </div>
               <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded p-2">
-                ⚠️ N11: Barkod veya en az 1 görsel URL zorunlu. Görseller yukarıdan eklendi: {validImages.length} adet.
+                Marka Adı zorunlu. Marka ID opsiyoneldir; N11 paneli → Katalog → Markalar bölümünden öğrenebilirsiniz.
+                Görsel: {validImages.length} adet eklendi.
               </div>
             </div>
           )}
