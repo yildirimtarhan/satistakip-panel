@@ -22,7 +22,7 @@ export default function PazaryeriGonderPage() {
   // N11 form
   const [n11Form, setN11Form] = useState({
     catL1: "", catL2: "", catL3: "", preparingDay: "3",
-    shipmentTemplate: "STANDART", vatRate: "20", description: "",
+    shipmentTemplate: "", vatRate: "20", description: "",
   });
   const [n11CatsL1, setN11CatsL1] = useState([]);
   const [n11CatsL2, setN11CatsL2] = useState([]);
@@ -401,14 +401,13 @@ export default function PazaryeriGonderPage() {
                   <label className="block text-sm font-medium mb-1">Teslimat Şablonu</label>
                   <select className="w-full border rounded p-2" value={n11Form.shipmentTemplate}
                     onChange={(e) => setN11Form((f) => ({ ...f, shipmentTemplate: e.target.value }))}>
-                    <option value="STANDART">Standart</option>
-                    <option value="AYNI_GUN">Aynı Gün</option>
-                    <option value="HIZLI">Hızlı</option>
-                    <option value="KARGO_BEDAVA">Kargo Bedava</option>
-                    <option value="ALICI_ODER">Alıcı Öder</option>
-                    <option value="MAGAZA_ODER">Mağaza Öder</option>
+                    <option value="">— Seçin (boş bırakılabilir) —</option>
+                    <option value="Alıcı Öder">Alıcı Öder</option>
+                    <option value="Bandırma">Bandırma</option>
+                    <option value="Mağaza Öder">Mağaza Öder</option>
+                    <option value="Ürün">Ürün</option>
                   </select>
-                  <p className="text-xs text-gray-400 mt-1">N11 Satıcı Paneli → Teslimat Şablonları'ndaki şablon adıyla eşleşmeli</p>
+                  <p className="text-xs text-gray-400 mt-1">N11 panelindeki şablon adıyla tam eşleşmeli</p>
                 </div>
               </div>
 
