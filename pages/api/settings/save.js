@@ -3,9 +3,7 @@ import { connectToDatabase } from "@/lib/mongodb";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res
-      .status(405)
-      .json({ message: "Sadece POST istekleri destekleniyor." });
+    return res.status(405).json({ message: "Sadece POST istekleri destekleniyor." });
   }
 
   try {
@@ -13,14 +11,14 @@ export default async function handler(req, res) {
     if (!token) return res.status(401).json({ message: "Token eksik" });
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
     const userId = decoded.userId;
     const companyId = decoded.companyId || null;
 
     const {
       hbMerchantId,
-      hbSecretKey,
-      hbUserAgent,
+      hbUsername,
+      hbPassword,
+      hbTestMode,
 
       trendyolSupplierId,
       trendyolApiKey,
@@ -33,7 +31,6 @@ export default async function handler(req, res) {
 
     const { db } = await connectToDatabase();
     const col = db.collection("settings");
-
     const query = companyId ? { companyId } : { userId };
 
     const newDoc = {
@@ -42,8 +39,9 @@ export default async function handler(req, res) {
 
       hepsiburada: {
         merchantId: hbMerchantId || "",
-        secretKey: hbSecretKey || "",
-        userAgent: hbUserAgent || "",
+        username: hbUsername || "",
+        password: hbPassword || "",
+        testMode: hbTestMode || false,
       },
 
       trendyol: {
@@ -61,22 +59,11 @@ export default async function handler(req, res) {
       updatedAt: new Date(),
     };
 
-    await col.updateOne(
-      query,
-      {
-        $set: newDoc,
-        $setOnInsert: { createdAt: new Date() },
-      },
-      { upsert: true }
-    );
+    await col.updateOne(query, { $set: newDoc, $setOnInsert: { createdAt: new Date() } }, { upsert: true });
 
-    return res.status(200).json({
-      message: "✅ API bilgileri başarıyla kaydedildi.",
-    });
+    return res.status(200).json({ message: "API bilgileri basariyla kaydedildi." });
   } catch (error) {
     console.error("API Settings Save Error:", error);
-    return res
-      .status(500)
-      .json({ message: "Sunucu hatası", error: error.message });
+    return res.status(500).json({ message: "Sunucu hatasi", error: error.message });
   }
 }

@@ -1,29 +1,6 @@
 import jwt from "jsonwebtoken";
 import axios from "axios";
-import dbConnect from "@/lib/dbConnect";
-import Settings from "@/models/Settings";
-
-async function getHBSettings({ companyId, userId }) {
-  await dbConnect();
-  let s = null;
-  if (companyId) s = await Settings.findOne({ companyId });
-  if (!s && userId) s = await Settings.findOne({ userId });
-  const hb = s?.hepsiburada || {};
-  return {
-    merchantId: hb.merchantId || process.env.HB_MERCHANT_ID,
-    username: hb.username || process.env.HB_USERNAME,
-    password: hb.password || process.env.HB_PASSWORD,
-  };
-}
-
-async function getHBToken(username, password) {
-  const res = await axios.post(
-    "https://mpop.hepsiburada.com/api/authenticate",
-    { username, password, authenticationType: "INTEGRATOR" },
-    { headers: { "Content-Type": "application/json" }, timeout: 10000 }
-  );
-  return res.data?.token || res.data?.jwt;
-}
+import { getHBSettings, getHBToken, hbBaseUrl } from "@/lib/marketplaces/hbService";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ success: false });
@@ -35,13 +12,21 @@ export default async function handler(req, res) {
 
     const cfg = await getHBSettings({ companyId, userId });
     if (!cfg.merchantId || !cfg.username || !cfg.password) {
-      return res.status(400).json({ success: false, message: "Hepsiburada ayarları eksik (merchantId, username, password)" });
+      return res.status(400).json({
+        success: false,
+        message: "Hepsiburada ayarlari eksik (merchantId, kullanici adi, sifre). API Ayarlari sayfasindan girin.",
+      });
     }
 
     const { product } = req.body;
     if (!product) return res.status(400).json({ success: false, message: "product verisi zorunlu" });
 
-    const hbToken = await getHBToken(cfg.username, cfg.password);
+    const hbToken = await getHBToken(cfg.username, cfg.password, cfg.testMode);
+    const base = hbBaseUrl(cfg.testMode);
+
+    const images = (product.images || []).filter((u) => u?.startsWith("http"));
+    const imageAttrs = {};
+    images.slice(0, 5).forEach((url, i) => { imageAttrs[`Image${i + 1}`] = url; });
 
     const item = {
       categoryId: product.categoryId,
@@ -51,31 +36,39 @@ export default async function handler(req, res) {
         merchantSku: product.stockCode || product.barcode,
         UrunAdi: product.title,
         UrunAciklamasi: product.description || product.title,
-        Marka: product.brandName,
+        Marka: product.brandName || "",
         tax_vat_rate: String(product.vatRate ?? 18),
-        Image1: product.images?.[0] || "",
-        ...(product.images?.[1] ? { Image2: product.images[1] } : {}),
-        ...(product.images?.[2] ? { Image3: product.images[2] } : {}),
+        ...imageAttrs,
         ...(product.hbAttributes || {}),
       },
     };
 
     const response = await axios.post(
-      `https://mpop.hepsiburada.com/products/api/products/${cfg.merchantId}`,
+      `${base}/products/api/products/${cfg.merchantId}`,
       [item],
       {
         headers: {
           Authorization: `Bearer ${hbToken}`,
           "Content-Type": "application/json",
+          "User-Agent": "SatisTakip/1.0",
         },
         timeout: 20000,
       }
     );
 
-    return res.json({ success: true, data: response.data, message: "Hepsiburada gönderim alındı" });
+    return res.json({
+      success: true,
+      data: response.data,
+      message: cfg.testMode ? "Hepsiburada TEST ortamina gonderildi." : "Hepsiburada'ya gonderildi.",
+      testMode: cfg.testMode,
+    });
   } catch (err) {
     const hbErr = err?.response?.data;
     console.error("HB CREATE ERROR:", hbErr || err.message);
-    return res.status(500).json({ success: false, message: hbErr?.message || err.message, detail: hbErr });
+    return res.status(500).json({
+      success: false,
+      message: hbErr?.description || hbErr?.message || err.message,
+      detail: hbErr,
+    });
   }
 }

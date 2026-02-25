@@ -8,43 +8,36 @@ export default async function handler(req, res) {
 
   try {
     const token = req.headers.authorization?.split(" ")[1];
-    if (!token) {
-      return res.status(401).json({ message: "Token gerekli" });
-    }
+    if (!token) return res.status(401).json({ message: "Token gerekli" });
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const userId = decoded.userId;
     const companyId = decoded.companyId || null;
 
     const { db } = await connectToDatabase();
-
     const query = companyId ? { companyId } : { userId };
-
     const settingsDoc = await db.collection("settings").findOne(query);
 
-    if (!settingsDoc) {
-      return res.status(200).json({ settings: null });
-    }
+    if (!settingsDoc) return res.status(200).json({ settings: null });
 
     const safeSettings = {
-      hbMerchantId: settingsDoc.hepsiburada?.merchantId || "",
-      hbSecretKey: settingsDoc.hepsiburada?.secretKey || "",
-      hbUserAgent: settingsDoc.hepsiburada?.userAgent || "",
+      hbMerchantId:  settingsDoc.hepsiburada?.merchantId || "",
+      hbUsername:    settingsDoc.hepsiburada?.username   || "",
+      hbPassword:    settingsDoc.hepsiburada?.password   || "",
+      hbTestMode:    settingsDoc.hepsiburada?.testMode   || false,
 
       trendyolSupplierId: settingsDoc.trendyol?.supplierId || "",
-      trendyolApiKey: settingsDoc.trendyol?.apiKey || "",
-      trendyolApiSecret: settingsDoc.trendyol?.apiSecret || "",
+      trendyolApiKey:     settingsDoc.trendyol?.apiKey     || "",
+      trendyolApiSecret:  settingsDoc.trendyol?.apiSecret  || "",
 
-      n11AppKey: settingsDoc.n11?.appKey || "",
-      n11AppSecret: settingsDoc.n11?.appSecret || "",
+      n11AppKey:      settingsDoc.n11?.appKey      || "",
+      n11AppSecret:   settingsDoc.n11?.appSecret   || "",
       n11Environment: settingsDoc.n11?.environment || "production",
     };
 
     return res.status(200).json({ settings: safeSettings });
   } catch (error) {
-    console.error("API Ayarları getirme hatası:", error);
-    return res
-      .status(500)
-      .json({ message: "Sunucu hatası", error: error.message });
+    console.error("API Ayarlari getirme hatasi:", error);
+    return res.status(500).json({ message: "Sunucu hatasi", error: error.message });
   }
 }
