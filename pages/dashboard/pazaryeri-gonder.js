@@ -1,0 +1,399 @@
+"use client";
+import { useEffect, useState } from "react";
+
+const MARKETPLACES = [
+  { key: "n11",         label: "N11",          color: "bg-orange-500" },
+  { key: "trendyol",    label: "Trendyol",     color: "bg-orange-600" },
+  { key: "hepsiburada", label: "Hepsiburada",  color: "bg-blue-600"   },
+];
+
+const fmt = (n) =>
+  Number(n || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 });
+
+export default function PazaryeriGonderPage() {
+  const [activeTab, setActiveTab]   = useState("n11");
+  const [products, setProducts]     = useState([]);
+  const [selectedId, setSelectedId] = useState("");
+  const [product, setProduct]       = useState(null);
+  const [loading, setLoading]       = useState(false);
+  const [sending, setSending]       = useState(false);
+  const [taskResult, setTaskResult] = useState(null);
+
+  // N11 form
+  const [n11Form, setN11Form] = useState({
+    categoryId: "", brandId: "", preparingDay: "3",
+    shipmentTemplate: "STANDART", vatRate: "20",
+  });
+  const [n11Categories, setN11Categories] = useState([]);
+  const [n11Brands, setN11Brands]         = useState([]);
+
+  // Trendyol form
+  const [tyForm, setTyForm] = useState({
+    categoryId: "", brandId: "", cargoCompanyId: "10",
+    vatRate: "20", stockCode: "",
+  });
+
+  // HB form
+  const [hbForm, setHbForm] = useState({
+    categoryId: "", brandName: "", vatRate: "18",
+  });
+
+  // Görsel URL'leri
+  const [imageUrls, setImageUrls]   = useState([""]);
+
+  const token = () => (typeof window !== "undefined" ? localStorage.getItem("token") : "");
+  const headers = () => ({ "Content-Type": "application/json", Authorization: `Bearer ${token()}` });
+
+  /* ── Ürün listesi ── */
+  useEffect(() => {
+    fetch("/api/products/list", { headers: headers() })
+      .then((r) => r.json())
+      .then((d) => setProducts(d?.products || d?.items || []))
+      .catch(() => {});
+  }, []);
+
+  /* ── Ürün seçilince detay yükle ── */
+  useEffect(() => {
+    if (!selectedId) { setProduct(null); return; }
+    fetch(`/api/products/get?id=${selectedId}`, { headers: headers() })
+      .then((r) => r.json())
+      .then((d) => {
+        const p = d?.product || d;
+        setProduct(p);
+        // Mevcut ayarları form'a doldur
+        if (p?.marketplaceSettings?.n11) {
+          const ms = p.marketplaceSettings.n11;
+          setN11Form((f) => ({ ...f,
+            categoryId: ms.categoryId || "",
+            brandId: ms.brandId || "",
+          }));
+        }
+        // Görselleri doldur
+        const imgs = (p?.images || []).map((i) => (typeof i === "string" ? i : i?.url || ""));
+        setImageUrls(imgs.length ? imgs : [""]);
+      })
+      .catch(() => {});
+  }, [selectedId]);
+
+  /* ── N11 kategorileri ── */
+  useEffect(() => {
+    fetch("/api/n11/categories/list", { headers: headers() })
+      .then((r) => r.json())
+      .then((d) => setN11Categories(d?.categories || []))
+      .catch(() => {});
+  }, []);
+
+  /* ── N11 markalar ── */
+  useEffect(() => {
+    if (!n11Form.categoryId) return;
+    setN11Brands([]);
+    fetch(`/api/n11/brands?categoryId=${n11Form.categoryId}`, { headers: headers() })
+      .then((r) => r.json())
+      .then((d) => setN11Brands(d?.brands || []))
+      .catch(() => {});
+  }, [n11Form.categoryId]);
+
+  /* ── Görsel satır yönetimi ── */
+  const addImageRow    = () => setImageUrls((p) => [...p, ""]);
+  const removeImageRow = (i) => setImageUrls((p) => p.filter((_, idx) => idx !== i));
+  const updateImage    = (i, v) => setImageUrls((p) => p.map((u, idx) => (idx === i ? v : u)));
+  const validImages    = imageUrls.filter((u) => u.trim().startsWith("http"));
+
+  /* ── Gönderim ── */
+  const handleSend = async () => {
+    if (!selectedId) { alert("Ürün seçin"); return; }
+    setSending(true);
+    setTaskResult(null);
+    try {
+      let body, endpoint;
+
+      if (activeTab === "n11") {
+        endpoint = "/api/n11/products/create";
+        body = { productId: selectedId };
+        // N11 ayarlarını ürüne kaydet (geçici)
+        await fetch(`/api/products/update?id=${selectedId}`, {
+          method: "PUT",
+          headers: headers(),
+          body: JSON.stringify({
+            "marketplaceSettings.n11.categoryId": n11Form.categoryId,
+            "marketplaceSettings.n11.brandId": n11Form.brandId,
+            images: validImages,
+          }),
+        });
+      } else if (activeTab === "trendyol") {
+        endpoint = "/api/trendyol/products/create";
+        body = {
+          product: {
+            barcode: product?.barcode || product?.barkod,
+            title: product?.name || product?.title,
+            description: product?.description,
+            categoryId: tyForm.categoryId,
+            brandId: tyForm.brandId,
+            stockCode: tyForm.stockCode || product?.sku || product?.barcode,
+            quantity: product?.stock ?? 0,
+            listPrice: product?.listPrice || product?.price,
+            salePrice: product?.price || product?.salePrice,
+            vatRate: tyForm.vatRate,
+            cargoCompanyId: tyForm.cargoCompanyId,
+            images: validImages,
+            attributes: [],
+          },
+        };
+      } else {
+        endpoint = "/api/hepsiburada/products/create";
+        body = {
+          product: {
+            barcode: product?.barcode || product?.barkod,
+            title: product?.name || product?.title,
+            description: product?.description,
+            categoryId: hbForm.categoryId,
+            brandName: hbForm.brandName,
+            stockCode: product?.sku || product?.barcode,
+            vatRate: hbForm.vatRate,
+            images: validImages,
+          },
+        };
+      }
+
+      const res = await fetch(endpoint, { method: "POST", headers: headers(), body: JSON.stringify(body) });
+      const data = await res.json();
+      setTaskResult(data);
+    } catch (err) {
+      setTaskResult({ success: false, message: err.message });
+    }
+    setSending(false);
+  };
+
+  /* ── Durum sorgula (N11) ── */
+  const checkStatus = async () => {
+    if (!taskResult?.taskId && !product?._id) return;
+    const url = product?._id
+      ? `/api/n11/products/task-status?productId=${product._id}`
+      : `/api/n11/products/task-status?taskId=${taskResult.taskId}`;
+    const res = await fetch(url, { headers: headers() });
+    const data = await res.json();
+    setTaskResult((p) => ({ ...p, ...data, status: data.status || p.status }));
+  };
+
+  /* ── UI ── */
+  const tabBtnClass = (key) =>
+    `px-5 py-2 rounded-t-lg text-sm font-semibold border-b-2 transition ${
+      activeTab === key
+        ? "border-orange-500 text-orange-600 bg-white"
+        : "border-transparent text-gray-500 hover:text-gray-700 bg-gray-50"
+    }`;
+
+  return (
+    <div className="p-6 max-w-3xl">
+      <h1 className="text-2xl font-bold mb-6">Pazaryerine Ürün Gönder</h1>
+
+      {/* Ürün Seç */}
+      <div className="mb-6">
+        <label className="block text-sm font-medium mb-1">ERP Ürünü</label>
+        <select
+          className="w-full border rounded-lg p-2"
+          value={selectedId}
+          onChange={(e) => setSelectedId(e.target.value)}
+        >
+          <option value="">— Ürün seçin —</option>
+          {products.map((p) => (
+            <option key={p._id} value={p._id}>
+              {p.name || p.title} | {p.sku || p.barcode || "SKU yok"}
+            </option>
+          ))}
+        </select>
+        {product && (
+          <div className="mt-2 text-sm text-gray-500 flex gap-4">
+            <span>Fiyat: <b>{fmt(product.price)} TL</b></span>
+            <span>Stok: <b>{product.stock ?? 0}</b></span>
+            <span>Barkod: <b>{product.barcode || product.barkod || "—"}</b></span>
+          </div>
+        )}
+      </div>
+
+      {/* Görsel URL'leri */}
+      <div className="mb-6 border rounded-lg p-4 bg-gray-50">
+        <div className="flex justify-between items-center mb-2">
+          <span className="font-medium text-sm">Ürün Görselleri (URL)</span>
+          <button onClick={addImageRow} className="text-blue-600 text-xs hover:underline">+ Görsel ekle</button>
+        </div>
+        {imageUrls.map((url, i) => (
+          <div key={i} className="flex gap-2 mb-2">
+            <input
+              type="url"
+              value={url}
+              onChange={(e) => updateImage(i, e.target.value)}
+              placeholder={`https://... (Görsel ${i + 1})`}
+              className="flex-1 border rounded p-2 text-sm"
+            />
+            {url && (
+              <img src={url} alt="" className="w-10 h-10 object-cover rounded border"
+                onError={(e) => (e.target.style.display = "none")} />
+            )}
+            <button onClick={() => removeImageRow(i)} className="text-red-400 hover:text-red-600 text-lg px-1">×</button>
+          </div>
+        ))}
+        <p className="text-xs text-gray-400">{validImages.length} geçerli görsel — HTTPS URL olmalı</p>
+      </div>
+
+      {/* Pazaryeri Sekmeleri */}
+      <div className="border rounded-lg overflow-hidden">
+        <div className="flex border-b bg-gray-50">
+          {MARKETPLACES.map((m) => (
+            <button key={m.key} className={tabBtnClass(m.key)} onClick={() => setActiveTab(m.key)}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="p-5">
+          {/* N11 */}
+          {activeTab === "n11" && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Ana Kategori *</label>
+                  <select className="w-full border rounded p-2" value={n11Form.categoryId}
+                    onChange={(e) => setN11Form((f) => ({ ...f, categoryId: e.target.value, brandId: "" }))}>
+                    <option value="">Seçin...</option>
+                    {n11Categories.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Marka</label>
+                  <select className="w-full border rounded p-2" value={n11Form.brandId}
+                    onChange={(e) => setN11Form((f) => ({ ...f, brandId: e.target.value }))}>
+                    <option value="">Seçin...</option>
+                    {n11Brands.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name || b.value || b.id}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">KDV %</label>
+                  <select className="w-full border rounded p-2" value={n11Form.vatRate}
+                    onChange={(e) => setN11Form((f) => ({ ...f, vatRate: e.target.value }))}>
+                    {["0","1","10","20"].map((v) => <option key={v} value={v}>%{v}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Hazırlık Günü</label>
+                  <input type="number" className="w-full border rounded p-2" value={n11Form.preparingDay}
+                    onChange={(e) => setN11Form((f) => ({ ...f, preparingDay: e.target.value }))} />
+                </div>
+              </div>
+              <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded p-2">
+                ⚠️ N11: Barkod veya en az 1 görsel URL zorunlu. Görseller yukarıdan eklendi: {validImages.length} adet.
+              </div>
+            </div>
+          )}
+
+          {/* TRENDYOL */}
+          {activeTab === "trendyol" && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Kategori ID *</label>
+                  <input type="text" className="w-full border rounded p-2" placeholder="411"
+                    value={tyForm.categoryId} onChange={(e) => setTyForm((f) => ({ ...f, categoryId: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Marka ID *</label>
+                  <input type="text" className="w-full border rounded p-2" placeholder="1791"
+                    value={tyForm.brandId} onChange={(e) => setTyForm((f) => ({ ...f, brandId: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Stok Kodu</label>
+                  <input type="text" className="w-full border rounded p-2" placeholder="STK-001"
+                    value={tyForm.stockCode} onChange={(e) => setTyForm((f) => ({ ...f, stockCode: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Kargo Firması ID</label>
+                  <input type="text" className="w-full border rounded p-2" placeholder="10"
+                    value={tyForm.cargoCompanyId} onChange={(e) => setTyForm((f) => ({ ...f, cargoCompanyId: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">KDV %</label>
+                  <select className="w-full border rounded p-2" value={tyForm.vatRate}
+                    onChange={(e) => setTyForm((f) => ({ ...f, vatRate: e.target.value }))}>
+                    {["0","1","8","10","18","20"].map((v) => <option key={v} value={v}>%{v}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded p-2">
+                ℹ️ Trendyol: Kategori ve Marka ID Trendyol panelinden alınmalı. Görsel sayısı: {validImages.length}
+              </div>
+            </div>
+          )}
+
+          {/* HEPSİBURADA */}
+          {activeTab === "hepsiburada" && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Kategori ID *</label>
+                  <input type="text" className="w-full border rounded p-2" placeholder="18021982"
+                    value={hbForm.categoryId} onChange={(e) => setHbForm((f) => ({ ...f, categoryId: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Marka Adı *</label>
+                  <input type="text" className="w-full border rounded p-2" placeholder="Samsung"
+                    value={hbForm.brandName} onChange={(e) => setHbForm((f) => ({ ...f, brandName: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">KDV %</label>
+                  <select className="w-full border rounded p-2" value={hbForm.vatRate}
+                    onChange={(e) => setHbForm((f) => ({ ...f, vatRate: e.target.value }))}>
+                    {["0","1","8","10","18","20"].map((v) => <option key={v} value={v}>%{v}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="text-xs text-green-700 bg-green-50 border border-green-200 rounded p-2">
+                ℹ️ Hepsiburada: username/password Settings'ten alınır. İlk görsel zorunlu.
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Gönder Butonu */}
+      <div className="mt-4 flex gap-3">
+        <button
+          onClick={handleSend}
+          disabled={sending || !selectedId}
+          className="bg-orange-600 hover:bg-orange-700 text-white px-6 py-2 rounded-lg font-semibold disabled:opacity-50"
+        >
+          {sending ? "Gönderiliyor..." : `${MARKETPLACES.find((m) => m.key === activeTab)?.label}'e Gönder`}
+        </button>
+      </div>
+
+      {/* Sonuç */}
+      {taskResult && (
+        <div className={`mt-4 border rounded-lg p-4 ${taskResult.success ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
+          <div className="flex justify-between items-center mb-2">
+            <span className={`font-semibold ${taskResult.success ? "text-green-700" : "text-red-700"}`}>
+              {taskResult.success ? "✅ Gönderildi" : "❌ Hata"}
+            </span>
+            {taskResult.taskId && activeTab === "n11" && (
+              <button onClick={checkStatus} className="text-sm text-blue-600 hover:underline">Durumu Sorgula</button>
+            )}
+          </div>
+          {taskResult.taskId && <p className="text-sm">Task ID: <b>{taskResult.taskId}</b></p>}
+          {taskResult.batchRequestId && <p className="text-sm">Batch ID: <b>{taskResult.batchRequestId}</b></p>}
+          {taskResult.status && (
+            <p className="text-sm">Durum: <b className={taskResult.status === "COMPLETED" ? "text-green-600" : taskResult.status === "FAILED" ? "text-red-600" : "text-yellow-600"}>{taskResult.status}</b></p>
+          )}
+          {taskResult.reason && <p className="text-sm text-red-500">Hata: {taskResult.reason}</p>}
+          {taskResult.message && <p className="text-sm text-gray-600">{taskResult.message}</p>}
+          {taskResult.raw && (
+            <pre className="mt-2 text-xs bg-white border rounded p-2 overflow-auto max-h-40">
+              {JSON.stringify(taskResult.raw, null, 2)}
+            </pre>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
