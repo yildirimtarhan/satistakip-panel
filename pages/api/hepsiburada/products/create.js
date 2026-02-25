@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 import axios from "axios";
-import { getHBSettings, getHBToken, hbBaseUrl } from "@/lib/marketplaces/hbService";
+import { getHBSettings, getHBToken, buildAuthHeader } from "@/lib/marketplaces/hbService";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ success: false });
@@ -11,18 +11,19 @@ export default async function handler(req, res) {
     const userId = decoded?.userId || decoded?.id || decoded?._id;
 
     const cfg = await getHBSettings({ companyId, userId });
-    if (!cfg.merchantId || !cfg.username || !cfg.password) {
-      return res.status(400).json({
-        success: false,
-        message: "Hepsiburada ayarlari eksik (merchantId, kullanici adi, sifre). API Ayarlari sayfasindan girin.",
-      });
+
+    if (!cfg.merchantId) {
+      return res.status(400).json({ success: false, message: "Merchant ID eksik (HEPSIBURADA_MERCHANT_ID)" });
+    }
+    if (!cfg.authToken && (!cfg.username || !cfg.password)) {
+      return res.status(400).json({ success: false, message: "Hepsiburada auth bilgileri eksik" });
     }
 
     const { product } = req.body;
     if (!product) return res.status(400).json({ success: false, message: "product verisi zorunlu" });
 
-    const hbToken = await getHBToken(cfg.username, cfg.password, cfg.testMode);
-    const base = hbBaseUrl(cfg.testMode);
+    const tokenObj = await getHBToken(cfg);
+    const base = cfg.baseUrl;
 
     const images = (product.images || []).filter((u) => u?.startsWith("http"));
     const imageAttrs = {};
@@ -48,9 +49,9 @@ export default async function handler(req, res) {
       [item],
       {
         headers: {
-          Authorization: `Bearer ${hbToken}`,
+          Authorization: buildAuthHeader(tokenObj),
           "Content-Type": "application/json",
-          "User-Agent": "SatisTakip/1.0",
+          "User-Agent": process.env.HEPSIBURADA_USER_AGENT || "SatisTakip/1.0",
         },
         timeout: 20000,
       }
