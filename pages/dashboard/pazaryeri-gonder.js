@@ -21,10 +21,14 @@ export default function PazaryeriGonderPage() {
 
   // N11 form
   const [n11Form, setN11Form] = useState({
-    categoryId: "", brandId: "", brandName: "", preparingDay: "3",
+    catL1: "", catL2: "", catL3: "", preparingDay: "3",
     shipmentTemplate: "STANDART", vatRate: "20",
   });
-  const [n11Categories, setN11Categories] = useState([]);
+  const [n11CatsL1, setN11CatsL1] = useState([]);
+  const [n11CatsL2, setN11CatsL2] = useState([]);
+  const [n11CatsL3, setN11CatsL3] = useState([]);
+  const [n11Attrs, setN11Attrs]   = useState([]);   // mandatory + optional
+  const [n11AttrVals, setN11AttrVals] = useState({}); // { attributeId: value }
 
   // Trendyol form
   const [tyForm, setTyForm] = useState({
@@ -75,13 +79,54 @@ export default function PazaryeriGonderPage() {
       .catch(() => {});
   }, [selectedId]);
 
-  /* ── N11 kategorileri ── */
+  /* ── N11 Level-1 kategoriler ── */
   useEffect(() => {
     fetch("/api/n11/categories/list", { headers: headers() })
       .then((r) => r.json())
-      .then((d) => setN11Categories(d?.categories || []))
+      .then((d) => setN11CatsL1(d?.categories || []))
       .catch(() => {});
   }, []);
+
+  /* ── N11 Level-2 alt kategoriler ── */
+  useEffect(() => {
+    if (!n11Form.catL1) { setN11CatsL2([]); setN11CatsL3([]); setN11Attrs([]); return; }
+    fetch(`/api/n11/categories/sub?id=${n11Form.catL1}`, { headers: headers() })
+      .then((r) => r.json())
+      .then((d) => setN11CatsL2(d?.subCategories || []))
+      .catch(() => {});
+  }, [n11Form.catL1]);
+
+  /* ── N11 Level-3 alt kategoriler ── */
+  useEffect(() => {
+    if (!n11Form.catL2) { setN11CatsL3([]); setN11Attrs([]); return; }
+    fetch(`/api/n11/categories/sub?id=${n11Form.catL2}`, { headers: headers() })
+      .then((r) => r.json())
+      .then((d) => {
+        const subs = d?.subCategories || [];
+        setN11CatsL3(subs);
+        // Alt kategori yoksa L2 zaten leaf — attribute çek
+        if (subs.length === 0) fetchN11Attrs(n11Form.catL2);
+        else setN11Attrs([]);
+      })
+      .catch(() => {});
+  }, [n11Form.catL2]);
+
+  /* ── N11 Attribute'lar (leaf kategori seçilince) ── */
+  const fetchN11Attrs = (catId) => {
+    setN11Attrs([]);
+    setN11AttrVals({});
+    fetch(`/api/n11/categories/attributes?categoryId=${catId}`, { headers: headers() })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.success) setN11Attrs(d.attributes || []);
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    if (!n11Form.catL3) return;
+    fetchN11Attrs(n11Form.catL3);
+  }, [n11Form.catL3]);
 
   /* ── Görsel satır yönetimi ── */
   const addImageRow    = () => setImageUrls((p) => [...p, ""]);
@@ -102,19 +147,32 @@ export default function PazaryeriGonderPage() {
       let body, endpoint;
 
       if (activeTab === "n11") {
+        const leafCatId = n11Form.catL3 || n11Form.catL2 || n11Form.catL1;
         endpoint = "/api/n11/products/create";
-        body = { productId: selectedId };
-        // N11 ayarlarını ürüne kaydet (geçici)
+        // Attribute'ları payload'a ekle
+        const attrPayload = Object.entries(n11AttrVals)
+          .filter(([, v]) => v)
+          .map(([attrId, val]) => {
+            const attr = n11Attrs.find((a) => a.id === attrId);
+            if (attr?.values?.length) {
+              // Predefined value: valueId gönder
+              const valObj = attr.values.find((v) => v.name === val || v.id === val);
+              return { attributeId: Number(attrId), attributeValueId: Number(valObj?.id || val) };
+            }
+            // Custom value: text gönder
+            return { attributeId: Number(attrId), customAttributeValue: val };
+          });
+        // N11 ayarlarını ürüne kaydet
         await fetch(`/api/products/update?id=${selectedId}`, {
           method: "PUT",
           headers: headers(),
           body: JSON.stringify({
-            "marketplaceSettings.n11.categoryId": n11Form.categoryId,
-            "marketplaceSettings.n11.brandId": n11Form.brandId,
-            "marketplaceSettings.n11.brandName": n11Form.brandName,
+            "marketplaceSettings.n11.categoryId": leafCatId,
+            "marketplaceSettings.n11.attributes": attrPayload,
             images: validImages,
           }),
         });
+        body = { productId: selectedId };
       } else if (activeTab === "trendyol") {
         endpoint = "/api/trendyol/products/create";
         body = {
@@ -250,39 +308,75 @@ export default function PazaryeriGonderPage() {
           {/* N11 */}
           {activeTab === "n11" && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              {/* 3-seviye kategori */}
+              <div>
+                <label className="block text-sm font-medium mb-1">Ana Kategori *</label>
+                <select className="w-full border rounded p-2"
+                  value={n11Form.catL1}
+                  onChange={(e) => setN11Form((f) => ({ ...f, catL1: e.target.value, catL2: "", catL3: "" }))}>
+                  <option value="">Seçin...</option>
+                  {n11CatsL1.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              {n11CatsL2.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium mb-1">Ana Kategori *</label>
-                  <select className="w-full border rounded p-2" value={n11Form.categoryId}
-                    onChange={(e) => setN11Form((f) => ({ ...f, categoryId: e.target.value, brandId: "" }))}>
+                  <label className="block text-sm font-medium mb-1">Alt Kategori *</label>
+                  <select className="w-full border rounded p-2"
+                    value={n11Form.catL2}
+                    onChange={(e) => setN11Form((f) => ({ ...f, catL2: e.target.value, catL3: "" }))}>
                     <option value="">Seçin...</option>
-                    {n11Categories.map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
+                    {n11CatsL2.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </div>
+              )}
+              {n11CatsL3.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium mb-1">Marka Adı *</label>
-                  <input
-                    type="text"
-                    className="w-full border rounded p-2"
-                    placeholder="Samsung, Apple, vb."
-                    value={n11Form.brandName}
-                    onChange={(e) => setN11Form((f) => ({ ...f, brandName: e.target.value }))}
-                  />
+                  <label className="block text-sm font-medium mb-1">Ürün Kategorisi (Dip Seviye) *</label>
+                  <select className="w-full border rounded p-2"
+                    value={n11Form.catL3}
+                    onChange={(e) => setN11Form((f) => ({ ...f, catL3: e.target.value }))}>
+                    <option value="">Seçin...</option>
+                    {n11CatsL3.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">
-                    Marka ID <span className="text-gray-400 font-normal">(isteğe bağlı)</span>
-                  </label>
-                  <input
-                    type="text"
-                    className="w-full border rounded p-2"
-                    placeholder="N11 panelinden alın"
-                    value={n11Form.brandId}
-                    onChange={(e) => setN11Form((f) => ({ ...f, brandId: e.target.value }))}
-                  />
+              )}
+
+              {/* Dinamik Attribute Alanları */}
+              {n11Attrs.length > 0 && (
+                <div className="border rounded-lg p-3 bg-yellow-50 border-yellow-200">
+                  <p className="text-xs font-semibold text-yellow-800 mb-3">Kategori Özellikleri</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {n11Attrs.map((attr) => (
+                      <div key={attr.id}>
+                        <label className="block text-xs font-medium mb-1">
+                          {attr.name}
+                          {attr.mandatory && <span className="text-red-500 ml-1">*</span>}
+                        </label>
+                        {attr.values?.length > 0 ? (
+                          <select
+                            className="w-full border rounded p-2 text-sm"
+                            value={n11AttrVals[attr.id] || ""}
+                            onChange={(e) => setN11AttrVals((p) => ({ ...p, [attr.id]: e.target.value }))}>
+                            <option value="">Seçin...</option>
+                            {attr.values.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            className="w-full border rounded p-2 text-sm"
+                            placeholder={attr.name}
+                            value={n11AttrVals[attr.id] || ""}
+                            onChange={(e) => setN11AttrVals((p) => ({ ...p, [attr.id]: e.target.value }))}
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
+              )}
+
+              {/* KDV + Hazırlık */}
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">KDV %</label>
                   <select className="w-full border rounded p-2" value={n11Form.vatRate}
@@ -296,9 +390,9 @@ export default function PazaryeriGonderPage() {
                     onChange={(e) => setN11Form((f) => ({ ...f, preparingDay: e.target.value }))} />
                 </div>
               </div>
+
               <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded p-2">
-                Marka Adı zorunlu. Marka ID opsiyoneldir; N11 paneli → Katalog → Markalar bölümünden öğrenebilirsiniz.
-                Görsel: {validImages.length} adet eklendi.
+                Dip seviye kategoriyi seçince zorunlu alanlar otomatik yüklenir. Görsel: {validImages.length} adet.
               </div>
             </div>
           )}
