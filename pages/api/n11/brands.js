@@ -31,19 +31,28 @@ export default async function handler(req, res) {
     const data = await response.json();
 
     const attrs = data?.categoryAttributes || [];
-    console.log("[N11 Brands] categoryId:", categoryId, "| attrs count:", attrs.length);
-    console.log("[N11 Brands] raw data keys:", Object.keys(data || {}));
+    console.log("[N11 Brands] attrs count:", attrs.length);
+    if (attrs[0]) console.log("[N11 Brands] first attr keys:", Object.keys(attrs[0]));
 
-    const markaAttr = attrs.find(
-      (a) => (a?.attributeName || "").toLowerCase() === "marka"
-    );
-    console.log("[N11 Brands] markaAttr found:", !!markaAttr, "| values count:", markaAttr?.attributeValues?.length);
-    if (markaAttr?.attributeValues?.[0]) {
-      console.log("[N11 Brands] sample value:", JSON.stringify(markaAttr.attributeValues[0]));
-    }
-    const brands = (markaAttr?.attributeValues || []).map((b) => ({
+    // N11 CDN farklı field adları kullanabiliyor: attributeName veya name
+    const markaAttr = attrs.find((a) => {
+      const attrName = (a?.attributeName || a?.name || a?.attribute?.name || "").toLowerCase();
+      return attrName === "marka" || attrName === "brand";
+    });
+
+    // Değerler: attributeValues veya values veya attributeValue
+    const rawValues =
+      markaAttr?.attributeValues ||
+      markaAttr?.values ||
+      markaAttr?.attributeValue ||
+      [];
+
+    console.log("[N11 Brands] markaAttr found:", !!markaAttr, "| values count:", rawValues.length);
+    if (rawValues[0]) console.log("[N11 Brands] sample value:", JSON.stringify(rawValues[0]));
+
+    const brands = rawValues.map((b) => ({
       id: b.id,
-      name: b.value ?? b.name ?? b.label ?? String(b.id),
+      name: b.value ?? b.name ?? b.label ?? b.attributeValue ?? String(b.id),
     }));
 
     return res.status(200).json({ success: true, brands, count: brands.length });
