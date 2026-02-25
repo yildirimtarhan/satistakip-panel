@@ -16,19 +16,17 @@ export default async function handler(req, res) {
     }
 
     const tokenObj = await getHBToken(cfg);
-    const { parentId, leaf, page = 0, size = 500 } = req.query;
+    const { parentId, leaf = "false", page = 0, size = 200, search } = req.query;
 
-    // Tüm kategoriler veya alt kategoriler
-    const url = parentId
-      ? `${cfg.baseUrl}/product/api/categories/${parentId}/sub-categories`
-      : `${cfg.baseUrl}/product/api/categories/get-all-categories`;
+    let url, params;
 
-    const params = parentId ? {} : {
-      leaf: leaf !== undefined ? leaf : "false",
-      status: "ACTIVE",
-      page,
-      size,
-    };
+    if (parentId) {
+      url = `${cfg.baseUrl}/product/api/categories/${parentId}/sub-categories`;
+      params = {};
+    } else {
+      url = `${cfg.baseUrl}/product/api/categories/get-all-categories`;
+      params = { leaf, status: "ACTIVE", available: true, page, size };
+    }
 
     const response = await axios.get(url, {
       params,
@@ -36,21 +34,41 @@ export default async function handler(req, res) {
       timeout: 20000,
     });
 
-    // Yanıt farklı formatlarda gelebilir
     const raw = response.data;
-    const categories =
-      raw?.categories ||
-      raw?.data?.categories ||
-      (Array.isArray(raw) ? raw : null) ||
-      [];
+    // HB yanit yapisi: { success, data: [...], totalElements, ... }
+    let categories = raw?.data || raw?.categories || (Array.isArray(raw) ? raw : []);
 
-    return res.json({ success: true, categories, total: raw?.totalElements || categories.length });
+    // Client-side search filtrele
+    if (search && search.length >= 2) {
+      const q = search.toLowerCase();
+      categories = categories.filter((c) =>
+        (c.name || c.displayName || "").toLowerCase().includes(q) ||
+        (c.paths || []).some((p) => p.toLowerCase().includes(q))
+      );
+    }
+
+    // Normalise: id ve name alanlarini standartlastir
+    const normalized = categories.map((c) => ({
+      id: c.categoryId || c.id,
+      name: c.name || c.displayName || c.categoryName,
+      path: c.paths ? c.paths.join(" > ") : "",
+      leaf: c.leaf ?? false,
+      parentId: c.parentCategoryId,
+    }));
+
+    return res.json({
+      success: true,
+      categories: normalized,
+      total: raw?.totalElements || normalized.length,
+      page: Number(page),
+      size: Number(size),
+    });
   } catch (err) {
     const detail = err?.response?.data;
     console.error("HB CATEGORY LIST ERROR:", JSON.stringify(detail || err.message));
     return res.status(500).json({
       success: false,
-      message: detail?.description || detail?.errors?.[0] || detail?.message || err.message,
+      message: detail?.description || detail?.message || err.message,
       detail,
     });
   }

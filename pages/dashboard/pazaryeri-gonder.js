@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 
 const MARKETPLACES = [
   { key: "n11",         label: "N11",          color: "bg-orange-500" },
@@ -38,12 +38,14 @@ export default function PazaryeriGonderPage() {
 
   // HB form
   const [hbForm, setHbForm] = useState({
-    categoryId: "", catName: "", brandName: "", vatRate: "18",
+    categoryId: "", catName: "", catPath: "", brandName: "", vatRate: "18",
   });
   const [hbCats, setHbCats] = useState([]);
+  const [hbCatLoading, setHbCatLoading] = useState(false);
   const [hbAttrs, setHbAttrs] = useState([]);
   const [hbAttrVals, setHbAttrVals] = useState({});
   const [hbCatSearch, setHbCatSearch] = useState("");
+  const hbSearchTimer = useRef(null);
 
   // Görsel URL'leri
   const [imageUrls, setImageUrls]   = useState([""]);
@@ -132,14 +134,34 @@ export default function PazaryeriGonderPage() {
     fetchN11Attrs(n11Form.catL3);
   }, [n11Form.catL3]);
 
-  /* ── Hepsiburada kategori listesi (tab açılınca yükle) ── */
-  useEffect(() => {
-    if (activeTab !== "hepsiburada" || hbCats.length > 0) return;
-    fetch("/api/hepsiburada/categories/list", { headers: headers() })
+  /* ── HB: arama debounce → kategori yükle ── */
+  const fetchHBCats = (q) => {
+    setHbCatLoading(true);
+    const params = q ? `&search=${encodeURIComponent(q)}&size=100` : "&size=50";
+    fetch(`/api/hepsiburada/categories/list?leaf=false${params}`, { headers: headers() })
       .then((r) => r.json())
       .then((d) => { if (d.success) setHbCats(d.categories || []); })
-      .catch(() => {});
-  }, [activeTab]);
+      .catch(() => {})
+      .finally(() => setHbCatLoading(false));
+  };
+
+  useEffect(() => {
+    if (activeTab !== "hepsiburada") return;
+    if (hbCatSearch.length < 2) {
+      if (hbCats.length === 0) fetchHBCats(""); // ilk yüklemede birkaç kategori getir
+      return;
+    }
+    clearTimeout(hbSearchTimer.current);
+    hbSearchTimer.current = setTimeout(() => fetchHBCats(hbCatSearch), 400);
+    return () => clearTimeout(hbSearchTimer.current);
+  }, [hbCatSearch, activeTab]);
+
+  /* ── HB: ürün seçilince marka otomatik doldur ── */
+  useEffect(() => {
+    if (!product || activeTab !== "hepsiburada") return;
+    const brand = product.brand || product.marka || product.brandName || "";
+    if (brand) setHbForm((f) => ({ ...f, brandName: brand }));
+  }, [product, activeTab]);
 
   /* ── HB kategori seçilince attribute yükle ── */
   useEffect(() => {
@@ -522,44 +544,58 @@ export default function PazaryeriGonderPage() {
           {/* HEPSİBURADA */}
           {activeTab === "hepsiburada" && (
             <div className="space-y-4">
-              {/* Kategori seç */}
+              {/* Kategori arama + seç */}
               <div>
                 <label className="block text-sm font-medium mb-1">Kategori Ara *</label>
                 <input
                   type="text"
                   className="w-full border rounded-lg p-2 text-sm mb-1"
-                  placeholder="Kategori adı yazın (örn: Cep Telefonu)"
+                  placeholder="En az 2 harf yazın (örn: Cep Telefonu, Hafıza Kartı...)"
                   value={hbCatSearch}
                   onChange={(e) => setHbCatSearch(e.target.value)}
                 />
-                {hbCats.length === 0 ? (
-                  <p className="text-xs text-gray-400">Kategoriler yükleniyor... (Hepsiburada bağlantısı kontrol edin)</p>
-                ) : (
+                {hbCatLoading && <p className="text-xs text-blue-500">Kategoriler aranıyor...</p>}
+                {!hbCatLoading && hbCats.length === 0 && hbCatSearch.length >= 2 && (
+                  <p className="text-xs text-red-500">Sonuç bulunamadı. Farklı bir terim deneyin.</p>
+                )}
+                {hbCats.length > 0 && (
                   <select
                     className="w-full border rounded-lg p-2 text-sm bg-white"
                     value={hbForm.categoryId}
                     onChange={(e) => {
-                      const cat = hbCats.find((c) => String(c.id || c.categoryId) === e.target.value);
-                      setHbForm((f) => ({ ...f, categoryId: e.target.value, catName: cat?.name || cat?.categoryName || "" }));
+                      const cat = hbCats.find((c) => String(c.id) === e.target.value);
+                      setHbForm((f) => ({
+                        ...f,
+                        categoryId: e.target.value,
+                        catName: cat?.name || "",
+                        catPath: cat?.path || "",
+                      }));
                     }}
                   >
                     <option value="">— Kategori Seçin —</option>
-                    {hbCats
-                      .filter((c) => !hbCatSearch || (c.name || c.categoryName || "").toLowerCase().includes(hbCatSearch.toLowerCase()))
-                      .map((c) => (
-                        <option key={c.id || c.categoryId} value={c.id || c.categoryId}>
-                          {c.name || c.categoryName} {c.id || c.categoryId ? `(${c.id || c.categoryId})` : ""}
-                        </option>
-                      ))}
+                    {hbCats.map((c) => (
+                      <option key={c.id} value={String(c.id)}>
+                        {c.path ? `${c.path}` : c.name} ({c.id})
+                      </option>
+                    ))}
                   </select>
+                )}
+                {hbForm.categoryId && (
+                  <p className="text-xs text-green-600 mt-1">
+                    Seçili: <strong>{hbForm.catName}</strong> (ID: {hbForm.categoryId})
+                    {hbForm.catPath && <span className="text-gray-400 ml-1">— {hbForm.catPath}</span>}
+                  </p>
                 )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">Marka Adı *</label>
-                  <input type="text" className="w-full border rounded-lg p-2 text-sm" placeholder="Samsung"
-                    value={hbForm.brandName} onChange={(e) => setHbForm((f) => ({ ...f, brandName: e.target.value }))} />
+                  <input type="text" className="w-full border rounded-lg p-2 text-sm"
+                    placeholder="Otomatik doldurulur (ERP'den)"
+                    value={hbForm.brandName}
+                    onChange={(e) => setHbForm((f) => ({ ...f, brandName: e.target.value }))} />
+                  <p className="text-xs text-gray-400 mt-0.5">ERP ürünündeki marka otomatik gelir</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">KDV %</label>
@@ -570,12 +606,14 @@ export default function PazaryeriGonderPage() {
                 </div>
               </div>
 
-              {/* Dinamik Attribute'lar */}
+              {/* Kategori attribute'ları */}
               {hbAttrs.length > 0 && (
                 <div className="border rounded-lg p-3 bg-blue-50 border-blue-200">
                   <p className="text-xs font-semibold text-blue-800 mb-3">
                     Kategori Özellikleri
-                    <span className="ml-2 text-blue-600 font-normal">({hbAttrs.filter((a) => a.required || a.mandatory).length} zorunlu)</span>
+                    <span className="ml-2 text-blue-600 font-normal">
+                      ({hbAttrs.filter((a) => a.required || a.mandatory).length} zorunlu)
+                    </span>
                   </p>
                   <div className="grid grid-cols-2 gap-3">
                     {hbAttrs.map((attr) => {
@@ -610,8 +648,9 @@ export default function PazaryeriGonderPage() {
               )}
 
               <div className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded p-2">
-                Hepsiburada API Ayarları sayfasından kullanıcı adı, şifre ve Merchant ID girmeyi unutmayın.
-                {" "}<a href="/dashboard/api-settings" className="underline font-medium">API Ayarlarına Git</a>
+                Hepsiburada bağlantısı için{" "}
+                <a href="/dashboard/api-settings" className="underline font-medium">API Ayarlarına</a>
+                {" "}kullanıcı adı, şifre ve Merchant ID girmeyi unutmayın.
               </div>
             </div>
           )}
