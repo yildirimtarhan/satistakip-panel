@@ -22,7 +22,7 @@ export default function PazaryeriGonderPage() {
   // N11 form
   const [n11Form, setN11Form] = useState({
     catL1: "", catL2: "", catL3: "", preparingDay: "3",
-    shipmentTemplate: "STANDART", vatRate: "20",
+    shipmentTemplate: "STANDART", vatRate: "20", description: "",
   });
   const [n11CatsL1, setN11CatsL1] = useState([]);
   const [n11CatsL2, setN11CatsL2] = useState([]);
@@ -149,30 +149,38 @@ export default function PazaryeriGonderPage() {
       if (activeTab === "n11") {
         const leafCatId = n11Form.catL3 || n11Form.catL2 || n11Form.catL1;
         endpoint = "/api/n11/products/create";
-        // Attribute'ları payload'a ekle
+
+        // Attribute'ları oluştur
         const attrPayload = Object.entries(n11AttrVals)
           .filter(([, v]) => v)
           .map(([attrId, val]) => {
             const attr = n11Attrs.find((a) => a.id === attrId);
             if (attr?.values?.length) {
-              // Predefined value: valueId gönder
               const valObj = attr.values.find((v) => v.name === val || v.id === val);
               return { attributeId: Number(attrId), attributeValueId: Number(valObj?.id || val) };
             }
-            // Custom value: text gönder
             return { attributeId: Number(attrId), customAttributeValue: val };
           });
-        // N11 ayarlarını ürüne kaydet
-        await fetch(`/api/products/update?id=${selectedId}`, {
-          method: "PUT",
-          headers: headers(),
-          body: JSON.stringify({
-            "marketplaceSettings.n11.categoryId": leafCatId,
-            "marketplaceSettings.n11.attributes": attrPayload,
-            images: validImages,
-          }),
-        });
-        body = { productId: selectedId };
+
+        // Görsel listesini de ürüne kaydet (bu çalışıyor çünkü "images" allowed)
+        if (validImages.length > 0) {
+          await fetch(`/api/products/update?id=${selectedId}`, {
+            method: "PUT", headers: headers(),
+            body: JSON.stringify({ images: validImages }),
+          });
+        }
+
+        body = {
+          productId: selectedId,
+          n11Override: {
+            categoryId: leafCatId,
+            attributes: attrPayload,
+            shipmentTemplate: n11Form.shipmentTemplate,
+            preparingDay: n11Form.preparingDay,
+            vatRate: n11Form.vatRate,
+            description: n11Form.description || undefined,
+          },
+        };
       } else if (activeTab === "trendyol") {
         endpoint = "/api/trendyol/products/create";
         body = {
@@ -375,7 +383,7 @@ export default function PazaryeriGonderPage() {
                 </div>
               )}
 
-              {/* KDV + Hazırlık */}
+              {/* KDV + Hazırlık + Teslimat */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">KDV %</label>
@@ -389,6 +397,31 @@ export default function PazaryeriGonderPage() {
                   <input type="number" className="w-full border rounded p-2" value={n11Form.preparingDay}
                     onChange={(e) => setN11Form((f) => ({ ...f, preparingDay: e.target.value }))} />
                 </div>
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium mb-1">Teslimat Şablonu</label>
+                  <select className="w-full border rounded p-2" value={n11Form.shipmentTemplate}
+                    onChange={(e) => setN11Form((f) => ({ ...f, shipmentTemplate: e.target.value }))}>
+                    <option value="STANDART">Standart</option>
+                    <option value="AYNI_GUN">Aynı Gün</option>
+                    <option value="HIZLI">Hızlı</option>
+                    <option value="KARGO_BEDAVA">Kargo Bedava</option>
+                    <option value="ALICI_ODER">Alıcı Öder</option>
+                    <option value="MAGAZA_ODER">Mağaza Öder</option>
+                  </select>
+                  <p className="text-xs text-gray-400 mt-1">N11 Satıcı Paneli → Teslimat Şablonları'ndaki şablon adıyla eşleşmeli</p>
+                </div>
+              </div>
+
+              {/* Ürün Açıklaması */}
+              <div>
+                <label className="block text-sm font-medium mb-1">Ürün Açıklaması <span className="text-gray-400 font-normal">(boş bırakılırsa ürün açıklaması kullanılır)</span></label>
+                <textarea
+                  className="w-full border rounded p-2 text-sm"
+                  rows={3}
+                  placeholder="N11'e gönderilecek ürün açıklaması..."
+                  value={n11Form.description}
+                  onChange={(e) => setN11Form((f) => ({ ...f, description: e.target.value }))}
+                />
               </div>
 
               <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded p-2">

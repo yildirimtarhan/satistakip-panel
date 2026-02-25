@@ -41,7 +41,7 @@ export default async function handler(req, res) {
     const userId = decoded?.userId || decoded?.id || decoded?._id;
 
     // ✅ BODY KONTROL
-    const { productId } = req.body || {};
+    const { productId, n11Override } = req.body || {};
     if (!productId) {
       return res.status(400).json({ success: false, message: "productId zorunludur" });
     }
@@ -59,8 +59,8 @@ export default async function handler(req, res) {
       });
     }
 
-    // ✅ N11 CREATE ÇAĞRISI
-    const result = await n11CreateProduct(req, product);
+    // ✅ N11 CREATE ÇAĞRISI — n11Override ile form verilerini doğrudan geçir
+    const result = await n11CreateProduct(req, product, n11Override);
 
     /**
      * ======================================================
