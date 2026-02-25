@@ -117,19 +117,21 @@ export default function N11ProductsPage() {
     return ns;
   });
   const toggleAll = () =>
-    setSelected(selected.size === filtered.length ? new Set() : new Set(filtered.map((p) => p._id || p.id)));
+    setSelected(selected.size === filtered.length && filtered.length > 0
+      ? new Set()
+      : new Set(filtered.map((p, i) => p.n11ProductId || p._id || p.id || `row-${i}`)));
 
   /* ── Tekli fiyat/stok güncelle ── */
-  const updateSingle = async (n11Product) => {
-    const edit = editRow[n11Product._id || n11Product.id] || {};
-    const sku = n11Product.sellerCode || n11Product.stockCode;
+  const updateSingle = async (n11Product, rowIdx) => {
+    const id  = n11Product.n11ProductId || n11Product._id || n11Product.id || `row-${rowIdx}`;
+    const sku = n11Product.sellerCode || n11Product.barcode || n11Product.stockCode;
+    const edit = editRow[id] || {};
     if (!sku) { addToast("SKU bulunamadı", "error"); return; }
 
     const salePrice  = Number(edit.price    ?? n11Product.price    ?? 0);
     const listPrice  = Number(edit.listPrice ?? n11Product.listPrice ?? (salePrice * 1.1).toFixed(2));
     const quantity   = Number(edit.stock    ?? n11Product.stock    ?? n11Product.quantity ?? 0);
 
-    const id = n11Product._id || n11Product.id;
     setRowLoading((r) => ({ ...r, [id]: true }));
     try {
       const res  = await fetch("/api/n11/products/bulk-price-stock", {
@@ -153,18 +155,21 @@ export default function N11ProductsPage() {
 
   /* ── Seçili toplu güncelle ── */
   const bulkUpdate = async () => {
-    const toUpdate = filtered.filter((p) => selected.has(p._id || p.id));
+    const toUpdate = filtered.filter((p, i) => selected.has(p.n11ProductId || p._id || p.id || `row-${i}`));
     if (!toUpdate.length) { addToast("Önce ürün seçin", "error"); return; }
 
     const skus = toUpdate
-      .filter((p) => p.sellerCode || p.stockCode)
       .map((p) => {
-        const edit = editRow[p._id || p.id] || {};
+        const sku = p.sellerCode || p.barcode || p.stockCode;
+        if (!sku) return null;
+        const id  = p.n11ProductId || p._id || p.id;
+        const edit = editRow[id] || {};
         const salePrice = Number(edit.price    ?? p.price    ?? 0);
         const listPrice = Number(edit.listPrice ?? p.listPrice ?? (salePrice * 1.1).toFixed(2));
         const quantity  = Number(edit.stock    ?? p.stock    ?? p.quantity ?? 0);
-        return { stockCode: p.sellerCode || p.stockCode, salePrice, listPrice, quantity, currencyType: "TL" };
-      });
+        return { stockCode: sku, salePrice, listPrice, quantity, currencyType: "TL" };
+      })
+      .filter(Boolean);
 
     if (!skus.length) { addToast("Seçili ürünlerin SKU'su yok", "error"); return; }
 
@@ -271,12 +276,12 @@ export default function N11ProductsPage() {
               {!loading && filtered.length === 0 && (
                 <tr><td colSpan={9} className="p-8 text-center text-gray-400">Ürün bulunamadı</td></tr>
               )}
-              {!loading && filtered.map((p) => {
-                const id  = p._id || p.id;
+              {!loading && filtered.map((p, idx) => {
+                const id  = p.n11ProductId || p._id || p.id || `row-${idx}`;
+                const sku = p.sellerCode || p.barcode || p.stockCode;
                 const erp = findErp(p);
                 const edit = editRow[id] || {};
                 const isLoading = rowLoading[id];
-                const sku = p.sellerCode || p.stockCode;
                 const hasDiff = erp && (
                   Math.abs(Number(erp.price || 0) - Number(p.price || 0)) > 0.01 ||
                   Math.abs(Number(erp.stock || 0) - Number(p.stock || p.quantity || 0)) > 0
@@ -359,12 +364,13 @@ export default function N11ProductsPage() {
                     {/* İşlem */}
                     <td className="p-3 text-center">
                       <button
-                        onClick={() => updateSingle(p)}
-                        disabled={isLoading || !sku}
+                        onClick={() => updateSingle(p, idx)}
+                        disabled={isLoading}
                         className="px-3 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold disabled:opacity-40 whitespace-nowrap"
                       >
                         {isLoading ? "…" : "Güncelle"}
                       </button>
+                      {!sku && <div className="text-xs text-red-400 mt-0.5">SKU yok</div>}
                     </td>
                   </tr>
                 );
