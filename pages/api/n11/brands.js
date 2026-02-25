@@ -31,12 +31,19 @@ export default async function handler(req, res) {
     const data = await response.json();
 
     const attrs = data?.categoryAttributes || [];
+    console.log("[N11 Brands] categoryId:", categoryId, "| attrs count:", attrs.length);
+    console.log("[N11 Brands] raw data keys:", Object.keys(data || {}));
+
     const markaAttr = attrs.find(
       (a) => (a?.attributeName || "").toLowerCase() === "marka"
     );
+    console.log("[N11 Brands] markaAttr found:", !!markaAttr, "| values count:", markaAttr?.attributeValues?.length);
+    if (markaAttr?.attributeValues?.[0]) {
+      console.log("[N11 Brands] sample value:", JSON.stringify(markaAttr.attributeValues[0]));
+    }
     const brands = (markaAttr?.attributeValues || []).map((b) => ({
       id: b.id,
-      name: b.value,
+      name: b.value ?? b.name ?? b.label ?? String(b.id),
     }));
 
     return res.status(200).json({ success: true, brands, count: brands.length });

@@ -842,7 +842,7 @@ const updateRes = await fetch(`/api/products/update?id=${id}`, {
                         key={b.id || b.brandId}
                         value={b.id || b.brandId}
                       >
-                        {b.name}
+                        {b.name || b.value || b.label || String(b.id)}
                       </option>
                     ))}
                   </select>
