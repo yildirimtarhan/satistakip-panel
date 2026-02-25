@@ -39,6 +39,7 @@ export default function PazaryeriGonderPage() {
   // HB form
   const [hbForm, setHbForm] = useState({
     categoryId: "", catName: "", catPath: "", brandName: "", vatRate: "18",
+    guaranteePeriod: "24", cargoCompany1: "ups", cargoCompany2: "aras", cargoCompany3: "mng",
   });
   const [hbCats, setHbCats] = useState([]);
   const [hbCatLoading, setHbCatLoading] = useState(false);
@@ -261,8 +262,12 @@ export default function PazaryeriGonderPage() {
             description: product?.description,
             categoryId: hbForm.categoryId,
             brandName: hbForm.brandName,
-            stockCode: product?.sku || product?.barcode,
+            stockCode: product?.sku || product?.stockCode || product?.barcode,
             vatRate: hbForm.vatRate,
+            guaranteePeriod: hbForm.guaranteePeriod,
+            cargoCompany1: hbForm.cargoCompany1,
+            cargoCompany2: hbForm.cargoCompany2,
+            cargoCompany3: hbForm.cargoCompany3,
             images: validImages,
             hbAttributes: hbAttrPayload,
           },
@@ -602,6 +607,19 @@ export default function PazaryeriGonderPage() {
                   <select className="w-full border rounded-lg p-2 text-sm" value={hbForm.vatRate}
                     onChange={(e) => setHbForm((f) => ({ ...f, vatRate: e.target.value }))}>
                     {["0","1","8","10","18","20"].map((v) => <option key={v} value={v}>%{v}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Garanti Süresi (Ay)</label>
+                  <input type="number" className="w-full border rounded-lg p-2 text-sm"
+                    value={hbForm.guaranteePeriod}
+                    onChange={(e) => setHbForm((f) => ({ ...f, guaranteePeriod: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Kargo 1</label>
+                  <select className="w-full border rounded-lg p-2 text-sm" value={hbForm.cargoCompany1}
+                    onChange={(e) => setHbForm((f) => ({ ...f, cargoCompany1: e.target.value }))}>
+                    {["ups","aras","mng","yurtici","ptt","horoz","surat","trendyolexpress"].map((c) => <option key={c} value={c}>{c.toUpperCase()}</option>)}
                   </select>
                 </div>
               </div>

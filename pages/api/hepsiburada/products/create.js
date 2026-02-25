@@ -24,28 +24,34 @@ export default async function handler(req, res) {
     const tokenObj = await getHBToken(cfg);
 
     const images = (product.images || []).filter((u) => u?.startsWith("http"));
-    const attrs = product.hbAttributes || {};
 
-    // HB API'nin beklediği düz yapı
+    // HB düz katalog formatı — /api/products endpoint'i
     const body = [{
-      merchant: cfg.merchantId,
-      merchantSku: product.stockCode || product.barcode,
-      barcode: product.barcode,
-      productName: product.title,
-      brand: product.brandName || "",
-      categoryId: Number(product.categoryId),
-      description: product.description || product.title,
-      quantity: String(product.stock ?? 1),
-      listPrice: product.listPrice ? String(product.listPrice).replace(".", ",") : String(product.price || 0).replace(".", ","),
-      salePrice: String(product.price || 0).replace(".", ","),
-      vatRate: Number(product.vatRate ?? 18),
+      merchant:        cfg.merchantId,
+      merchantSku:     product.stockCode || product.barcode,
+      stockCode:       product.stockCode || product.barcode,
+      barcode:         product.barcode,
+      productName:     product.title,
+      brand:           product.brandName || "",
+      categoryId:      Number(product.categoryId),
+      description:     product.description || product.title,
+      guaranteePeriod: product.guaranteePeriod || "24",
+      quantity:        String(product.stock ?? 1),
+      listPrice:       String(product.listPrice || product.price || 0).replace(".", ","),
+      salePrice:       String(product.price || 0).replace(".", ","),
+      vatRate:         Number(product.vatRate ?? 18),
+      dimensionalWeight: product.dimensionalWeight || "0",
+      cargoCompany1:   product.cargoCompany1 || "ups",
+      cargoCompany2:   product.cargoCompany2 || "aras",
+      cargoCompany3:   product.cargoCompany3 || "mng",
       images,
-      attributes: attrs,
-      ...(product.guaranteePeriod ? { guaranteePeriod: String(product.guaranteePeriod) } : {}),
+      attributes:      product.hbAttributes || {},
     }];
 
-    const url = `${cfg.baseUrl}/product/api/products`;
-    console.log("HB CREATE URL:", url, "merchantId:", cfg.merchantId);
+    // Doğru URL: /api/products (prefix yok)
+    const url = `${cfg.baseUrl}/api/products`;
+    console.log("HB CREATE URL:", url, "| categoryId:", product.categoryId, "| merchantId:", cfg.merchantId);
+    console.log("HB BODY:", JSON.stringify(body));
 
     const response = await axios.post(url, body, {
       headers: hbApiHeaders(cfg, tokenObj),
