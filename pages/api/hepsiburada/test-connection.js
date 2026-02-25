@@ -12,24 +12,17 @@ export default async function handler(req, res) {
     const cfg = await getHBSettings({ companyId, userId });
 
     if (!cfg.merchantId) {
-      return res.status(400).json({
-        success: false,
-        message: "Merchant ID eksik. API Ayarlari sayfasindan girin veya HEPSIBURADA_MERCHANT_ID env var tanimlayin.",
-      });
+      return res.status(400).json({ success: false, message: "Merchant ID eksik (HEPSIBURADA_MERCHANT_ID veya API Ayarlari)" });
+    }
+    if (!cfg.authToken) {
+      return res.status(400).json({ success: false, message: "Auth token eksik. HEPSIBURADA_AUTH env var veya username/password gerekli." });
     }
 
-    if (!cfg.authToken && (!cfg.username || !cfg.password)) {
-      return res.status(400).json({
-        success: false,
-        message: "Kullanici adi / sifre veya HEPSIBURADA_AUTH env var eksik.",
-      });
-    }
-
-    const tokenObj = await getHBToken(cfg);
+    await getHBToken(cfg);
 
     return res.json({
       success: true,
-      message: `Baglanti basarili! (${tokenObj.type} auth kullanildi)`,
+      message: "Baglanti basarili!",
       testMode: cfg.testMode,
       baseUrl: cfg.baseUrl,
       merchantId: cfg.merchantId,

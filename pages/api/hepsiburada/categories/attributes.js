@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 import axios from "axios";
-import { getHBSettings, getHBToken, buildAuthHeader } from "@/lib/marketplaces/hbService";
+import { getHBSettings, getHBToken, hbApiHeaders } from "@/lib/marketplaces/hbService";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ success: false });
@@ -11,26 +11,34 @@ export default async function handler(req, res) {
     const userId = decoded?.userId || decoded?.id || decoded?._id;
 
     const cfg = await getHBSettings({ companyId, userId });
-    if (!cfg.merchantId) return res.status(400).json({ success: false, message: "Hepsiburada ayarlari eksik" });
+    if (!cfg.merchantId || !cfg.authToken) {
+      return res.status(400).json({ success: false, message: "Hepsiburada ayarlari eksik" });
+    }
 
     const { categoryId } = req.query;
     if (!categoryId) return res.status(400).json({ success: false, message: "categoryId gerekli" });
 
     const tokenObj = await getHBToken(cfg);
-    const base = cfg.baseUrl;
 
     const response = await axios.get(
-      `${base}/product/api/categories/${categoryId}/attributes`,
+      `${cfg.baseUrl}/product/api/categories/${categoryId}/attributes`,
       {
-        headers: { Authorization: buildAuthHeader(tokenObj), "Content-Type": "application/json" },
+        headers: hbApiHeaders(cfg, tokenObj),
         timeout: 15000,
       }
     );
 
-    const attributes = response.data?.categoryAttributes || response.data?.attributes || response.data || [];
+    const raw = response.data;
+    const attributes =
+      raw?.categoryAttributes ||
+      raw?.attributes ||
+      raw?.data?.attributes ||
+      (Array.isArray(raw) ? raw : []);
+
     return res.json({ success: true, attributes });
   } catch (err) {
     const detail = err?.response?.data;
+    console.error("HB ATTR ERROR:", JSON.stringify(detail || err.message));
     return res.status(500).json({
       success: false,
       message: detail?.description || detail?.message || err.message,

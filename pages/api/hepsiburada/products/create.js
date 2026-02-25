@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 import axios from "axios";
-import { getHBSettings, getHBToken, buildAuthHeader } from "@/lib/marketplaces/hbService";
+import { getHBSettings, getHBToken, hbApiHeaders } from "@/lib/marketplaces/hbService";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ success: false });
@@ -11,51 +11,46 @@ export default async function handler(req, res) {
     const userId = decoded?.userId || decoded?.id || decoded?._id;
 
     const cfg = await getHBSettings({ companyId, userId });
-
-    if (!cfg.merchantId) {
-      return res.status(400).json({ success: false, message: "Merchant ID eksik (HEPSIBURADA_MERCHANT_ID)" });
-    }
-    if (!cfg.authToken && (!cfg.username || !cfg.password)) {
-      return res.status(400).json({ success: false, message: "Hepsiburada auth bilgileri eksik" });
+    if (!cfg.merchantId || !cfg.authToken) {
+      return res.status(400).json({
+        success: false,
+        message: "Merchant ID veya auth token eksik. API Ayarlarindan girin ya da HEPSIBURADA_AUTH env var tanimlayin.",
+      });
     }
 
     const { product } = req.body;
     if (!product) return res.status(400).json({ success: false, message: "product verisi zorunlu" });
 
     const tokenObj = await getHBToken(cfg);
-    const base = cfg.baseUrl;
 
     const images = (product.images || []).filter((u) => u?.startsWith("http"));
-    const imageAttrs = {};
-    images.slice(0, 5).forEach((url, i) => { imageAttrs[`Image${i + 1}`] = url; });
+    const attrs = product.hbAttributes || {};
 
-    const item = {
-      categoryId: product.categoryId,
+    // HB API'nin beklediği düz yapı
+    const body = [{
       merchant: cfg.merchantId,
-      attributes: {
-        Barcode: product.barcode,
-        merchantSku: product.stockCode || product.barcode,
-        UrunAdi: product.title,
-        UrunAciklamasi: product.description || product.title,
-        Marka: product.brandName || "",
-        tax_vat_rate: String(product.vatRate ?? 18),
-        ...imageAttrs,
-        ...(product.hbAttributes || {}),
-      },
-    };
+      merchantSku: product.stockCode || product.barcode,
+      barcode: product.barcode,
+      productName: product.title,
+      brand: product.brandName || "",
+      categoryId: Number(product.categoryId),
+      description: product.description || product.title,
+      quantity: String(product.stock ?? 1),
+      listPrice: product.listPrice ? String(product.listPrice).replace(".", ",") : String(product.price || 0).replace(".", ","),
+      salePrice: String(product.price || 0).replace(".", ","),
+      vatRate: Number(product.vatRate ?? 18),
+      images,
+      attributes: attrs,
+      ...(product.guaranteePeriod ? { guaranteePeriod: String(product.guaranteePeriod) } : {}),
+    }];
 
-    const response = await axios.post(
-      `${base}/products/api/products/${cfg.merchantId}`,
-      [item],
-      {
-        headers: {
-          Authorization: buildAuthHeader(tokenObj),
-          "Content-Type": "application/json",
-          "User-Agent": process.env.HEPSIBURADA_USER_AGENT || "SatisTakip/1.0",
-        },
-        timeout: 20000,
-      }
-    );
+    const url = `${cfg.baseUrl}/product/api/products`;
+    console.log("HB CREATE URL:", url, "merchantId:", cfg.merchantId);
+
+    const response = await axios.post(url, body, {
+      headers: hbApiHeaders(cfg, tokenObj),
+      timeout: 20000,
+    });
 
     return res.json({
       success: true,
@@ -65,10 +60,10 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     const hbErr = err?.response?.data;
-    console.error("HB CREATE ERROR:", hbErr || err.message);
+    console.error("HB CREATE ERROR:", JSON.stringify(hbErr || err.message));
     return res.status(500).json({
       success: false,
-      message: hbErr?.description || hbErr?.message || err.message,
+      message: hbErr?.description || hbErr?.errors?.[0] || hbErr?.message || err.message,
       detail: hbErr,
     });
   }
