@@ -37,27 +37,19 @@ export default async function handler(req, res) {
       });
     }
 
-    const companyId = decoded.companyId;
-    if (!companyId) {
-      return res.status(400).json({
-        success: false,
-        message: "companyId bulunamadı",
-      });
-    }
+    const companyId = decoded?.companyId;
+    const userId = decoded?.userId || decoded?.id || decoded?._id;
 
     // ✅ BODY KONTROL
     const { productId } = req.body || {};
     if (!productId) {
-      return res.status(400).json({
-        success: false,
-        message: "productId zorunludur",
-      });
+      return res.status(400).json({ success: false, message: "productId zorunludur" });
     }
 
-    // ✅ ÜRÜN BUL
+    // ✅ ÜRÜN BUL (companyId veya userId ile — migration fallback)
     const product = await Product.findOne({
       _id: productId,
-      companyId,
+      ...(companyId ? { $or: [{ companyId }, { userId }] } : { userId }),
     });
 
     if (!product) {
