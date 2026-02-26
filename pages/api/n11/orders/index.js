@@ -15,6 +15,8 @@ export default async function handler(req, res) {
 
     const { page = '1', size = '20', status = '' } = req.query;
 
+    console.log(`[N11] Sipariş isteği başladı`, { companyId, page, status });
+
     const result = await n11GetOrders({
       companyId,
       userId,
@@ -24,6 +26,13 @@ export default async function handler(req, res) {
         pageSize: parseInt(size),
       }
     });
+
+    // İlk siparişin yapısını logla
+    if (result.orders?.length > 0) {
+      console.log('[N11] İlk sipariş yapısı:', JSON.stringify(result.orders[0], null, 2));
+    } else {
+      console.log('[N11] Sipariş bulunamadı');
+    }
 
     return res.status(200).json({
       success: true,
@@ -37,6 +46,8 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
+    console.error('[N11] Hata:', error);
+    
     if (error.name === 'JsonWebTokenError') {
       return res.status(401).json({ error: 'Geçersiz token' });
     }
