@@ -15,7 +15,6 @@ export default async function handler(req, res) {
     if (!email)
       return res.status(400).json({ message: "Email zorunlu" });
 
-    // Ad Soyad birleştir
     const fullName = `${ad || ""} ${soyad || ""}`.trim();
 
     // Aynı firmada email veya telefon eşleşmesi ara
@@ -23,7 +22,7 @@ export default async function handler(req, res) {
       companyId: keyDoc.companyId,
       $or: [
         { email: email || "" },
-        ...(phone ? [{ phone }] : []),
+        ...(phone ? [{ telefon: phone }] : []),
       ],
     });
 
@@ -31,21 +30,21 @@ export default async function handler(req, res) {
     if (!cari) {
       cari = await Cari.create({
         companyId: keyDoc.companyId,
-        name: fullName || "Web Müşteri",
+        ad: fullName || "Web Müşteri",
         email: email || "",
-        phone: phone || "",
-        address: adres || "",
-        type: "customer",
+        telefon: phone || "",
+        adres: adres || "",
+        tur: "Müşteri",
       });
     } else {
       // İsim boşsa güncelle
-      if (!cari.name || cari.name.trim() === "") {
-        cari.name = fullName || cari.name;
+      if (!cari.ad || cari.ad.trim() === "") {
+        cari.ad = fullName || cari.ad;
       }
 
       // Eksik alanları tamamla (var olanı ezme)
-      if (!cari.phone && phone) cari.phone = phone;
-      if (!cari.address && adres) cari.address = adres;
+      if (!cari.telefon && phone) cari.telefon = phone;
+      if (!cari.adres && adres) cari.adres = adres;
 
       await cari.save();
     }

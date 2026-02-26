@@ -1,8 +1,8 @@
 import dbConnect from "@/lib/dbConnect";
+import { verifyApiKey } from "@/lib/verifyApiKey";
 import Product from "@/models/Product";
 import Cari from "@/models/Cari";
 import Transaction from "@/models/Transaction";
-import { verifyApiKey } from "@/lib/verifyApiKey";
 
 export default async function handler(req, res) {
   if (req.method !== "POST")
@@ -12,110 +12,138 @@ export default async function handler(req, res) {
     const keyDoc = await verifyApiKey(req);
     await dbConnect();
 
-    const { customer, items, payment } = req.body;
+    const {
+      ad,
+      soyad,
+      email,
+      phone,
+      adres,
+      productCode,
+      quantity,
+      price,
+      note,
+    } = req.body;
 
-    if (!customer?.email)
+    if (!email)
       return res.status(400).json({ message: "Email zorunlu" });
 
-    if (!Array.isArray(items) || items.length === 0)
-      return res.status(400).json({ message: "items boş olamaz" });
+    const fullName = `${ad || ""} ${soyad || ""}`.trim();
 
-    // ==============================
-    // CARİ BUL / OLUŞTUR
-    // ==============================
+    // =========================
+    // 1️⃣ CARİ BUL / OLUŞTUR
+    // =========================
+
     let cari = await Cari.findOne({
-      email: customer.email,
       companyId: keyDoc.companyId,
+      $or: [
+        { email: email || "" },
+        ...(phone ? [{ telefon: phone }] : []),
+      ],
     });
 
     if (!cari) {
       cari = await Cari.create({
         companyId: keyDoc.companyId,
-        name: `${customer.ad || ""} ${customer.soyad || ""}`.trim(),
-        email: customer.email,
-        phone: customer.phone || "",
-        address: customer.adres || "",
-        type: "customer",
+        ad: fullName || "Web Müşteri",
+        email: email || "",
+        telefon: phone || "",
+        adres: adres || "",
+        tur: "Müşteri",
+      });
+    } else {
+      if (!cari.ad || cari.ad.trim() === "") {
+        cari.ad = fullName || cari.ad;
+      }
+
+      if (!cari.telefon && phone) cari.telefon = phone;
+      if (!cari.adres && adres) cari.adres = adres;
+
+      await cari.save();
+    }
+
+    // =========================
+    // 2️⃣ SADECE CARİ OLUŞTURMA
+    // =========================
+
+    if (!quantity || Number(quantity) === 0) {
+      return res.status(200).json({
+        success: true,
+        message: "Sadece cari oluşturuldu",
+        cariId: cari._id,
       });
     }
 
-    let grandTotal = 0;
+    // =========================
+    // 3️⃣ ÜRÜN BUL (SKU / Barkod / Model Adı)
+    // =========================
 
-// Eğer items boş veya quantity 0 ise sadece cari oluştur
-const validItems = items.filter(
-  (it) => it.quantity && Number(it.quantity) > 0
-);
-
-if (validItems.length > 0) {
-  for (const it of validItems) {
-    const code = it.code?.trim();
+    if (!productCode)
+      return res.status(400).json({ message: "Ürün kodu zorunlu" });
 
     const product = await Product.findOne({
       companyId: keyDoc.companyId,
       $or: [
-        { sku: code },
-        { barcode: code },
-        { modelCode: code },
-        { name: code },
+        { sku: productCode },
+        { barcode: productCode },
+        { name: productCode },
       ],
     });
 
     if (!product)
-      return res.status(404).json({ message: `Ürün bulunamadı: ${code}` });
+      return res.status(404).json({ message: "Ürün bulunamadı" });
 
-    if (product.stock < it.quantity)
+    if (product.stock < quantity)
       return res.status(400).json({ message: "Yetersiz stok" });
 
-    product.stock -= it.quantity;
+    // =========================
+    // 4️⃣ STOK DÜŞ
+    // =========================
+
+    product.stock -= Number(quantity);
     await product.save();
 
-    grandTotal += it.quantity * it.unitPrice;
-  }
+    // =========================
+    // 5️⃣ TRANSACTION OLUŞTUR
+    // =========================
 
-  // grandTotal > 0 ise satış oluştur
-  if (grandTotal > 0) {
-    await Transaction.create({
+    const total = Number(price) * Number(quantity);
+
+    const transaction = await Transaction.create({
       companyId: keyDoc.companyId,
+      userId: null, // entegrasyon işlemi
+
       accountId: cari._id,
+      accountName: cari.ad,
+
+      items: [
+        {
+          productId: product._id,
+          name: product.name,
+          barcode: product.barcode,
+          sku: product.sku,
+          quantity: Number(quantity),
+          unitPrice: Number(price),
+          vatRate: 0,
+          total,
+        },
+      ],
+
+      direction: "borc",
+      amount: total,
+      paymentMethod: "entegrasyon",
+      note: note || "Web sitesi satışı",
+
       type: "sale",
-      direction: "alacak",
-      amount: grandTotal,
-      totalTRY: grandTotal,
       currency: "TRY",
       fxRate: 1,
-      totalFCY: grandTotal,
-      date: new Date(),
-      note: `Web Satış - ${payment?.method || ""}`,
+      totalTRY: total,
+      totalFCY: total,
     });
-  }
-}
-    // ==============================
-    // TAHSİLAT (Kredi Kartı Paid)
-    // ==============================
-    if (
-      payment?.method === "credit_card" &&
-      payment?.status === "paid"
-    ) {
-      await Transaction.create({
-        companyId: keyDoc.companyId,
-        accountId: cari._id,
-        type: "collection",
-        direction: "borc",
-        amount: grandTotal,
-        totalTRY: grandTotal,
-        currency: "TRY",
-        fxRate: 1,
-        totalFCY: grandTotal,
-        date: new Date(),
-        note: "Online Kredi Kartı Tahsilat",
-      });
-    }
 
     return res.status(200).json({
       success: true,
-      message: "Satış işlendi",
-      total: grandTotal,
-      paymentStatus: payment?.status || "unpaid",
+      message: "Satış başarıyla oluşturuldu",
+      transactionId: transaction._id,
     });
 
   } catch (err) {
