@@ -1,60 +1,54 @@
-// components/OrderCard.jsx
-import React from "react";
-import OrderStatusBadge from "./OrderStatusBadge";
-import { formatCurrency, formatDate } from "@/utils/formatters";
+import React from 'react';
+import { OrderStatusBadge } from './OrderStatusBadge';
 
-export default function OrderCard({ order, onClick }) {
+export function OrderCard({ order, onDetailClick }) {
+  const formatDate = (dateString) => {
+    if (!dateString) return '-';
+    return new Date(dateString).toLocaleString('tr-TR');
+  };
+
+  const formatPrice = (price) => {
+    if (!price) return '0,00 ₺';
+    return new Intl.NumberFormat('tr-TR', {
+      style: 'currency',
+      currency: 'TRY'
+    }).format(price);
+  };
+
   return (
-    <div 
-      onClick={onClick}
-      className="bg-white border rounded-xl p-4 hover:shadow-md transition-shadow cursor-pointer group"
-    >
-      <div className="flex items-start justify-between mb-3">
+    <div className="bg-white rounded-lg shadow p-4 hover:shadow-md transition-shadow">
+      <div className="flex justify-between items-start mb-3">
         <div>
-          <h3 className="font-semibold text-gray-900 group-hover:text-orange-600 transition-colors">
-            {order.orderNumber}
-          </h3>
-          <p className="text-xs text-gray-500 mt-0.5">
-            {formatDate(order.createdAt)}
-          </p>
+          <h3 className="font-bold text-lg">Sipariş #{order.orderNumber}</h3>
+          <p className="text-sm text-gray-500">{formatDate(order.createDate)}</p>
         </div>
         <OrderStatusBadge status={order.status} />
       </div>
 
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 text-sm text-gray-700">
-          <span className="text-gray-400">👤</span>
-          <span className="truncate">{order.buyer?.fullName || "İsimsiz Müşteri"}</span>
+      <div className="grid grid-cols-2 gap-4 text-sm mb-4">
+        <div>
+          <p className="text-gray-600">Müşteri:</p>
+          <p className="font-medium">{order.buyer?.fullName || '-'}</p>
+          <p className="text-gray-500">{order.buyer?.email || '-'}</p>
         </div>
-        
-        <div className="flex items-center gap-2 text-sm text-gray-700">
-          <span className="text-gray-400">📞</span>
-          <span>{order.buyer?.gsm || "-"}</span>
+        <div>
+          <p className="text-gray-600">Tutar:</p>
+          <p className="font-bold text-lg text-green-600">
+            {formatPrice(order.totalAmount)}
+          </p>
         </div>
-
-        {order.shipmentCompany && (
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <span className="text-gray-400">🚚</span>
-            <span className="truncate">{order.shipmentCompany}</span>
-            {order.trackingNumber && (
-              <span className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">
-                {order.trackingNumber}
-              </span>
-            )}
-          </div>
-        )}
       </div>
 
-      <div className="mt-4 pt-3 border-t flex items-center justify-between">
-        <div className="text-xs text-gray-500">
-          {order.itemCount} ürün · {order.totalQuantity} adet
-          {order.hasCari && (
-            <span className="ml-2 text-green-600">✓ Cari</span>
-          )}
-        </div>
-        <div className="font-bold text-gray-900">
-          {formatCurrency(order.totalPrice)}
-        </div>
+      <div className="border-t pt-3">
+        <p className="text-sm text-gray-600 mb-2">
+          Ürün sayısı: {order.itemCount || order.orderItemList?.orderItem?.length || 0}
+        </p>
+        <button
+          onClick={onDetailClick}
+          className="text-blue-500 hover:text-blue-700 text-sm font-medium"
+        >
+          Detayları Gör →
+        </button>
       </div>
     </div>
   );

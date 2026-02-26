@@ -1,115 +1,156 @@
-// pages/dashboard/n11/hooks/useN11Orders.js
-import { useState, useEffect, useCallback } from "react";
-import { useToast } from "@/hooks/useToast";
-import Cookies from "js-cookie";
+import { useState, useEffect, useCallback } from 'react';
+import { useToast } from '@/hooks/useToast';
 
-export function useN11Orders(initialFilters = {}) {
-  const { toast } = useToast();
+export const useN11Orders = (initialPage = 1, pageSize = 20) => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [filters, setFilters] = useState(initialFilters);
   const [pagination, setPagination] = useState({
-    currentPage: 1,
-    pageSize: 20,
+    currentPage: initialPage,
+    pageSize,
     totalCount: 0,
-    pageCount: 1
+    totalPages: 1
   });
+  const { showToast } = useToast();
 
-  const getAuthHeaders = useCallback(() => {
-    const token = Cookies.get("token");
-    return {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    };
-  }, []);
+  // Token'ı localStorage veya cookie'den al
+  const getToken = () => {
+    // Mevcut sisteminize göre token'ı buradan alın
+    // Örnek: localStorage, cookie, veya context
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('token') || 
+             localStorage.getItem('accessToken') ||
+             document.cookie.replace(/(?:(?:^|.*;\s*)token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
+    }
+    return null;
+  };
 
-  const fetchOrders = useCallback(async (page = 1, customFilters = null) => {
+  const fetchOrders = useCallback(async (page = pagination.currentPage, status = '') => {
     setLoading(true);
     setError(null);
+
+    try {
+      const token = getToken();
+      
+      const response = await fetch(
+        `/api/n11/orders?page=${page}&size=${pageSize}&status=${status}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || data.message || 'Siparişler alınamadı');
+      }
+
+      setOrders(data.data || []);
+      setPagination(prev => ({
+        ...prev,
+        currentPage: page,
+        totalCount: data.pagination?.totalCount || 0,
+        totalPages: data.pagination?.totalPages || 1
+      }));
+      
+    } catch (err) {
+      console.error('Fetch orders error:', err);
+      setError(err.message);
+      showToast({
+        type: 'error',
+        message: err.message
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [pagination.currentPage, pageSize, showToast]);
+
+  const syncOrders = async (dateRange = {}) => {
+    setLoading(true);
     
     try {
-      const queryParams = new URLSearchParams({
-        page: page.toString(),
-        size: pagination.pageSize.toString(),
-        ...(customFilters || filters)
-      });
-
-      const response = await fetch(`/api/n11/orders?${queryParams}`, {
-        headers: getAuthHeaders()
+      const token = getToken();
+      
+      const response = await fetch('/api/n11/orders/sync', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(dateRange)
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        // Özel hata mesajları
-        if (data.error === 'SETTINGS_NOT_FOUND') {
-          throw new Error('N11_API_AYARLARI_EKSIK');
-        }
-        throw new Error(data.message || `HTTP error! status: ${response.status}`);
+        throw new Error(data.error || data.message || 'Senkronizasyon başarısız');
       }
 
-      if (!data.success) {
-        throw new Error(data.message || 'Siparişler alınırken bir hata oluştu');
-      }
+      showToast({
+        type: 'success',
+        message: data.message || 'Senkronizasyon tamamlandı'
+      });
 
-      setOrders(data.orders || []);
-      setPagination(data.pagination || pagination);
+      await fetchOrders();
       
       return data;
+      
     } catch (err) {
-      setError(err.message);
-      
-      // Özel toast mesajları
-      if (err.message === 'N11_API_AYARLARI_EKSIK') {
-        toast({
-          title: "N11 API Ayarları Eksik",
-          description: "Ayarlar > API Bağlantıları sayfasından N11 bilgilerinizi girin.",
-          variant: "warning"
-        });
-      } else {
-        toast({
-          title: "Hata",
-          description: err.message,
-          variant: "destructive"
-        });
-      }
-      
+      showToast({
+        type: 'error',
+        message: err.message
+      });
       throw err;
     } finally {
       setLoading(false);
     }
-  }, [filters, pagination.pageSize, getAuthHeaders, toast]);
+  };
 
-  const refreshOrders = useCallback(() => {
-    return fetchOrders(pagination.currentPage);
-  }, [fetchOrders, pagination.currentPage]);
+  const getOrderDetail = async (orderNumber) => {
+    try {
+      const token = getToken();
+      
+      const response = await fetch(`/api/n11/orders/${orderNumber}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      const data = await response.json();
 
-  const updateFilters = useCallback((newFilters) => {
-    setFilters(prev => ({ ...prev, ...newFilters }));
-    setPagination(prev => ({ ...prev, currentPage: 1 }));
-  }, []);
+      if (!response.ok) {
+        throw new Error(data.error || 'Sipariş detayı alınamadı');
+      }
 
-  const goToPage = useCallback((page) => {
-    if (page >= 1 && page <= pagination.pageCount) {
-      fetchOrders(page);
+      return data.data;
+    } catch (err) {
+      showToast({
+        type: 'error',
+        message: err.message
+      });
+      return null;
     }
-  }, [fetchOrders, pagination.pageCount]);
+  };
+
+  const setPage = useCallback((page) => {
+    fetchOrders(page);
+  }, [fetchOrders]);
 
   useEffect(() => {
-    fetchOrders(1);
-  }, []);
+    fetchOrders();
+  }, [fetchOrders]);
 
   return {
     orders,
     loading,
     error,
-    filters,
     pagination,
     fetchOrders,
-    refreshOrders,
-    updateFilters,
-    goToPage,
-    setFilters
+    syncOrders,
+    getOrderDetail,
+    setPage
   };
-}
+};
