@@ -2,12 +2,11 @@ import mongoose from "mongoose";
 
 const TransactionSchema = new mongoose.Schema(
   {
-    // 🔐 TENANT (projende tenant = userId)
-    userId: { type: String, required: true },
+    // 👤 İşlemi yapan kullanıcı (opsiyonel)
+userId: { type: String, required: false, default: null },
 
-    // 🔐 Opsiyonel companyId (create.js zaten yazıyor)
-    companyId: { type: String, default: "" },
-
+// 🔐 GERÇEK TENANT
+companyId: { type: String, required: true },
     // =========================
     // 🔥 SNAPSHOT CARİ (PDF & RAPOR)
     // =========================

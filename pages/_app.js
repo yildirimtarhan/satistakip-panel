@@ -6,6 +6,7 @@ import DashboardLayout from "@/components/layout/DashboardLayout";
 import RequireAuth from "@/components/RequireAuth";
 import Cookies from "js-cookie";
 import { CompanyProvider } from "@/context/CompanyContext";
+import { ToastProvider } from "@/hooks/useToast"; // ✅ EKLENDİ
 
 export default function App({ Component, pageProps }) {
   const router = useRouter();
@@ -52,13 +53,20 @@ export default function App({ Component, pageProps }) {
     return (
       <RequireAuth cookieMode={true}>
         <CompanyProvider>
-          <DashboardLayout>
-            <Component {...pageProps} />
-          </DashboardLayout>
+          <ToastProvider> {/* ✅ EKLENDİ */}
+            <DashboardLayout>
+              <Component {...pageProps} />
+            </DashboardLayout>
+          </ToastProvider> {/* ✅ EKLENDİ */}
         </CompanyProvider>
       </RequireAuth>
     );
   }
 
-  return <Component {...pageProps} />;
+  // ✅ DÜZELTİLDİ: Parantez hatası giderildi
+  return (
+    <ToastProvider>
+      <Component {...pageProps} />
+    </ToastProvider>
+  );
 }

@@ -41,56 +41,39 @@ export default async function handler(req, res) {
 
     let grandTotal = 0;
 
-    // ==============================
-    // STOK DÜŞME MANTIĞI
-    // ==============================
-    for (const it of items) {
-      const code = it.code?.trim();
+// Eğer items boş veya quantity 0 ise sadece cari oluştur
+const validItems = items.filter(
+  (it) => it.quantity && Number(it.quantity) > 0
+);
 
-      if (!code)
-        return res.status(400).json({ message: "Ürün kodu gerekli" });
+if (validItems.length > 0) {
+  for (const it of validItems) {
+    const code = it.code?.trim();
 
-      const product = await Product.findOne({
-        companyId: keyDoc.companyId,
-        $or: [
-          { "variants.sku": code },
-          { "variants.barcode": code },
-          { model: code },
-          { name: code },
-        ],
-      });
+    const product = await Product.findOne({
+      companyId: keyDoc.companyId,
+      $or: [
+        { sku: code },
+        { barcode: code },
+        { modelCode: code },
+        { name: code },
+      ],
+    });
 
-      if (!product)
-        return res.status(404).json({ message: `Ürün bulunamadı: ${code}` });
+    if (!product)
+      return res.status(404).json({ message: `Ürün bulunamadı: ${code}` });
 
-      // Variant kontrol
-      let variant = product.variants.find(
-        (v) => v.sku === code || v.barcode === code
-      );
+    if (product.stock < it.quantity)
+      return res.status(400).json({ message: "Yetersiz stok" });
 
-      // Eğer variant varsa
-      if (variant) {
-        if (variant.stock < it.quantity)
-          return res.status(400).json({ message: "Yetersiz stok" });
+    product.stock -= it.quantity;
+    await product.save();
 
-        variant.stock -= it.quantity;
-      } 
-      // Variant yoksa ana ürün stok
-      else {
-        if (product.stock < it.quantity)
-          return res.status(400).json({ message: "Yetersiz stok" });
+    grandTotal += it.quantity * it.unitPrice;
+  }
 
-        product.stock -= it.quantity;
-      }
-
-      await product.save();
-
-      grandTotal += it.quantity * it.unitPrice;
-    }
-
-    // ==============================
-    // SATIŞ KAYDI (CARİ BORÇ)
-    // ==============================
+  // grandTotal > 0 ise satış oluştur
+  if (grandTotal > 0) {
     await Transaction.create({
       companyId: keyDoc.companyId,
       accountId: cari._id,
@@ -104,7 +87,8 @@ export default async function handler(req, res) {
       date: new Date(),
       note: `Web Satış - ${payment?.method || ""}`,
     });
-
+  }
+}
     // ==============================
     // TAHSİLAT (Kredi Kartı Paid)
     // ==============================
