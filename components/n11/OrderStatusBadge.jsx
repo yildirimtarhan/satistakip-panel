@@ -12,10 +12,5 @@ const statusConfig = {
 
 export function OrderStatusBadge({ status }) {
   const config = statusConfig[status] || { label: status || 'Bilinmiyor', color: 'bg-gray-100 text-gray-800' };
-
-  return (
-    <span className={`px-3 py-1 rounded-full text-xs font-medium ${config.color}`}>
-      {config.label}
-    </span>
-  );
+  return <span className={`px-3 py-1 rounded-full text-xs font-medium ${config.color}`}>{config.label}</span>;
 }

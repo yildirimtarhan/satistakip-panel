@@ -9,10 +9,7 @@ export function OrderCard({ order, onDetailClick }) {
 
   const formatPrice = (price) => {
     if (!price) return '0,00 ₺';
-    return new Intl.NumberFormat('tr-TR', {
-      style: 'currency',
-      currency: 'TRY'
-    }).format(price);
+    return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(price);
   };
 
   return (
@@ -33,9 +30,7 @@ export function OrderCard({ order, onDetailClick }) {
         </div>
         <div>
           <p className="text-gray-600">Tutar:</p>
-          <p className="font-bold text-lg text-green-600">
-            {formatPrice(order.totalAmount)}
-          </p>
+          <p className="font-bold text-lg text-green-600">{formatPrice(order.totalAmount)}</p>
         </div>
       </div>
 
@@ -43,10 +38,7 @@ export function OrderCard({ order, onDetailClick }) {
         <p className="text-sm text-gray-600 mb-2">
           Ürün sayısı: {order.itemCount || order.orderItemList?.orderItem?.length || 0}
         </p>
-        <button
-          onClick={onDetailClick}
-          className="text-blue-500 hover:text-blue-700 text-sm font-medium"
-        >
+        <button onClick={onDetailClick} className="text-blue-500 hover:text-blue-700 text-sm font-medium">
           Detayları Gör →
         </button>
       </div>

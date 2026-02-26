@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
-import { useN11Orders } from './hooks/useN11Orders';
-import { OrderCard } from './components/OrderCard';
-import { OrderStatusBadge } from './components/OrderStatusBadge';
+import { useN11Orders } from '@/hooks/useN11Orders';
+import { OrderCard } from '@/components/n11/OrderCard';           // ❌ dashboard/n11 değil
+import { OrderStatusBadge } from '@/components/n11/OrderStatusBadge'; // ❌ dashboard/n11 değil
 import { useToast } from '@/hooks/useToast';
 
-// Filtre bileşeni
 function FilterBar({ filters = {}, onFilterChange, onSync, syncing }) {
   const [localSearch, setLocalSearch] = useState(filters?.search || '');
   
@@ -28,12 +27,7 @@ function FilterBar({ filters = {}, onFilterChange, onSync, syncing }) {
             onChange={(e) => setLocalSearch(e.target.value)}
             className="border rounded px-3 py-2 flex-1"
           />
-          <button 
-            type="submit"
-            className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-          >
-            Ara
-          </button>
+          <button type="submit" className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Ara</button>
         </form>
 
         <div className="flex gap-2">
@@ -54,11 +48,7 @@ function FilterBar({ filters = {}, onFilterChange, onSync, syncing }) {
           <button
             onClick={onSync}
             disabled={syncing}
-            className={`px-4 py-2 rounded ${
-              syncing 
-                ? 'bg-gray-400 cursor-not-allowed' 
-                : 'bg-green-500 hover:bg-green-600 text-white'
-            }`}
+            className={`px-4 py-2 rounded ${syncing ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-500 hover:bg-green-600 text-white'}`}
           >
             {syncing ? 'Senkronize Ediliyor...' : '🔄 Senkronize Et'}
           </button>
@@ -68,33 +58,15 @@ function FilterBar({ filters = {}, onFilterChange, onSync, syncing }) {
   );
 }
 
-// Ana sayfa bileşeni
 export default function N11OrdersPage() {
-  const [filters, setFilters] = useState({
-    search: '',
-    status: ''
-  });
-  
-  const { 
-    orders, 
-    loading, 
-    error, 
-    pagination, 
-    fetchOrders, 
-    syncOrders,
-    setPage 
-  } = useN11Orders(1, 20);
-
+  const [filters, setFilters] = useState({ search: '', status: '' });
+  const { orders, loading, error, pagination, fetchOrders, syncOrders, setPage } = useN11Orders(1, 20);
   const { showToast } = useToast();
   const [syncing, setSyncing] = useState(false);
 
   const handleSync = async () => {
     setSyncing(true);
-    try {
-      await syncOrders();
-    } finally {
-      setSyncing(false);
-    }
+    try { await syncOrders(); } finally { setSyncing(false); }
   };
 
   const handleFilterChange = (newFilters) => {
@@ -108,12 +80,7 @@ export default function N11OrdersPage() {
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
           <h3 className="font-bold">Hata Oluştu</h3>
           <p>{error}</p>
-          <button 
-            onClick={() => fetchOrders()}
-            className="mt-2 bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
-          >
-            Tekrar Dene
-          </button>
+          <button onClick={() => fetchOrders()} className="mt-2 bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">Tekrar Dene</button>
         </div>
       </div>
     );
@@ -123,12 +90,7 @@ export default function N11OrdersPage() {
     <div className="p-6 max-w-7xl mx-auto">
       <h1 className="text-2xl font-bold mb-6">N11 Siparişleri</h1>
       
-      <FilterBar 
-        filters={filters}
-        onFilterChange={handleFilterChange}
-        onSync={handleSync}
-        syncing={syncing}
-      />
+      <FilterBar filters={filters} onFilterChange={handleFilterChange} onSync={handleSync} syncing={syncing} />
 
       {loading ? (
         <div className="flex justify-center items-center h-64">
@@ -144,38 +106,16 @@ export default function N11OrdersPage() {
               </div>
             ) : (
               orders.map((order) => (
-                <OrderCard 
-                  key={order.orderNumber} 
-                  order={order}
-                  onDetailClick={() => {
-                    console.log('Detay:', order);
-                  }}
-                />
+                <OrderCard key={order.orderNumber} order={order} onDetailClick={() => console.log('Detay:', order)} />
               ))
             )}
           </div>
 
           {pagination.totalPages > 1 && (
             <div className="flex justify-center gap-2 mt-6">
-              <button
-                onClick={() => setPage(pagination.currentPage - 1)}
-                disabled={pagination.currentPage === 1}
-                className="px-3 py-1 border rounded disabled:opacity-50"
-              >
-                ← Önceki
-              </button>
-              
-              <span className="px-3 py-1">
-                Sayfa {pagination.currentPage} / {pagination.totalPages}
-              </span>
-              
-              <button
-                onClick={() => setPage(pagination.currentPage + 1)}
-                disabled={pagination.currentPage === pagination.totalPages}
-                className="px-3 py-1 border rounded disabled:opacity-50"
-              >
-                Sonraki →
-              </button>
+              <button onClick={() => setPage(pagination.currentPage - 1)} disabled={pagination.currentPage === 1} className="px-3 py-1 border rounded disabled:opacity-50">← Önceki</button>
+              <span className="px-3 py-1">Sayfa {pagination.currentPage} / {pagination.totalPages}</span>
+              <button onClick={() => setPage(pagination.currentPage + 1)} disabled={pagination.currentPage === pagination.totalPages} className="px-3 py-1 border rounded disabled:opacity-50">Sonraki →</button>
             </div>
           )}
         </>
