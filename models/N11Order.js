@@ -31,6 +31,12 @@ const N11OrderSchema = new mongoose.Schema(
       index: true,
     },
 
+    // ✅ N11 internal orderId (OrderService id)
+    orderId: {
+      type: Number,
+      index: true,
+    },
+
     // ✅ Cari bağlantısı
     accountId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -38,10 +44,22 @@ const N11OrderSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    // ✅ alias: bazı yerlerde cariId kullanılıyor
+    cariId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Cari",
+      default: null,
+      index: true,
+    },
+
+    // ✅ N11 müşteri referansı (varsa)
+    n11CustomerId: { type: String, default: "", index: true },
 
     // ✅ N11 temel bilgiler
     status: { type: String, default: "" },
     buyerName: { type: String, default: "" },
+    buyerEmail: { type: String, default: "" },
+    buyerPhone: { type: String, default: "" },
     trackingNumber: { type: String, default: "" },
     cargoCompany: { type: String, default: "" },
 
@@ -53,6 +71,8 @@ const N11OrderSchema = new mongoose.Schema(
     // ✅ ERP push kontrolü
     erpPushed: { type: Boolean, default: false },
     erpPushedAt: { type: Date, default: null },
+    erpSaleNo: { type: String, default: "" },
+    erpTransactionId: { type: mongoose.Schema.Types.ObjectId, default: null },
 
     // ✅ Ham veri (N11 response)
     raw: { type: Object, default: {} },

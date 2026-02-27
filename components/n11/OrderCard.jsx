@@ -44,29 +44,28 @@ export function OrderCard({ order, onDetailClick }) {
   const orderNumber = order.orderNumber || order.id;
   const createDate = order.createDate;
   
-  // Müşteri bilgisi (detaydan gelir)
+  // Müşteri bilgisi (detaydan veya liste verisinden)
   const buyer = order.buyer || {};
-  const recipient = order.recipient || {};
-  const buyerName = buyer.fullName || recipient.fullName || '-';
-  const buyerEmail = buyer.email || recipient.email || '-';
-  const buyerPhone = buyer.gsm || recipient.gsm || buyer.phone || '-';
+  const recipient = order.recipient;
+  const recipientObj = recipient && typeof recipient === 'object' ? recipient : {};
+  const buyerName = buyer.fullName || (typeof recipient === 'string' ? recipient : recipientObj.fullName) || order.buyerName || '-';
+  const buyerEmail = buyer.email || recipientObj.email || '-';
+  const buyerPhone = buyer.gsm || recipientObj.gsm || buyer.phone || '-';
   
   // Adres bilgisi
   const shippingAddress = order.shippingAddress || {};
   const addressText = shippingAddress.address || '-';
   const city = shippingAddress.city || '-';
   
-  // Tutar bilgisi (detaydan gelir)
-  const totalAmount = order.totalAmount || order.paymentAmount || order.amount;
+  // Tutar bilgisi (detaydan veya liste verisinden)
+  const totalAmount = order.totalAmount ?? order.paymentAmount ?? order.amount ?? order.totalPrice;
   const productPrice = order.productPrice;
-  const shipmentPrice = order.shipmentPrice;
+  const shipmentPrice = order.shipmentPrice ?? 0;
   const discount = order.discount;
   
-  // Ürün bilgisi
-  const itemCount = order.itemCount || 
-                   order.orderItemList?.orderItem?.length || 
-                   order.orderItems?.length || 
-                   0;
+  // Ürün bilgisi (orderItemList.orderItem bazen tek obje veya dizi)
+  const rawItems = order.orderItemList?.orderItem ?? order.orderItems ?? [];
+  const itemCount = order.itemCount ?? (Array.isArray(rawItems) ? rawItems.length : (rawItems ? 1 : 0));
   
   // Durum
   const status = order.status;

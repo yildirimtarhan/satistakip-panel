@@ -17,6 +17,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import CloudinaryUploader from "@/components/CloudinaryUploader";
+import { N11_SHIPMENT_TEMPLATE_OPTIONS, N11_SHIPMENT_TEMPLATE_CUSTOM_KEY } from "@/constants/n11ShipmentTemplates";
 
 export default function NewProductPage() {
   const router = useRouter();
@@ -677,13 +678,40 @@ const loadBrandsByCategory = async (categoryId) => {
                 </div>
 
                 <div>
-                  <Label>N11 Kargo Şablonu</Label>
-                  <Input
-                    value={form.n11ShipmentTemplate}
-                    onChange={(e) =>
-                      handleChange("n11ShipmentTemplate", e.target.value)
+                  <Label>N11 Teslimat (Kargo) Şablonu</Label>
+                  <select
+                    className="w-full border rounded-md p-2 text-sm bg-white"
+                    value={
+                      N11_SHIPMENT_TEMPLATE_OPTIONS.some((o) => o.value === form.n11ShipmentTemplate)
+                        ? form.n11ShipmentTemplate
+                        : form.n11ShipmentTemplate
+                          ? N11_SHIPMENT_TEMPLATE_CUSTOM_KEY
+                          : ""
                     }
-                  />
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      handleChange(
+                        "n11ShipmentTemplate",
+                        v === N11_SHIPMENT_TEMPLATE_CUSTOM_KEY ? (form.n11ShipmentTemplate || "") : v
+                      );
+                    }}
+                  >
+                    {N11_SHIPMENT_TEMPLATE_OPTIONS.map((o) => (
+                      <option key={o.value || "empty"} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  {!N11_SHIPMENT_TEMPLATE_OPTIONS.some((o) => o.value === form.n11ShipmentTemplate) &&
+                    form.n11ShipmentTemplate !== "" && (
+                    <Input
+                      className="mt-1"
+                      placeholder="N11 panelindeki şablon adı"
+                      value={form.n11ShipmentTemplate}
+                      onChange={(e) => handleChange("n11ShipmentTemplate", e.target.value)}
+                    />
+                  )}
+                  <p className="text-xs text-gray-500 mt-0.5">Hesabım → Teslimat Bilgilerimiz ile aynı olmalı</p>
                 </div>
 
                 <div className="flex items-center gap-2 mt-2">

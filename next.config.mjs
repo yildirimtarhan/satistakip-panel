@@ -9,9 +9,9 @@ const nextConfig = {
   // ✅ Render Deployment için
   output: "standalone",
 
-  // ✅ Render'ın port değişkenini kullanması için
+  // ✅ Render'ın port değişkenini kullanması için (Next.js env değerleri string olmalı)
   env: {
-    PORT: process.env.PORT || 10000,
+    PORT: String(process.env.PORT || 10000),
   },
 
   images: {

@@ -1,15 +1,13 @@
-// /pages/api/n11/orders/create-erp.js (veya /app/api/...)
-// Mongoose session ile transaction
-
-import dbConnect from "@/lib/dbConnect";
-import mongoose from "mongoose";
 import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
+import dbConnect from "@/lib/dbConnect";
+import { parseN11Date } from "@/utils/formatters";
 
+import N11Order from "@/models/N11Order";
 import Cari from "@/models/Cari";
-import Sale from "@/models/Sale";
 import Product from "@/models/Product";
-import StockLog from "@/models/StockLog";
-import OrderN11 from "@/models/OrderN11"; // varsa
+import Transaction from "@/models/Transaction";
+import { getN11OrderDetailByOrderNumber } from "@/lib/marketplaces/n11Service";
 
 function normalizePhoneTR(phone = "") {
   const digits = String(phone).replace(/\D/g, "");
@@ -19,213 +17,254 @@ function normalizePhoneTR(phone = "") {
   return digits;
 }
 
-async function resolveCari({ session, companyId, order, forceCariId }) {
-  if (forceCariId) {
-    const c = await Cari.findOne({ _id: forceCariId, companyId }).session(session);
-    if (!c) throw new Error("forceCariId cari bulunamadı");
-    return c;
-  }
+function ensureArray(v) {
+  if (!v) return [];
+  return Array.isArray(v) ? v : [v];
+}
 
-  if (order.cariId) {
-    const c = await Cari.findOne({ _id: order.cariId, companyId }).session(session);
+function extractOrderItems(raw = {}) {
+  const items =
+    raw?.orderItemList?.orderItem ||
+    raw?.itemList?.item ||
+    raw?.items?.item ||
+    raw?.orderItems ||
+    raw?.lines ||
+    [];
+  return ensureArray(items);
+}
+
+function extractBuyerFromOrderDoc(orderDoc) {
+  const raw = orderDoc?.raw || {};
+  const buyer = raw?.buyer || {};
+  const recipient = raw?.recipient;
+  const recipientObj = recipient && typeof recipient === "object" ? recipient : {};
+  const shipping = raw?.shippingAddress || {};
+  const billing = raw?.billingAddress || {};
+
+  const fullName =
+    orderDoc?.buyerName ||
+    buyer.fullName ||
+    (typeof recipient === "string" ? recipient : recipientObj.fullName) ||
+    shipping.fullName ||
+    billing.fullName ||
+    "N11 Müşteri";
+
+  const email = String(orderDoc?.buyerEmail || buyer.email || recipientObj.email || "").trim().toLowerCase();
+  const phone = normalizePhoneTR(orderDoc?.buyerPhone || buyer.gsm || recipientObj.gsm || buyer.phone || "");
+  const n11CustomerId = String(orderDoc?.n11CustomerId || buyer.id || buyer.customerId || raw.customerId || "");
+
+  return { fullName, email, phone, n11CustomerId };
+}
+
+async function resolveCari({ session, companyIdObj, userIdObj, orderDoc }) {
+  if (orderDoc?.accountId) {
+    const c = await Cari.findOne({ _id: orderDoc.accountId, companyId: companyIdObj }).session(session);
     if (c) return c;
   }
 
-  const identityNo = order.customer?.identityNo || order.customer?.taxNo || null;
-  const email = (order.customer?.email || "").trim().toLowerCase();
-  const phone = normalizePhoneTR(order.customer?.phone || "");
+  const { fullName, email, phone, n11CustomerId } = extractBuyerFromOrderDoc(orderDoc);
+
+  const or = [];
+  if (n11CustomerId) or.push({ n11CustomerId });
+  if (email) or.push({ email });
+  if (phone) or.push({ telefon: phone });
 
   let cari = null;
-
-  if (identityNo) {
-    cari = await Cari.findOne({ companyId, identityNo }).session(session);
-    if (cari) return cari;
+  if (or.length) {
+    cari = await Cari.findOne({ companyId: companyIdObj, $or: or }).session(session);
   }
 
-  if (email) {
-    cari = await Cari.findOne({ companyId, email }).session(session);
-    if (cari) return cari;
-  }
-
-  if (phone) {
-    cari = await Cari.findOne({ companyId, phone }).session(session);
-    if (cari) return cari;
-  }
-
-  // Bulunamadı → oluştur
-  const newCari = await Cari.create([{
-    companyId,
-    name: order.customer?.fullName || order.customer?.name || "N11 Müşteri",
-    email: email || null,
-    phone: phone || null,
-    identityNo: identityNo || null,
-    address: order.shippingAddress || null,
-    source: "N11",
-    createdFromOrderId: order.orderId || order._id
-  }], { session });
-
-  return newCari[0];
-}
-
-function generateSaleNo() {
-  // basit örnek — sen muhtemelen CompanySettings üzerinden sequence tutuyorsun
-  const yyyy = new Date().getFullYear();
-  const rand = Math.floor(Math.random() * 900000 + 100000);
-  return `SAT-${yyyy}-${rand}`;
-}
-
-async function buildSaleLines({ session, companyId, order }) {
-  // order.items: [{ sku, quantity, price, title }]
-  // Ürün eşle: SKU -> Product
-  const lines = [];
-  for (const it of order.items || []) {
-    const sku = (it.sku || "").trim();
-    const qty = Number(it.quantity || 0);
-
-    if (!sku) throw new Error("Sipariş kaleminde SKU yok");
-    if (qty <= 0) throw new Error(`Geçersiz qty: ${sku}`);
-
-    const product = await Product.findOne({ companyId, sku }).session(session);
-    if (!product) throw new Error(`Ürün bulunamadı (SKU): ${sku}`);
-
-    const unitPrice = Number(it.unitPrice ?? it.price ?? 0);
-    const lineTotal = unitPrice * qty;
-
-    lines.push({
-      productId: product._id,
-      sku: product.sku,
-      name: product.title || it.title || sku,
-      quantity: qty,
-      unitPrice,
-      total: lineTotal,
-      vatRate: Number(it.vatRate ?? product.vatRate ?? 20)
-    });
-  }
-  return lines;
-}
-
-async function decreaseStockAndLog({ session, companyId, userId, saleId, saleNo, lines }) {
-  for (const ln of lines) {
-    // Stok kontrol
-    const p = await Product.findOne({ _id: ln.productId, companyId }).session(session);
-    if (!p) throw new Error("Ürün kayboldu?");
-    const newStock = Number(p.stock || 0) - Number(ln.quantity || 0);
-    if (newStock < 0) {
-      throw new Error(`Yetersiz stok: ${p.sku} (mevcut ${p.stock}, istenen ${ln.quantity})`);
+  if (!cari) {
+    cari = await Cari.create([{
+      companyId: companyIdObj,
+      userId: userIdObj,
+      ad: fullName,
+      email: email || "",
+      telefon: phone || "",
+      n11CustomerId: n11CustomerId || "",
+    }], { session }).then((arr) => arr[0]);
+  } else {
+    let changed = false;
+    if (n11CustomerId && !cari.n11CustomerId) { cari.n11CustomerId = n11CustomerId; changed = true; }
+    if (fullName && fullName !== "N11 Müşteri" && String(fullName).trim()) {
+      if (String(cari.ad || "").trim() !== String(fullName).trim()) { cari.ad = fullName.trim(); changed = true; }
     }
-
-    p.stock = newStock;
-    await p.save({ session });
-
-    await StockLog.create([{
-      companyId,
-      productId: p._id,
-      type: "OUT",
-      quantity: ln.quantity,
-      reason: "N11 siparişinden satış",
-      refType: "SALE",
-      refId: saleId,
-      note: saleNo,
-      createdBy: userId
-    }], { session });
+    if (email && !cari.email) { cari.email = email; changed = true; }
+    if (phone && !cari.telefon) { cari.telefon = phone; changed = true; }
+    if (changed) await cari.save({ session });
   }
+
+  return cari;
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ ok: false, message: "Method not allowed" });
+  if (req.method !== "POST") {
+    return res.status(405).json({ success: false, message: "Method not allowed" });
+  }
 
   try {
     await dbConnect();
 
     const auth = req.headers.authorization || "";
     const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
-    if (!token) return res.status(401).json({ ok: false, message: "Token yok" });
+    if (!token) return res.status(401).json({ success: false, message: "Token yok" });
 
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (e) {
-      return res.status(401).json({ ok: false, message: "Token geçersiz" });
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const companyIdStr = String(decoded.companyId || "");
+    const userIdStr = String(decoded.userId || decoded.id || "");
+
+    if (!mongoose.Types.ObjectId.isValid(companyIdStr) || !mongoose.Types.ObjectId.isValid(userIdStr)) {
+      return res.status(400).json({ success: false, message: "Token içinde companyId/userId geçersiz" });
     }
 
-    const userId = decoded.userId || decoded.id;
-    const companyId = decoded.companyId;
-    if (!companyId) return res.status(400).json({ ok: false, message: "companyId bulunamadı" });
+    const companyIdObj = new mongoose.Types.ObjectId(companyIdStr);
+    const userIdObj = new mongoose.Types.ObjectId(userIdStr);
 
-    const { orderId, forceCariId } = req.body || {};
-    if (!orderId) return res.status(400).json({ ok: false, message: "orderId zorunlu" });
+    const { orderId, orderNumber } = req.body || {};
+    if (!orderId && !orderNumber) {
+      return res.status(400).json({ success: false, message: "orderId veya orderNumber zorunlu" });
+    }
 
     const session = await mongoose.startSession();
 
     const result = await session.withTransaction(async () => {
-      // 1) Order getir (DB’de varsa)
-      const order = await OrderN11.findOne({ companyId, orderId }).session(session);
-      if (!order) throw new Error("Sipariş bulunamadı");
+      const query = { companyId: companyIdObj };
+      if (orderId != null) query.orderId = Number(orderId);
+      if (orderNumber) query.orderNumber = String(orderNumber);
 
-      // idempotency: daha önce oluşturulduysa dön
-      if (order.erpStatus === "CREATED" && order.erpSaleId) {
-        return {
-          already: true,
-          cariId: String(order.cariId),
-          saleId: String(order.erpSaleId),
-          saleNo: order.erpSaleNo
-        };
+      let orderDoc = await N11Order.findOne(query).session(session);
+      if (!orderDoc) throw new Error("Sipariş bulunamadı (önce Senkronize Et çalışmalı)");
+
+      if (orderDoc.erpPushed && orderDoc.erpTransactionId) {
+        return { already: true, saleNo: orderDoc.erpSaleNo, transactionId: orderDoc.erpTransactionId };
       }
 
-      // 2) Cari resolve
-      const cari = await resolveCari({ session, companyId, order, forceCariId });
+      const raw = orderDoc.raw || {};
+      const hasBuyerName = raw?.buyer?.fullName || raw?.recipient || raw?.buyerName || raw?.shippingAddress?.fullName || raw?.billingAddress?.fullName;
+      if (!hasBuyerName && orderDoc.orderNumber) {
+        try {
+          const liveOrder = await getN11OrderDetailByOrderNumber(companyIdStr, userIdStr, orderDoc.orderNumber);
+          if (liveOrder) {
+            orderDoc.raw = { ...raw, ...liveOrder };
+            orderDoc.buyerName = liveOrder.recipient || liveOrder.buyerName || liveOrder.buyer?.fullName;
+            orderDoc.buyerEmail = liveOrder.buyer?.email || "";
+            orderDoc.buyerPhone = liveOrder.buyer?.gsm || liveOrder.shippingAddress?.gsm || "";
+          }
+        } catch (e) {
+          console.warn("[create-erp] N11 detay çekilemedi:", e?.message);
+        }
+      }
 
-      // 3) Satış satırlarını kur
-      const lines = await buildSaleLines({ session, companyId, order });
+      const cari = await resolveCari({ session, companyIdObj, userIdObj, orderDoc });
 
-      const saleNo = generateSaleNo();
-      const total = lines.reduce((a, b) => a + Number(b.total || 0), 0);
+      // Satış oluştur (Transaction)
+      const saleNo = `N11-${orderDoc.orderNumber}`;
 
-      // 4) Sale create
-      const saleDocArr = await Sale.create([{
-        companyId,
+      const exists = await Transaction.findOne({
+        type: "sale",
         saleNo,
-        cariId: cari._id,
-        source: "N11",
-        sourceOrderId: order.orderId,
-        lines,
-        total,
-        currency: order.currency || "TRY",
-        status: "CONFIRMED",
-        createdBy: userId
-      }], { session });
+        userId: userIdStr,
+        isDeleted: { $ne: true },
+      }).session(session).lean();
 
-      const saleDoc = saleDocArr[0];
+      if (exists) {
+        orderDoc.erpPushed = true;
+        orderDoc.erpPushedAt = new Date();
+        orderDoc.erpSaleNo = saleNo;
+        orderDoc.erpTransactionId = exists._id;
+        orderDoc.accountId = cari._id;
+        orderDoc.cariId = cari._id;
+        await orderDoc.save({ session });
+        return { already: true, saleNo, transactionId: exists._id };
+      }
 
-      // 5) Stok düş + log
-      await decreaseStockAndLog({
-        session, companyId, userId,
-        saleId: saleDoc._id,
-        saleNo,
-        lines
+      const rawItems = extractOrderItems(orderDoc.raw || {});
+      if (!rawItems.length) throw new Error("Sipariş kalemi bulunamadı");
+
+      // Ürün eşleştirme (best-effort)
+      const lines = [];
+      const missing = [];
+      for (const it of rawItems) {
+        const sku = String(it.productSellerCode || it.sellerProductCode || it.stockCode || it.sku || "").trim();
+        const barcode = String(it.barcode || "").trim();
+        const qty = Number(it.quantity || 1);
+        const unitPrice = Number(it.price ?? it.unitPrice ?? it.sellerInvoiceAmount ?? 0);
+        const name = it.productName || it.title || sku || barcode || "N11 Ürün";
+
+        let product = null;
+        if (sku) product = await Product.findOne({ companyId: companyIdObj, sku }).session(session).lean();
+        if (!product?._id && barcode) product = await Product.findOne({ companyId: companyIdObj, barcode }).session(session).lean();
+
+        if (!product?._id) missing.push(sku || barcode || name);
+
+        lines.push({
+          productId: product?._id || null,
+          name: product?.name || name,
+          barcode: product?.barcode || barcode || "",
+          sku: product?.sku || sku || "",
+          quantity: qty,
+          unitPrice,
+          vatRate: Number(product?.vatRate ?? 20),
+        });
+      }
+
+      // totals
+      let subTotal = 0;
+      let vatTotal = 0;
+      const normalizedItems = lines.map((i) => {
+        const lineSub = Number(i.unitPrice || 0) * Number(i.quantity || 1);
+        const lineVat = lineSub * (Number(i.vatRate || 0) / 100);
+        subTotal += lineSub;
+        vatTotal += lineVat;
+        return { ...i, total: lineSub + lineVat, currency: "TRY", fxRate: 1 };
       });
 
-      // 6) Order güncelle
-      order.cariId = cari._id;
-      order.erpStatus = "CREATED";
-      order.erpSaleId = saleDoc._id;
-      order.erpSaleNo = saleNo;
-      order.createdSaleAt = new Date();
-      await order.save({ session });
+      const totalTRY = subTotal + vatTotal;
 
-      return {
-        already: false,
-        cariId: String(cari._id),
-        saleId: String(saleDoc._id),
-        saleNo
-      };
+      const tx = await Transaction.create([{
+        userId: userIdStr,
+        companyId: companyIdStr,
+        createdBy: userIdStr,
+        type: "sale",
+        saleNo,
+        accountId: cari._id,
+        accountName: String(cari.ad || "").trim() || extractBuyerFromOrderDoc(orderDoc).fullName,
+        date: parseN11Date(orderDoc.raw?.createDate) || new Date(),
+        paymentMethod: "open",
+        note: "N11 siparişinden satış",
+        currency: "TRY",
+        fxRate: 1,
+        items: normalizedItems,
+        totalTRY,
+        direction: "borc",
+        amount: totalTRY,
+      }], { session }).then((arr) => arr[0]);
+
+      // stok düş (sadece eşleşen ürünlerde)
+      for (const i of normalizedItems) {
+        if (i.productId) {
+          await Product.findByIdAndUpdate(i.productId, { $inc: { stock: -i.quantity } }).session(session);
+        }
+      }
+
+      orderDoc.accountId = cari._id;
+      orderDoc.cariId = cari._id;
+      orderDoc.erpPushed = true;
+      orderDoc.erpPushedAt = new Date();
+      orderDoc.erpSaleNo = saleNo;
+      orderDoc.erpTransactionId = tx._id;
+      if (missing.length) {
+        orderDoc.note = `ERP satış oluşturuldu fakat eşleşmeyen ürünler var: ${missing.slice(0, 10).join(", ")}`;
+      }
+      await orderDoc.save({ session });
+
+      return { already: false, saleNo, transactionId: tx._id };
     });
 
     session.endSession();
-    return res.status(200).json({ ok: true, ...result });
-
+    return res.status(200).json({ success: true, ...result });
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({ ok: false, message: err.message || "create-erp hata" });
+    console.error("CREATE ERP ERROR:", err);
+    return res.status(500).json({ success: false, message: err?.message || String(err) });
   }
 }

@@ -26,6 +26,7 @@
     "cloudinary": "^2.8.0",
     "cookie": "^0.5.0",
     "cookies": "^0.9.1",
+    "date-fns": "^4.1.0",
     "dotenv": "^17.2.4",
     "exceljs": "^4.4.0",
     "file-saver": "^2.0.5",

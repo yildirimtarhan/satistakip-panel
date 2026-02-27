@@ -1,10 +1,11 @@
 // 📁 /pages/dashboard/n11/order/[orderNumber].js
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import dbConnect from "@/lib/mongodb";
 import N11Order from "@/models/N11Order";
 import Cari from "@/models/Cari";
 import { n11StatusMap } from "@/utils/n11StatusMap";
+import { ShippingLabelModal } from "@/components/n11/ShippingLabelModal";
 
 export async function getServerSideProps(context) {
   const { orderNumber } = context.params;
@@ -188,6 +189,7 @@ export async function getServerSideProps(context) {
       _id: doc._id ? doc._id.toString() : null,
 
       accountId: doc.accountId ? doc.accountId.toString() : null,
+      cariId: doc.cariId ? doc.cariId.toString() : null,
       companyId: doc.companyId ? doc.companyId.toString() : null,
       createdBy: doc.createdBy ? doc.createdBy.toString() : null,
       userId: doc.userId ? doc.userId.toString() : null,
@@ -300,9 +302,31 @@ export default function N11OrderDetailPage({ order, linkedCari }) {
 const [erpLoading, setErpLoading] = useState(false);
 const [erpMessage, setErpMessage] = useState("");
 
+  // 📄 Kargo etiketi modal + gönderici bilgisi
+  const [showLabelModal, setShowLabelModal] = useState(false);
+  const [labelSender, setLabelSender] = useState({});
 
   // 🧾 RAW JSON Toggle (default gizli)
   const [showRaw, setShowRaw] = useState(false);
+
+  // Gönderici bilgisini firma ayarlarından al (etiket için)
+  useEffect(() => {
+    if (!showLabelModal) return;
+    const token = getToken();
+    if (!token) return;
+    fetch("/api/company/me", { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.company) {
+          setLabelSender({
+            companyName: data.company.firmaAdi || "",
+            phone: data.company.telefon || data.company.eposta || "",
+            address: data.company.adres || "",
+          });
+        }
+      })
+      .catch(() => {});
+  }, [showLabelModal]);
 
 
 
@@ -450,6 +474,7 @@ const res = await fetch("/api/cari/link-order", {
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
+        orderId: raw?.id || raw?.orderId || order?.orderId || undefined,
         orderNumber: order?.orderNumber || raw?.orderNumber,
       }),
     });
@@ -457,7 +482,7 @@ const res = await fetch("/api/cari/link-order", {
     const data = await res.json();
 
     if (!res.ok || !data.success) {
-      setErpMessage(`❌ ERP Aktarım Hatası: ${data.message || "Bilinmeyen hata"}`);
+      setErpMessage(`❌ ERP Aktarım Hatası: ${data.message || data.error || "Bilinmeyen hata"}`);
       return;
     }
 
@@ -623,6 +648,13 @@ const res = await fetch("/api/cari/link-order", {
           </button>
 
           <button
+            onClick={() => setShowLabelModal(true)}
+            className="px-3 py-2 text-sm rounded-md bg-pink-500 text-white hover:bg-pink-600"
+          >
+            🏷️ Kargo Etiketi (Çıktı Al)
+          </button>
+
+          <button
             onClick={openCariModal}
             className="px-3 py-2 text-sm rounded-md bg-blue-500 text-white hover:bg-blue-600"
           >
@@ -663,6 +695,26 @@ const res = await fetch("/api/cari/link-order", {
           </div>
         )}
       </div>
+
+      {/* 📄 N11 tarzı kargo etiketi modal */}
+      <ShippingLabelModal
+        open={showLabelModal}
+        onClose={() => setShowLabelModal(false)}
+        sender={labelSender}
+        recipient={{
+          name: buyerName,
+          address: fullAddress,
+          district,
+          city,
+          postalCode: addr.postalCode || raw.shippingAddress?.postalCode || raw.deliveryAddress?.postalCode || "",
+          phone: buyerPhone,
+        }}
+        orderNumber={order.orderNumber || raw.orderNumber || ""}
+        cargoCompany={shipmentCompanyName}
+        paymentType={raw.paymentType || raw.shipmentPriceType || "Mağaza Öder"}
+        items={items}
+        campaignCode={trackingNumber || raw.cargoSenderNumber || raw.campaignCode || ""}
+      />
 
       {/* 📦 MANUEL KARGO MODAL */}
       {showShipmentModal && (

@@ -1,4 +1,4 @@
-import { n11GetOrderDetail } from '@/lib/marketplaces/n11Service';
+import { n11GetOrders } from '@/lib/marketplaces/n11Service';
 import jwt from 'jsonwebtoken';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
@@ -15,15 +15,18 @@ export default async function handler(req, res) {
     const decoded = jwt.verify(token, JWT_SECRET);
     const { companyId, userId } = decoded;
 
-    const result = await n11GetOrderDetail({
+    // Not: N11 SOAP OrderDetail genelde "id" ister. Elimizde orderNumber olduğu için
+    // önce OrderList'i orderNumber ile filtreleyip ilk kaydı döndürüyoruz.
+    const result = await n11GetOrders({
       companyId,
       userId,
-      orderId: orderNumber,
+      searchData: { orderNumber: String(orderNumber || '') },
+      pagingData: { currentPage: 0, pageSize: 1 },
     });
 
     return res.status(200).json({
       success: true,
-      data: result.order
+      data: result?.orders?.[0] || null,
     });
 
   } catch (error) {

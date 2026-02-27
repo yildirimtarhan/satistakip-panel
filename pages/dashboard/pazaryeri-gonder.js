@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
+import { N11_SHIPMENT_TEMPLATE_OPTIONS, N11_SHIPMENT_TEMPLATE_CUSTOM_KEY } from "@/constants/n11ShipmentTemplates";
 
 const MARKETPLACES = [
   { key: "n11",         label: "N11",          color: "bg-orange-500" },
@@ -19,11 +20,37 @@ export default function PazaryeriGonderPage() {
   const [sending, setSending]       = useState(false);
   const [taskResult, setTaskResult] = useState(null);
 
-  // N11 form
+  // N11 form (shipmentTemplate: API'ye gidecek değer; özel seçilince input'tan dolar)
   const [n11Form, setN11Form] = useState({
     catL1: "", catL2: "", catL3: "", preparingDay: "3",
     shipmentTemplate: "", vatRate: "20", description: "",
   });
+  const [n11ShipmentTemplateIsCustom, setN11ShipmentTemplateIsCustom] = useState(false);
+  const [n11ShipmentOptions, setN11ShipmentOptions] = useState(() => [
+    { value: "", label: "— Seçin (boş bırakılabilir) —" },
+    ...N11_SHIPMENT_TEMPLATE_OPTIONS.filter((o) => o.value && o.value !== N11_SHIPMENT_TEMPLATE_CUSTOM_KEY),
+    { value: N11_SHIPMENT_TEMPLATE_CUSTOM_KEY, label: "Özel şablon adı yaz" },
+  ]);
+  useEffect(() => {
+    const token = typeof window !== "undefined" && (localStorage.getItem("token") || localStorage.getItem("accessToken") || "");
+    if (!token) return;
+    fetch("/api/n11/shipment-templates", { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.success && Array.isArray(d.templates) && d.templates.length > 0) {
+          const names = new Set(d.templates.map((t) => t.name));
+          const fromApi = d.templates.map((t) => ({ value: t.name, label: t.isDefault ? `${t.name} (Varsayılan)` : t.name }));
+          const fromConst = N11_SHIPMENT_TEMPLATE_OPTIONS.filter((o) => o.value && o.value !== N11_SHIPMENT_TEMPLATE_CUSTOM_KEY && !names.has(o.value));
+          setN11ShipmentOptions([
+            { value: "", label: "— Seçin (boş bırakılabilir) —" },
+            ...fromApi,
+            ...fromConst,
+            { value: N11_SHIPMENT_TEMPLATE_CUSTOM_KEY, label: "Özel şablon adı yaz" },
+          ]);
+        }
+      })
+      .catch(() => {});
+  }, []);
   const [n11CatsL1, setN11CatsL1] = useState([]);
   const [n11CatsL2, setN11CatsL2] = useState([]);
   const [n11CatsL3, setN11CatsL3] = useState([]);
@@ -477,16 +504,36 @@ export default function PazaryeriGonderPage() {
                     onChange={(e) => setN11Form((f) => ({ ...f, preparingDay: e.target.value }))} />
                 </div>
                 <div className="col-span-2">
-                  <label className="block text-sm font-medium mb-1">Teslimat Şablonu</label>
-                  <select className="w-full border rounded p-2" value={n11Form.shipmentTemplate}
-                    onChange={(e) => setN11Form((f) => ({ ...f, shipmentTemplate: e.target.value }))}>
-                    <option value="">— Seçin (boş bırakılabilir) —</option>
-                    <option value="Alıcı Öder">Alıcı Öder</option>
-                    <option value="Bandırma">Bandırma</option>
-                    <option value="Mağaza Öder">Mağaza Öder</option>
-                    <option value="Ürün">Ürün</option>
+                  <label className="block text-sm font-medium mb-1">Teslimat (Kargo) Şablonu</label>
+                  <select
+                    className="w-full border rounded p-2"
+                    value={n11ShipmentTemplateIsCustom ? N11_SHIPMENT_TEMPLATE_CUSTOM_KEY : n11Form.shipmentTemplate}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      const isCustom = v === N11_SHIPMENT_TEMPLATE_CUSTOM_KEY;
+                      setN11ShipmentTemplateIsCustom(isCustom);
+                      setN11Form((f) => ({
+                        ...f,
+                        shipmentTemplate: isCustom ? (f.shipmentTemplate || "") : v,
+                      }));
+                    }}
+                  >
+                    {n11ShipmentOptions.map((o) => (
+                      <option key={o.value || "empty"} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
                   </select>
-                  <p className="text-xs text-gray-400 mt-1">N11 panelindeki şablon adıyla tam eşleşmeli</p>
+                  {n11ShipmentTemplateIsCustom && (
+                    <input
+                      type="text"
+                      className="w-full border rounded p-2 mt-1 text-sm"
+                      placeholder="N11 panelindeki şablon adını yazın"
+                      value={n11Form.shipmentTemplate}
+                      onChange={(e) => setN11Form((f) => ({ ...f, shipmentTemplate: e.target.value }))}
+                    />
+                  )}
+                  <p className="text-xs text-gray-400 mt-1">N11: Hesabım → Teslimat Bilgilerimiz ile birebir aynı olmalı</p>
                 </div>
               </div>
 

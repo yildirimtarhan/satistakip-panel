@@ -1,5 +1,14 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useToast } from '@/hooks/useToast';
+
+/** Siparişte detay var mı (müşteri adı / tutar) */
+function hasDetailedData(order) {
+  return !!(
+    (order?.buyer?.fullName || order?.recipient || order?.buyerName) ||
+    (order?.totalAmount != null && order?.totalAmount !== '') ||
+    (order?.orderItemList?.orderItem?.length || order?.orderItemList?.orderItem)
+  );
+}
 
 export const useN11Orders = (initialPage = 1, pageSize = 20) => {
   const [orders, setOrders] = useState([]);
@@ -11,7 +20,9 @@ export const useN11Orders = (initialPage = 1, pageSize = 20) => {
     totalCount: 0,
     totalPages: 1
   });
-  const { showToast } = useToast();
+  const { toast: showToast } = useToast();
+  /** N11 bazen detay döndürmüyor; önceki başarılı yanıttan müşteri/tutar sakla (orderNumber -> detay) */
+  const detailCacheRef = useRef({});
 
   const getToken = () => {
     if (typeof window !== 'undefined') {
@@ -34,7 +45,30 @@ export const useN11Orders = (initialPage = 1, pageSize = 20) => {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || data.message || 'Siparişler alınamadı');
 
-      setOrders(data.data || []);
+      const rawList = data.data || [];
+      const cache = detailCacheRef.current;
+
+      const merged = rawList.map((order) => {
+        const no = String(order?.orderNumber || order?.id || '');
+        if (hasDetailedData(order)) {
+          cache[no] = {
+            buyer: order.buyer,
+            recipient: order.recipient,
+            buyerName: order.buyerName,
+            totalAmount: order.totalAmount,
+            orderItemList: order.orderItemList,
+            shippingAddress: order.shippingAddress,
+            billingAddress: order.billingAddress,
+          };
+          return order;
+        }
+        if (cache[no]) {
+          return { ...order, ...cache[no] };
+        }
+        return order;
+      });
+
+      setOrders(merged);
       setPagination(prev => ({ ...prev, currentPage: page, totalCount: data.pagination?.totalCount || 0, totalPages: data.pagination?.totalPages || 1 }));
     } catch (err) {
       setError(err.message);
@@ -55,7 +89,9 @@ export const useN11Orders = (initialPage = 1, pageSize = 20) => {
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || data.message || 'Senkronizasyon başarısız');
+      if (!response.ok) {
+        throw new Error(data.message || data.error || 'Senkronizasyon başarısız');
+      }
 
       showToast({ type: 'success', message: data.message || 'Senkronizasyon tamamlandı' });
       await fetchOrders();

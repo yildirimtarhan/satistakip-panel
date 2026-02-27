@@ -104,6 +104,7 @@ export default function Sidebar() {
         <MenuItem href="/dashboard/n11/orders" icon="🛒" label="N11 Siparişleri" />
         <MenuItem href="/dashboard/n11/products" icon="📦" label="N11 Ürün Listesi" />
         <MenuItem href="/dashboard/n11/add-product" icon="➕" label="N11 Ürün Gönder" />
+        <MenuItem href="/dashboard/n11/shipment-templates" icon="📋" label="N11 Kargo Şablonları" />
         <MenuItem href="/dashboard/pazaryeri-gonder" icon="🚀" label="Pazaryerine Gönder" />
 
         <SectionTitle>E-Belge</SectionTitle>

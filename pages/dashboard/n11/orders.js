@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
+import { useRouter } from 'next/router';
 import { useN11Orders } from '@/hooks/useN11Orders';
 import { OrderCard } from '@/components/n11/OrderCard';           // ❌ dashboard/n11 değil
-import { OrderStatusBadge } from '@/components/n11/OrderStatusBadge'; // ❌ dashboard/n11 değil
-import { useToast } from '@/hooks/useToast';
 
-function FilterBar({ filters = {}, onFilterChange, onSync, syncing }) {
+function FilterBar({ filters = {}, onFilterChange, onSync, syncing, onFixCariNames, fixingCariNames }) {
   const [localSearch, setLocalSearch] = useState(filters?.search || '');
   
   const handleSearch = (e) => {
@@ -30,7 +29,7 @@ function FilterBar({ filters = {}, onFilterChange, onSync, syncing }) {
           <button type="submit" className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Ara</button>
         </form>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
           <select 
             value={filters?.status || ''}
             onChange={(e) => handleStatusChange(e.target.value)}
@@ -46,6 +45,15 @@ function FilterBar({ filters = {}, onFilterChange, onSync, syncing }) {
           </select>
 
           <button
+            onClick={onFixCariNames}
+            disabled={fixingCariNames}
+            title="Carideki 'N11 Müşteri' kayıtlarını, bağlı siparişlerdeki adla günceller"
+            className={`px-3 py-2 rounded text-sm ${fixingCariNames ? 'bg-gray-400 cursor-not-allowed' : 'bg-amber-500 hover:bg-amber-600 text-white'}`}
+          >
+            {fixingCariNames ? 'Düzeltiliyor...' : '📝 Cari İsimlerini Düzelt'}
+          </button>
+
+          <button
             onClick={onSync}
             disabled={syncing}
             className={`px-4 py-2 rounded ${syncing ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-500 hover:bg-green-600 text-white'}`}
@@ -59,14 +67,34 @@ function FilterBar({ filters = {}, onFilterChange, onSync, syncing }) {
 }
 
 export default function N11OrdersPage() {
+  const router = useRouter();
   const [filters, setFilters] = useState({ search: '', status: '' });
   const { orders, loading, error, pagination, fetchOrders, syncOrders, setPage } = useN11Orders(1, 20);
-  const { showToast } = useToast();
   const [syncing, setSyncing] = useState(false);
+  const [fixingCariNames, setFixingCariNames] = useState(false);
 
   const handleSync = async () => {
     setSyncing(true);
     try { await syncOrders(); } finally { setSyncing(false); }
+  };
+
+  const handleFixCariNames = async () => {
+    setFixingCariNames(true);
+    try {
+      const token = typeof window !== 'undefined' && (localStorage.getItem('token') || localStorage.getItem('accessToken') || '');
+      const res = await fetch('/api/n11/orders/fix-cari-names', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || data.error || 'İşlem başarısız');
+      alert(data.message + (data.updated ? ` (${data.updated} cari güncellendi)` : ''));
+    } catch (e) {
+      alert(e.message || 'Cari isimleri düzeltilirken hata oluştu');
+    } finally {
+      setFixingCariNames(false);
+    }
   };
 
   const handleFilterChange = (newFilters) => {
@@ -90,7 +118,7 @@ export default function N11OrdersPage() {
     <div className="p-6 max-w-7xl mx-auto">
       <h1 className="text-2xl font-bold mb-6">N11 Siparişleri</h1>
       
-      <FilterBar filters={filters} onFilterChange={handleFilterChange} onSync={handleSync} syncing={syncing} />
+      <FilterBar filters={filters} onFilterChange={handleFilterChange} onSync={handleSync} syncing={syncing} onFixCariNames={handleFixCariNames} fixingCariNames={fixingCariNames} />
 
       {loading ? (
         <div className="flex justify-center items-center h-64">
@@ -106,7 +134,14 @@ export default function N11OrdersPage() {
               </div>
             ) : (
               orders.map((order) => (
-                <OrderCard key={order.orderNumber} order={order} onDetailClick={() => console.log('Detay:', order)} />
+                <OrderCard
+                  key={order.orderNumber || order.id}
+                  order={order}
+                  onDetailClick={() => {
+                    const orderNumber = order.orderNumber || order.id;
+                    if (orderNumber) router.push(`/dashboard/n11/order/${orderNumber}`);
+                  }}
+                />
               ))
             )}
           </div>
