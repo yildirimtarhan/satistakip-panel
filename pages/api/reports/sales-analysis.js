@@ -117,6 +117,51 @@ export default async function handler(req, res) {
     const netCiro = (s.toplamCiro || 0) - (s.iadeTutari || 0);
     const netKar = netCiro - (s.toplamMaliyet || 0) - (s.toplamKomisyon || 0) - (s.toplamKargo || 0);
 
+    // 7b. Önceki dönem (büyüme karşılaştırması)
+    let growth = { ciro: null, islem: null, kar: null };
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const days = Math.round((end - start) / (24 * 60 * 60 * 1000)) + 1;
+      const prevEnd = new Date(start);
+      prevEnd.setDate(prevEnd.getDate() - 1);
+      const prevStart = new Date(prevEnd);
+      prevStart.setDate(prevStart.getDate() - days + 1);
+      const prevDateFilter = {
+        $gte: prevStart,
+        $lte: prevEnd
+      };
+      const prevMatch = buildReportFilter(context, {
+        islemTuru: "satis",
+        tarih: prevDateFilter,
+        ...(marketplace && { pazaryeri: marketplace }),
+        ...(store && { magaza: store })
+      });
+      const prevSummary = await Transaction.aggregate([
+        { $match: prevMatch },
+        {
+          $group: {
+            _id: null,
+            toplamCiro: { $sum: "$toplamTutar" },
+            toplamIslem: { $sum: 1 },
+            iadeTutari: { $sum: { $cond: [{ $eq: ["$durum", "iade"] }, "$toplamTutar", 0] } },
+            toplamMaliyet: { $sum: "$toplamMaliyet" },
+            toplamKomisyon: { $sum: "$komisyonTutari" },
+            toplamKargo: { $sum: "$kargoTutari" }
+          }
+        }
+      ]);
+      const ps = prevSummary[0] || {};
+      const prevCiro = (ps.toplamCiro || 0) - (ps.iadeTutari || 0);
+      const prevKar = prevCiro - (ps.toplamMaliyet || 0) - (ps.toplamKomisyon || 0) - (ps.toplamKargo || 0);
+      const pct = (curr, prev) => (prev && prev !== 0 ? parseFloat((((curr - prev) / prev) * 100).toFixed(1)) : null);
+      growth = {
+        ciro: pct(netCiro, prevCiro),
+        islem: pct(s.toplamIslem || 0, ps.toplamIslem || 0),
+        kar: pct(netKar, prevKar)
+      };
+    }
+
     // 8. Yanıt
     res.status(200).json({
       success: true,
@@ -150,6 +195,7 @@ export default async function handler(req, res) {
         toplamIslem: s.toplamIslem || 0,
         toplamUrun: s.toplamUrun || 0
       },
+      growth,
       timeline: timeline.map(t => ({
         ...t,
         netSatis: (t.toplamSatis || 0) - (t.iadeTutari || 0),

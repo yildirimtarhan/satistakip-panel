@@ -43,11 +43,37 @@ export default function SatisAnalizi() {
   };
 
   const exportToExcel = () => {
-    // Excel export logic
+    if (!data || !timeline.length) {
+      alert('Dışa aktarılacak veri yok.');
+      return;
+    }
+    const headers = ['Tarih', 'Satış (₺)', 'Komisyon (₺)', 'Kargo (₺)', 'Net Kazanç (₺)', 'İşlem Sayısı'];
+    const rows = timeline.map(t => [
+      t._id,
+      (t.toplamSatis ?? 0).toFixed(2),
+      (t.komisyonToplam ?? 0).toFixed(2),
+      (t.kargoToplam ?? 0).toFixed(2),
+      (t.netKar ?? 0).toFixed(2),
+      t.islemSayisi ?? 0
+    ]);
+    const csv = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `satis-analizi-${filters.startDate}-${filters.endDate}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   if (loading) return <div className="flex justify-center p-8">Yükleniyor...</div>;
   if (!data) return <div>Veri bulunamadı</div>;
+
+  const summary = data.summary || {};
+  const growth = data.growth || {};
+  const timeline = Array.isArray(data.timeline) ? data.timeline : [];
+  const marketplaceDistribution = Array.isArray(data.marketplaceDistribution) ? data.marketplaceDistribution : [];
+  const storeDistribution = Array.isArray(data.storeDistribution) ? data.storeDistribution : [];
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -120,29 +146,29 @@ export default function SatisAnalizi() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <KPICard 
           title="Toplam Ciro"
-          value={`₺${data.summary.toplamCiro.toLocaleString()}`}
-          trend={data.growth.ciro}
+          value={`₺${(summary.toplamCiro ?? 0).toLocaleString()}`}
+          trend={growth.ciro}
           icon={<DollarSign className="text-blue-600" size={24} />}
           color="blue"
         />
         <KPICard 
           title="Net Kar"
-          value={`₺${data.summary.netKar.toLocaleString()}`}
-          trend={data.summary.karMarji}
-          subtitle={`Kar Marjı: %${data.summary.karMarji}`}
+          value={`₺${(summary.netKar ?? 0).toLocaleString()}`}
+          trend={growth.kar != null ? growth.kar : (summary.karMarji != null ? Number(summary.karMarji) : undefined)}
+          subtitle={summary.karMarji != null ? `Kar Marjı: %${summary.karMarji}` : undefined}
           icon={<TrendingUp className="text-green-600" size={24} />}
           color="green"
         />
         <KPICard 
           title="Toplam İşlem"
-          value={data.summary.toplamIslem.toLocaleString()}
-          trend={data.growth.islem}
+          value={(summary.toplamIslem ?? 0).toLocaleString()}
+          trend={growth.islem}
           icon={<ShoppingCart className="text-purple-600" size={24} />}
           color="purple"
         />
         <KPICard 
           title="Toplam Ürün"
-          value={data.summary.toplamUrun.toLocaleString()}
+          value={(summary.toplamUrun ?? 0).toLocaleString()}
           icon={<Package className="text-orange-600" size={24} />}
           color="orange"
         />
@@ -154,7 +180,7 @@ export default function SatisAnalizi() {
         <div className="bg-white p-6 rounded-xl shadow-sm lg:col-span-2">
           <h3 className="text-lg font-semibold mb-4">Satış Trendi</h3>
           <ResponsiveContainer width="100%" height={300}>
-            <ComposedChart data={data.timeline}>
+            <ComposedChart data={timeline}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="_id" />
               <YAxis yAxisId="left" />
@@ -162,7 +188,7 @@ export default function SatisAnalizi() {
               <Tooltip formatter={(value) => `₺${value.toLocaleString()}`} />
               <Legend />
               <Bar yAxisId="left" dataKey="toplamSatis" name="Satış" fill="#3B82F6" />
-              <Line yAxisId="right" type="monotone" dataKey="netKazanc" name="Net Kazanç" stroke="#10B981" strokeWidth={2} />
+              <Line yAxisId="right" type="monotone" dataKey="netKar" name="Net Kazanç" stroke="#10B981" strokeWidth={2} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -173,7 +199,7 @@ export default function SatisAnalizi() {
           <ResponsiveContainer width="100%" height={300}>
             <PieChart>
               <Pie
-                data={data.marketplaceDistribution}
+                data={marketplaceDistribution}
                 cx="50%"
                 cy="50%"
                 labelLine={false}
@@ -183,7 +209,7 @@ export default function SatisAnalizi() {
                 dataKey="satis"
                 nameKey="_id"
               >
-                {data.marketplaceDistribution.map((entry, index) => (
+                {marketplaceDistribution.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                 ))}
               </Pie>
@@ -196,7 +222,7 @@ export default function SatisAnalizi() {
         <div className="bg-white p-6 rounded-xl shadow-sm">
           <h3 className="text-lg font-semibold mb-4">Mağaza Performansı</h3>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={data.storeDistribution}>
+            <BarChart data={storeDistribution}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="_id" />
               <YAxis />
@@ -225,13 +251,13 @@ export default function SatisAnalizi() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {data.timeline.map((item, idx) => (
+              {timeline.map((item, idx) => (
                 <tr key={idx} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap font-medium">{item._id}</td>
                   <td className="px-6 py-4 text-right">₺{item.toplamSatis?.toLocaleString()}</td>
                   <td className="px-6 py-4 text-right text-red-600">₺{item.komisyonToplam?.toLocaleString()}</td>
                   <td className="px-6 py-4 text-right text-red-600">₺{item.kargoToplam?.toLocaleString()}</td>
-                  <td className="px-6 py-4 text-right font-semibold text-green-600">₺{item.netKazanc?.toLocaleString()}</td>
+                  <td className="px-6 py-4 text-right font-semibold text-green-600">₺{(item.netKar ?? item.netKazanc)?.toLocaleString()}</td>
                   <td className="px-6 py-4 text-center">{item.islemSayisi}</td>
                 </tr>
               ))}

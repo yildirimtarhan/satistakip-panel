@@ -92,7 +92,7 @@ export default async function handler(req, res) {
     });
 
     return res.status(200).json({
-      marketplaceStats: Object.values(marketplaceStats),
+      marketplaceStats: Object.entries(marketplaceStats).map(([marketplace, s]) => ({ marketplace, ...s })),
       productStats: Object.entries(productStats).map(([name, s]) => ({ name, ...s })),
       dailyStats: Object.entries(dailyStats).map(([date, s]) => ({ date, ...s })),
     });

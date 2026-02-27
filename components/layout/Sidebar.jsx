@@ -4,6 +4,23 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { jwtDecode } from "jwt-decode";
 import { useEffect, useState } from "react";
+import { BarChart3, TrendingUp, Globe, ChevronDown, ChevronRight, Package, DollarSign, Box, Users, LayoutDashboard } from "lucide-react";
+
+const raporMenuItems = [
+  {
+    title: "Raporlar",
+    icon: BarChart3,
+    submenu: [
+      { title: "Özet Dashboard", href: "/dashboard/raporlar/ozet", icon: LayoutDashboard, description: "Tüm KPI özeti" },
+      { title: "Satış Analizi", href: "/dashboard/raporlar/satis-analizi", icon: TrendingUp, description: "Detaylı satış ve gelir raporları" },
+      { title: "Stok Analizi", href: "/dashboard/raporlar/stok-analizi", icon: Package, description: "Stok hareketleri ve değerleme" },
+      { title: "Kar / Zarar", href: "/dashboard/raporlar/kar-zarar", icon: DollarSign, description: "Gelir-gider ve karlılık analizi" },
+      { title: "Pazaryeri Raporu", href: "/dashboard/raporlar/pazaryeri-satis", icon: Globe, description: "Platform bazlı satış analizi" },
+      { title: "Ürün Performansı", href: "/dashboard/raporlar/urun-performansi", icon: Box, description: "En çok satan ve karlı ürünler" },
+      { title: "Cari Özet", href: "/dashboard/raporlar/cari-ozet", icon: Users, description: "Cari bazlı ciro ve bakiye" },
+    ],
+  },
+];
 
 const MenuItem = ({ href, icon, label }) => {
   const router = useRouter();
@@ -32,9 +49,26 @@ const SectionTitle = ({ children }) => (
   </div>
 );
 
+const SubmenuItem = ({ href, icon: Icon, label, description }) => {
+  const router = useRouter();
+  const active = router.pathname === href || router.pathname.startsWith(href + "/");
+  return (
+    <Link
+      href={href}
+      title={description}
+      className={`flex items-center gap-2 pl-8 pr-3 py-2 rounded-lg text-sm transition
+        ${active ? "bg-orange-50 text-orange-700" : "text-slate-600 hover:bg-slate-50"}`}
+    >
+      {Icon && <Icon size={16} className="shrink-0" />}
+      <span>{label}</span>
+    </Link>
+  );
+};
+
 export default function Sidebar() {
   const router = useRouter();
   const [role, setRole] = useState(null);
+  const [openRaporlar, setOpenRaporlar] = useState(false);
 
   useEffect(() => {
     try {
@@ -139,10 +173,38 @@ export default function Sidebar() {
   label="İade / İptaller"
 />
 
-        <MenuItem href="/dashboard/satis-raporlari" icon="📊" label="Satış Raporları" />
+        <SectionTitle>Raporlar</SectionTitle>
+        {raporMenuItems.map((menu) => (
+          <div key={menu.title}>
+            <button
+              type="button"
+              onClick={() => setOpenRaporlar((v) => !v)}
+              className={`flex items-center justify-between w-full gap-3 px-3 py-2 rounded-xl text-sm font-medium transition
+                ${openRaporlar ? "bg-slate-100 text-slate-800" : "text-slate-700 hover:bg-slate-100"}`}
+            >
+              <span className="flex items-center gap-3">
+                <menu.icon size={20} className="shrink-0" />
+                <span>{menu.title}</span>
+              </span>
+              {openRaporlar ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+            </button>
+            {openRaporlar && (
+              <div className="mt-1 space-y-0.5">
+                {menu.submenu.map((item) => (
+                  <SubmenuItem
+                    key={item.href}
+                    href={item.href}
+                    icon={item.icon}
+                    label={item.title}
+                    description={item.description}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
 
         <MenuItem href="/dashboard/teklifler" icon="📃" label="Teklif Formu" />
-        <MenuItem href="/dashboard/stok-raporu" icon="📊" label="Stok Raporu" />
 
         {role === "admin" && (
   <>

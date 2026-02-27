@@ -65,6 +65,8 @@ export default async function handler(req, res) {
         Number(it?.total) && Number(it?.total) > 0
           ? Number(it?.total)
           : quantity * unitPrice * (currency === "TRY" ? 1 : fxRate || 1);
+      // Dövizli satırda döviz tutarı (quantity * unitPrice para biriminde)
+      const lineTotalFCY = currency === "TRY" ? 0 : quantity * unitPrice;
 
       grandTotalTRY += Number(lineTotalTRY || 0);
 
@@ -75,6 +77,7 @@ export default async function handler(req, res) {
         currency,
         fxRate: currency === "TRY" ? 1 : fxRate || 1,
         total: Number(lineTotalTRY || 0),
+        totalFCY: currency === "TRY" ? 0 : Number(Number(lineTotalFCY).toFixed(2)),
       });
     }
 
@@ -99,11 +102,10 @@ const fxItem =
 const currency = fxItem?.currency || "TRY";
 const fxRate = Number(fxItem?.fxRate || 1);
 
-// ✅ EKLENDİ: Döviz toplam (FCY)
-// TRY ise FCY = TRY toplam mantıklı
+// Döviz toplamı: TRY ise FCY tutmuyoruz (0); dövizse kalemlerdeki totalFCY toplamı
 const grandTotalFCY =
   currency === "TRY"
-    ? Number(grandTotalTRY.toFixed(2))
+    ? 0
     : Number(
         cleanItems
           .filter((x) => (x.currency || "TRY") === currency)

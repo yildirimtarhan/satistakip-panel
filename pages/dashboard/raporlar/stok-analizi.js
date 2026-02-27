@@ -42,6 +42,15 @@ export default function StokAnalizi() {
   if (loading) return <div className="flex justify-center p-8">Yükleniyor...</div>;
   if (!data) return <div>Veri bulunamadı</div>;
 
+  const summary = data.summary || {};
+  const criticalStock = Array.isArray(data.criticalStock) ? data.criticalStock : [];
+  const topMovingProducts = Array.isArray(data.topMovingProducts) ? data.topMovingProducts : [];
+  const stockAging = Array.isArray(data.stockAging) ? data.stockAging : [];
+  const slowMovingProducts = Array.isArray(data.slowMovingProducts) ? data.slowMovingProducts : [];
+  const products = Array.isArray(data.products) ? data.products : [];
+  const categoryDistribution = Array.isArray(data.categoryDistribution) ? data.categoryDistribution : [];
+  const dailyMovements = Array.isArray(data.dailyMovements) ? data.dailyMovements : [];
+
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       {/* Header */}
@@ -70,7 +79,7 @@ export default function StokAnalizi() {
           className="border rounded-lg px-3 py-2"
         >
           <option value="">Tüm Kategoriler</option>
-          {data.categoryDistribution?.map(cat => (
+          {categoryDistribution.map(cat => (
             <option key={cat._id} value={cat._id}>{cat._id}</option>
           ))}
         </select>
@@ -96,26 +105,26 @@ export default function StokAnalizi() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <KPICard 
           title="Toplam Stok Değeri"
-          value={`₺${data.summary.toplamStokDegeri?.toLocaleString()}`}
+          value={`₺${(summary.toplamStokDegeri ?? 0).toLocaleString()}`}
           icon={<DollarSign className="text-blue-600" size={24} />}
           color="blue"
         />
         <KPICard 
           title="Potansiyel Gelir"
-          value={`₺${data.summary.toplamPotansiyelGelir?.toLocaleString()}`}
+          value={`₺${(summary.toplamPotansiyelGelir ?? 0).toLocaleString()}`}
           icon={<TrendingUp className="text-green-600" size={24} />}
           color="green"
         />
         <KPICard 
           title="Kritik Stok Sayısı"
-          value={data.summary.kritikStokSayisi || 0}
-          alert={data.summary.kritikStokSayisi > 0}
+          value={summary.kritikStokSayisi ?? 0}
+          alert={(summary.kritikStokSayisi ?? 0) > 0}
           icon={<AlertTriangle className="text-red-600" size={24} />}
           color="red"
         />
         <KPICard 
           title="Toplam Ürün Çeşidi"
-          value={data.summary.toplamUrun?.toLocaleString()}
+          value={(summary.toplamUrun ?? 0).toLocaleString()}
           icon={<Package className="text-purple-600" size={24} />}
           color="purple"
         />
@@ -128,7 +137,7 @@ export default function StokAnalizi() {
           <ResponsiveContainer width="100%" height={300}>
             <PieChart>
               <Pie
-                data={data.categoryDistribution}
+                data={categoryDistribution}
                 cx="50%"
                 cy="50%"
                 innerRadius={60}
@@ -139,7 +148,7 @@ export default function StokAnalizi() {
                 nameKey="_id"
                 label
               >
-                {data.categoryDistribution?.map((entry, index) => (
+                {categoryDistribution.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                 ))}
               </Pie>
@@ -153,7 +162,7 @@ export default function StokAnalizi() {
         <div className="bg-white p-6 rounded-xl shadow-sm">
           <h3 className="text-lg font-semibold mb-4">Günlük Stok Hareketleri</h3>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={data.dailyMovements}>
+            <BarChart data={dailyMovements}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="_id.tarih" />
               <YAxis />
@@ -166,7 +175,7 @@ export default function StokAnalizi() {
       </div>
 
       {/* Critical Stock Alert */}
-      {data.criticalStock?.length > 0 && (
+      {criticalStock.length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-6 mb-8">
           <div className="flex items-center gap-2 mb-4">
             <AlertTriangle className="text-red-600" />
@@ -184,12 +193,12 @@ export default function StokAnalizi() {
                 </tr>
               </thead>
               <tbody>
-                {data.criticalStock.map((item) => (
+                {criticalStock.map((item) => (
                   <tr key={item._id} className="border-b border-red-100">
-                    <td className="px-4 py-3 font-medium">{item.urunAdi}</td>
-                    <td className="px-4 py-3 text-gray-600">{item.sku}</td>
-                    <td className="px-4 py-3 text-center font-bold text-red-600">{item.stokMiktari}</td>
-                    <td className="px-4 py-3 text-center">{item.minStokSeviyesi}</td>
+                    <td className="px-4 py-3 font-medium">{item.urunAdi ?? "—"}</td>
+                    <td className="px-4 py-3 text-gray-600">{item.sku ?? "—"}</td>
+                    <td className="px-4 py-3 text-center font-bold text-red-600">{item.stokMiktari ?? 0}</td>
+                    <td className="px-4 py-3 text-center">{item.minStokSeviyesi ?? 0}</td>
                     <td className="px-4 py-3 text-center">
                       <span className="px-2 py-1 bg-red-200 text-red-800 rounded-full text-xs font-semibold">
                         Tükenmek Üzere
@@ -218,27 +227,94 @@ export default function StokAnalizi() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {data.topMovingProducts?.map((item, idx) => (
-                <tr key={idx} className="hover:bg-gray-50">
-                  <td className="px-6 py-4">
-                    <div className="font-medium">{item.urun.urunAdi}</div>
-                    <div className="text-sm text-gray-500">{item.urun.sku}</div>
-                  </td>
-                  <td className="px-6 py-4 text-right font-semibold">{item.toplamCikis}</td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="w-full bg-gray-200 rounded-full h-2 max-w-[100px] ml-auto">
-                      <div 
-                        className="bg-blue-600 h-2 rounded-full" 
-                        style={{ width: `${(item.toplamCikis / data.topMovingProducts[0].toplamCikis) * 100}%` }}
-                      ></div>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {topMovingProducts.map((item, idx) => {
+                const maxCikis = topMovingProducts[0]?.toplamCikis || 1;
+                const pct = maxCikis > 0 ? (item.toplamCikis / maxCikis) * 100 : 0;
+                return (
+                  <tr key={idx} className="hover:bg-gray-50">
+                    <td className="px-6 py-4">
+                      <div className="font-medium">{item.urun?.urunAdi ?? "—"}</div>
+                      <div className="text-sm text-gray-500">{item.urun?.sku ?? "—"}</div>
+                    </td>
+                    <td className="px-6 py-4 text-right font-semibold">{item.toplamCikis ?? 0}</td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="w-full bg-gray-200 rounded-full h-2 max-w-[100px] ml-auto">
+                        <div className="bg-blue-600 h-2 rounded-full" style={{ width: `${pct}%` }} />
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* Stok Yaşlandırma */}
+      {stockAging.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm overflow-hidden mb-8">
+          <div className="px-6 py-4 border-b">
+            <h3 className="text-lg font-semibold">Stok Yaşlandırma</h3>
+            <p className="text-sm text-gray-500 mt-1">En uzun süredir stokta olan ürünler (ilk 30)</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-2 text-left">Ürün</th>
+                  <th className="px-4 py-2 text-left">SKU</th>
+                  <th className="px-4 py-2 text-center">Stok</th>
+                  <th className="px-4 py-2 text-right">Stok Değeri</th>
+                  <th className="px-4 py-2 text-right">Gün Stokta</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {stockAging.map((item) => (
+                  <tr key={item._id} className="hover:bg-gray-50">
+                    <td className="px-4 py-2 font-medium">{item.urunAdi ?? "—"}</td>
+                    <td className="px-4 py-2 text-gray-600">{item.sku ?? "—"}</td>
+                    <td className="px-4 py-2 text-center">{item.stokMiktari ?? 0}</td>
+                    <td className="px-4 py-2 text-right">₺{(item.stokDegeri ?? 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}</td>
+                    <td className="px-4 py-2 text-right text-amber-600">{item.gunStokta ?? 0} gün</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Yavaş Hareket Eden Ürünler */}
+      {slowMovingProducts.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl overflow-hidden mb-8">
+          <div className="px-6 py-4 border-b border-amber-200">
+            <h3 className="text-lg font-semibold text-amber-900">Yavaş Hareket Eden Ürünler</h3>
+            <p className="text-sm text-amber-700 mt-1">Stok var ancak son dönemde çıkış hareketi olmayan ürünler</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-amber-100">
+                <tr>
+                  <th className="px-4 py-2 text-left">Ürün</th>
+                  <th className="px-4 py-2 text-left">SKU</th>
+                  <th className="px-4 py-2 text-center">Stok</th>
+                  <th className="px-4 py-2 text-right">Stok Değeri</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-amber-100">
+                {slowMovingProducts.map((item) => (
+                  <tr key={item._id} className="hover:bg-amber-50">
+                    <td className="px-4 py-2 font-medium">{item.urunAdi ?? "—"}</td>
+                    <td className="px-4 py-2 text-gray-600">{item.sku ?? "—"}</td>
+                    <td className="px-4 py-2 text-center">{item.stokMiktari ?? 0}</td>
+                    <td className="px-4 py-2 text-right">₺{(item.stokDegeri ?? 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Products Detail Table */}
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
@@ -267,28 +343,31 @@ export default function StokAnalizi() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {data.products?.map((item) => (
-                <tr key={item._id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4">
-                    <div className="font-medium">{item.urunAdi}</div>
-                    <div className="text-sm text-gray-500">{item.sku}</div>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{item.kategori}</td>
-                  <td className="px-6 py-4 text-center">
-                    <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                      item.stokMiktari <= item.minStokSeviyesi 
-                        ? 'bg-red-100 text-red-800' 
-                        : 'bg-green-100 text-green-800'
-                    }`}>
-                      {item.stokMiktari}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-right">₺{item.alisFiyati?.toLocaleString()}</td>
-                  <td className="px-6 py-4 text-right">₺{item.satisFiyati?.toLocaleString()}</td>
-                  <td className="px-6 py-4 text-right font-medium">₺{item.stokDegeri?.toLocaleString()}</td>
-                  <td className="px-6 py-4 text-right text-green-600">₺{item.karMarji?.toLocaleString()}</td>
-                </tr>
-              ))}
+              {products.map((item) => {
+                const stok = item.stokMiktari ?? 0;
+                const minStok = item.minStokSeviyesi ?? 0;
+                const isLow = minStok > 0 ? stok <= minStok : stok <= 0;
+                return (
+                  <tr key={item._id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4">
+                      <div className="font-medium">{item.urunAdi ?? item.sku ?? "—"}</div>
+                      <div className="text-sm text-gray-500">{item.sku ?? "—"}</div>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{item.kategori ?? "—"}</td>
+                    <td className="px-6 py-4 text-center">
+                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                        isLow ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"
+                      }`}>
+                        {stok}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">₺{(item.alisFiyati ?? 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}</td>
+                    <td className="px-6 py-4 text-right">₺{(item.satisFiyati ?? 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}</td>
+                    <td className="px-6 py-4 text-right font-medium">₺{(item.stokDegeri ?? 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}</td>
+                    <td className="px-6 py-4 text-right text-green-600">₺{(item.karMarji ?? 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
