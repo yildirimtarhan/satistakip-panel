@@ -434,32 +434,32 @@ const loadBrandsByCategory = async (categoryId) => {
                 />
               </div>
 
-              <div>
+              <div className="md:col-span-2">
                 <Label>Barkod</Label>
-                <div className="flex flex-wrap gap-2">
-                  <Input
-                    value={form.barcode}
-                    onChange={(e) => handleChange("barcode", e.target.value)}
-                    placeholder="13 haneli barkod veya boş bırakın (otomatik üretilir)"
-                    className="flex-1 min-w-0"
-                  />
+                <Input
+                  value={form.barcode}
+                  onChange={(e) => handleChange("barcode", e.target.value)}
+                  placeholder="13 haneli barkod veya boş bırakın (otomatik üretilir)"
+                  className="w-full mb-2"
+                />
+                <div className="flex gap-2">
                   <Button
                     type="button"
                     variant="outline"
                     onClick={() => handleChange("barcode", generateInternalBarcode())}
-                    className="shrink-0"
-                    title="Barkodsuz ürünler için otomatik barkod üret (EAN-13 uyumlu)"
+                    className="flex-1 min-h-[44px] touch-manipulation"
+                    title="Otomatik barkod üret"
                   >
-                    🔢 Üret
+                    🔢 Barkod üret
                   </Button>
                   <Button
                     type="button"
                     variant="outline"
                     onClick={() => setShowBarcodeScanner(true)}
-                    className="shrink-0"
-                    title="Kamera ile barkod/QR tara (mobil uyumlu)"
+                    className="flex-1 min-h-[44px] touch-manipulation"
+                    title="Kamera ile tara"
                   >
-                    📷 Tara
+                    📷 Kamera ile tara
                   </Button>
                 </div>
                 <p className="text-xs text-slate-500 mt-1">Boş bırakırsanız kayıtta otomatik barkod atanır.</p>
