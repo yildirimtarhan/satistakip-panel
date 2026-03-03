@@ -30,6 +30,7 @@
     "dotenv": "^17.2.4",
     "exceljs": "^4.4.0",
     "file-saver": "^2.0.5",
+    "html5-qrcode": "^2.3.8",
     "formidable": "^3.5.4",
     "js-cookie": "^3.0.5",
     "jsonwebtoken": "^9.0.3",

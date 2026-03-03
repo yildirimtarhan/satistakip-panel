@@ -17,6 +17,8 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import CloudinaryUploader from "@/components/CloudinaryUploader";
+import BarcodeScanner from "@/components/BarcodeScanner";
+import { generateInternalBarcode } from "@/lib/barcodeGenerator";
 import { N11_SHIPMENT_TEMPLATE_OPTIONS, N11_SHIPMENT_TEMPLATE_CUSTOM_KEY } from "@/constants/n11ShipmentTemplates";
 
 export default function NewProductPage() {
@@ -24,6 +26,7 @@ export default function NewProductPage() {
 
   const [activeTab, setActiveTab] = useState("general");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
 
   // Ana Form State
   const [form, setForm] = useState({
@@ -243,11 +246,13 @@ const loadBrandsByCategory = async (categoryId) => {
 
       const totalStockFromVariants = normalizedVariants.reduce((sum, v) => sum + (v.stock || 0), 0);
 
+      const barcodeToUse = (form.barcode && String(form.barcode).trim()) || generateInternalBarcode();
+
       const payload = {
         // GENEL
         name: form.name,
         sku: form.sku,
-        barcode: form.barcode,
+        barcode: barcodeToUse,
         modelCode: form.modelCode,
         brand: form.brand,
         category: form.category,
@@ -431,12 +436,43 @@ const loadBrandsByCategory = async (categoryId) => {
 
               <div>
                 <Label>Barkod</Label>
-                <Input
-                  value={form.barcode}
-                  onChange={(e) => handleChange("barcode", e.target.value)}
-                  placeholder="13 haneli barkod"
-                />
+                <div className="flex flex-wrap gap-2">
+                  <Input
+                    value={form.barcode}
+                    onChange={(e) => handleChange("barcode", e.target.value)}
+                    placeholder="13 haneli barkod veya boş bırakın (otomatik üretilir)"
+                    className="flex-1 min-w-0"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => handleChange("barcode", generateInternalBarcode())}
+                    className="shrink-0"
+                    title="Barkodsuz ürünler için otomatik barkod üret (EAN-13 uyumlu)"
+                  >
+                    🔢 Üret
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowBarcodeScanner(true)}
+                    className="shrink-0"
+                    title="Kamera ile barkod/QR tara (mobil uyumlu)"
+                  >
+                    📷 Tara
+                  </Button>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">Boş bırakırsanız kayıtta otomatik barkod atanır.</p>
               </div>
+              {showBarcodeScanner && (
+                <BarcodeScanner
+                  onScan={(decoded) => {
+                    handleChange("barcode", decoded);
+                    setShowBarcodeScanner(false);
+                  }}
+                  onClose={() => setShowBarcodeScanner(false)}
+                />
+              )}
 
               <div>
                 <Label>Model Kodu</Label>

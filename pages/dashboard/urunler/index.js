@@ -3,8 +3,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/router";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import BarcodeScanner from "@/components/BarcodeScanner";
 
 // Küçük helper: Pazaryeri status badge
 const StatusBadge = ({ label, status }) => {
@@ -28,10 +30,12 @@ const StatusBadge = ({ label, status }) => {
 };
 
 export default function UrunlerListPage() {
+  const router = useRouter();
   const [products, setProducts] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
 
   // Ürünleri çek
   const fetchProducts = async () => {
@@ -123,13 +127,31 @@ export default function UrunlerListPage() {
 
       {/* Arama Alanı */}
       <div className="mb-4 flex flex-wrap gap-3 items-center">
-        <div className="max-w-sm w-full">
+        <div className="flex gap-2 max-w-sm w-full flex-1">
           <Input
             placeholder="Ürün adı, SKU veya barkod ara..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setShowBarcodeScanner(true)}
+            title="Kamera ile barkod/QR tara"
+          >
+            📷
+          </Button>
         </div>
+        {showBarcodeScanner && (
+          <BarcodeScanner
+            onScan={(decoded) => {
+              setSearch(decoded);
+              setShowBarcodeScanner(false);
+            }}
+            onClose={() => setShowBarcodeScanner(false)}
+          />
+        )}
         {loading && (
           <span className="text-xs text-slate-500">
             Liste yenileniyor...

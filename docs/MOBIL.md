@@ -42,3 +42,14 @@ Tarayıcıda (Chrome/Safari) “Ana ekrana ekle” / “Add to Home Screen” il
 | Safe area | `globals.css` + `viewport-fit=cover` (çentikli ekran) |
 
 Mobil sürüm mevcut panelin responsive hâli ve PWA desteğiyle çalışır; ayrı bir native uygulama yoktur.
+
+---
+
+## 5. Barkod / QR kod ile ürün okuma ve ekleme (kamera)
+
+Cep telefonu kamerası ile barkod ve QR kod okunabilir:
+
+- **Yeni Ürün** (`/dashboard/urunler/yeni`): Barkod alanının yanındaki **📷 Tara** butonuna basın → kamera açılır → barkod/QR’ı tutun → okunan değer barkod alanına yazılır.
+- **Ürünler listesi** (`/dashboard/urunler`): Arama kutusunun yanındaki **📷** butonuna basın → kamera açılır → okunan değer arama kutusuna yazılır (ürün adı, SKU veya barkod ile filtreler).
+
+**Gereksinimler:** HTTPS, tarayıcıda kamera izni. Mobilde “Ana ekrana ekle” ile açılan PWA’da da çalışır.
