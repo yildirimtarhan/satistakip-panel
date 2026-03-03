@@ -1,13 +1,17 @@
-export default async function handler(req, res) {
-  const apiKey = process.env.TRENDYOL_API_KEY;
-  const apiSecret = process.env.TRENDYOL_API_SECRET;
-  const supplierId = process.env.TRENDYOL_SUPPLIER_ID;
+import { ordersListUrl } from "@/lib/marketplaces/trendyolConfig";
+import { getTrendyolCredentials } from "@/lib/getTrendyolCredentials";
 
+export default async function handler(req, res) {
+  const creds = await getTrendyolCredentials(req);
+  if (!creds) {
+    return res.status(400).json({ message: "Trendyol API bilgileri eksik. API Ayarları → Trendyol." });
+  }
+  const { supplierId, apiKey, apiSecret } = creds;
   const credentials = Buffer.from(`${apiKey}:${apiSecret}`).toString("base64");
 
   try {
     const response = await fetch(
-      `https://stageapi.trendyol.com/stagesapigw/suppliers/${supplierId}/orders?status=Created`,
+      `${ordersListUrl(supplierId)}?status=Created`,
       {
         method: "GET",
         headers: {

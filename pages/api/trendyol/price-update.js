@@ -1,37 +1,29 @@
-// 📁 /pages/api/trendyol/price-update.js
+// 📁 /pages/api/trendyol/price-update.js — Güncel API: POST /inventory/sellers/{id}/products/price-and-inventory
+import { priceAndInventoryUrl } from "@/lib/marketplaces/trendyolConfig";
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ ok: false, message: "Sadece POST" });
   }
 
   try {
-    const base = process.env.TRENDYOL_BASE_URL || "https://stageapi.trendyol.com/stagesapigw";
-    const supplierId = process.env.TRENDYOL_SUPPLIER_ID;
-    const apiKey = process.env.TRENDYOL_API_KEY;
-    const apiSecret = process.env.TRENDYOL_API_SECRET;
-
-    if (!base || !supplierId || !apiKey || !apiSecret) {
-      return res.status(500).json({ ok: false, message: "Trendyol env eksik" });
+    const { getTrendyolCredentials } = await import("@/lib/getTrendyolCredentials");
+    const creds = await getTrendyolCredentials(req);
+    if (!creds) {
+      return res.status(400).json({ ok: false, message: "Trendyol API bilgileri eksik. API Ayarları → Trendyol." });
     }
-
+    const { supplierId, apiKey, apiSecret } = creds;
     const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString("base64");
 
     /**
-     * Beklenen body:
-     * {
-     *   items: [
-     *     { barcode: "1234567890001", quantity: 12, listPrice: 120.0, salePrice: 109.9 },
-     *     ...
-     *   ]
-     * }
-     * Trendyol endpoint: POST /suppliers/{supplierId}/products/price-and-inventory
+     * body: { items: [ { barcode, quantity, listPrice, salePrice }, ... ] }
      */
     const { items } = req.body || {};
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ ok: false, message: "items[] gereklidir" });
     }
 
-    const url = `${base}/suppliers/${supplierId}/products/price-and-inventory`;
+    const url = priceAndInventoryUrl(supplierId);
     const resp = await fetch(url, {
       method: "POST",
       headers: {

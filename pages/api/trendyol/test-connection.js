@@ -1,26 +1,29 @@
-// 📄 /pages/api/trendyol/test-connection.js
-export default async function handler(req, res) {
-  const { TRENDYOL_SUPPLIER_ID, TRENDYOL_API_KEY, TRENDYOL_API_SECRET, TRENDYOL_BASE_URL, TRENDYOL_USER_AGENT } = process.env;
+// 📄 /pages/api/trendyol/test-connection.js — Güncel API: apigw / stageapigw
+import { ordersListUrl } from "@/lib/marketplaces/trendyolConfig";
+import { getTrendyolCredentials } from "@/lib/getTrendyolCredentials";
 
-  // Ortam değişkenleri kontrolü
-  if (!TRENDYOL_SUPPLIER_ID || !TRENDYOL_API_KEY || !TRENDYOL_API_SECRET || !TRENDYOL_BASE_URL || !TRENDYOL_USER_AGENT) {
+export default async function handler(req, res) {
+  const creds = await getTrendyolCredentials(req);
+  if (!creds) {
     return res.status(400).json({
       success: false,
-      message: "Trendyol ortam değişkenleri eksik. Lütfen .env.local veya Render ayarlarını kontrol edin."
+      message: "Trendyol API bilgileri eksik. API Ayarları → Trendyol bölümünden girin (veya .env tanımlayın)."
     });
   }
+  const { supplierId, apiKey, apiSecret } = creds;
+  const userAgent = process.env.TRENDYOL_USER_AGENT || "SatisTakip/1.0";
 
-  const startDate = Date.now() - 7 * 24 * 60 * 60 * 1000; // son 7 gün
+  const startDate = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const endDate = Date.now();
-  const url = `${TRENDYOL_BASE_URL}/suppliers/${TRENDYOL_SUPPLIER_ID}/orders?startDate=${startDate}&endDate=${endDate}&size=1`;
+  const url = `${ordersListUrl(supplierId)}?startDate=${startDate}&endDate=${endDate}&size=1`;
 
   try {
-    const auth = Buffer.from(`${TRENDYOL_API_KEY}:${TRENDYOL_API_SECRET}`).toString("base64");
+    const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString("base64");
 
     const response = await fetch(url, {
       headers: {
         "Authorization": `Basic ${auth}`,
-        "User-Agent": TRENDYOL_USER_AGENT,
+        "User-Agent": userAgent,
         "Content-Type": "application/json"
       },
     });

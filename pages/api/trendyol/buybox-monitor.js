@@ -1,5 +1,6 @@
 // 📁 /pages/api/trendyol/buybox-monitor.js
 import clientPromise from "@/lib/mongodb";
+import { priceAndInventoryUrl } from "@/lib/marketplaces/trendyolConfig";
 
 function roundPriceTL(x) {
   // Pazaryeri alışkanlığı: .99 ile bitir, istersen değiştir.
@@ -101,8 +102,13 @@ export default async function handler(req, res) {
     // Auto-update aktif ise Trendyol'a push et
     let pushResp = null;
     if (autoUpdate) {
-      const url = `${process.env.TRENDYOL_BASE_URL || "https://stageapi.trendyol.com/stagesapigw"}/suppliers/${process.env.TRENDYOL_SUPPLIER_ID}/products/price-and-inventory`;
-      const auth = Buffer.from(`${process.env.TRENDYOL_API_KEY}:${process.env.TRENDYOL_API_SECRET}`).toString("base64");
+      const { getTrendyolCredentials } = await import("@/lib/getTrendyolCredentials");
+      const creds = await getTrendyolCredentials(req);
+      if (!creds) {
+        return res.status(400).json({ ok: false, message: "Trendyol API bilgileri eksik. API Ayarları → Trendyol." });
+      }
+      const url = priceAndInventoryUrl(creds.supplierId);
+      const auth = Buffer.from(`${creds.apiKey}:${creds.apiSecret}`).toString("base64");
       const payload = {
         items: results.map((r) => ({
           barcode: r.barcode,

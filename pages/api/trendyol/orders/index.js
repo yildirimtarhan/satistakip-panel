@@ -1,43 +1,37 @@
 // 📄 /pages/api/trendyol/orders/index.js
+// Güncel API: https://developers.trendyol.com — GET /order/sellers/{sellerId}/orders
+import { ordersListUrl } from "@/lib/marketplaces/trendyolConfig";
+import { getTrendyolCredentials } from "@/lib/getTrendyolCredentials";
+
 export default async function handler(req, res) {
   try {
-    const supplierId = process.env.TRENDYOL_SUPPLIER_ID;
-    const apiKey = process.env.TRENDYOL_API_KEY;
-    const apiSecret = process.env.TRENDYOL_API_SECRET;
-    const baseUrl = process.env.TRENDYOL_BASE_URL;
-    const userAgent = process.env.TRENDYOL_USER_AGENT || "satistakip_online";
-
-    if (!supplierId || !apiKey || !apiSecret || !baseUrl) {
-      return res.status(500).json({
+    const creds = await getTrendyolCredentials(req);
+    if (!creds) {
+      return res.status(400).json({
         success: false,
-        message: "Trendyol ortam değişkenleri eksik.",
+        message: "Trendyol API bilgileri eksik. API Ayarları → Trendyol bölümünden girin.",
       });
     }
+    const { supplierId, apiKey, apiSecret } = creds;
+    const userAgent = process.env.TRENDYOL_USER_AGENT || "satistakip_online";
+    const storeFrontCode = process.env.TRENDYOL_STORE_FRONT_CODE;
 
     const now = Date.now();
     const startDate = now - 1000 * 60 * 60 * 24 * 3; // Son 3 gün
     const endDate = now;
-    const status = "Created";
 
-    const url = `${baseUrl}/suppliers/${supplierId}/orders?status=${status}&startDate=${startDate}&endDate=${endDate}&size=50`;
+    const url = `${ordersListUrl(supplierId)}?status=Created&startDate=${startDate}&endDate=${endDate}&size=50&orderByField=PackageLastModifiedDate&orderByDirection=DESC`;
 
-    // ✅ Gelişmiş Header Yapısı (Cloudflare korumasını aşmak için)
     const authToken = Buffer.from(`${apiKey}:${apiSecret}`).toString("base64");
-
     const headers = {
       "User-Agent": userAgent,
       "Authorization": `Basic ${authToken}`,
       "Accept": "application/json, text/plain, */*",
-      "Accept-Encoding": "gzip, deflate, br",
-      "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
-      "Origin": "https://stagepartner.trendyol.com",
-      "Referer": "https://stagepartner.trendyol.com/",
-      "Connection": "keep-alive",
-      "DNT": "1",
-      "Cache-Control": "no-cache",
+      "Content-Type": "application/json",
     };
+    if (storeFrontCode) headers["storeFrontCode"] = storeFrontCode;
 
-    console.log("📡 Trendyol Orders API çağrısı:", url);
+    console.log("📡 Trendyol Orders API:", url);
 
     const response = await fetch(url, { method: "GET", headers });
 
@@ -46,13 +40,24 @@ export default async function handler(req, res) {
       console.error("❌ Trendyol Orders API hatası:", text);
       return res.status(response.status).json({
         success: false,
-        message: "Trendyol API erişimi başarısız. IP engeli olabilir veya test ortamı kapalı.",
+        message: "Trendyol API erişimi başarısız.",
         error: text,
       });
     }
 
     const data = await response.json();
-    return res.status(200).json({ success: true, orders: data });
+    // Yeni API: { content: [paketler], totalElements, totalPages, page, size }
+    const raw = data.content ?? data.orders ?? (Array.isArray(data) ? data : []);
+    const orders = raw.map((p) => ({
+      id: p.orderNumber ?? p.id,
+      customerName: [p.customerFirstName, p.customerLastName].filter(Boolean).join(" ") || p.customerEmail || "—",
+      productName: p.lines?.[0]?.productName ?? p.lines?.[0]?.productCode ?? "—",
+      status: p.status ?? p.shipmentPackageStatus ?? "—",
+      createdDate: p.orderDate ? new Date(p.orderDate).toISOString() : p.createdDate,
+      salePrice: p.totalPrice ?? p.packageGrossAmount ?? p.grossAmount,
+      purchasePrice: null,
+    }));
+    return res.status(200).json({ success: true, orders, totalElements: data.totalElements, totalPages: data.totalPages, page: data.page });
   } catch (error) {
     console.error("🔥 Trendyol Orders API hata:", error);
     return res.status(500).json({

@@ -10,12 +10,14 @@ export default async function handler(req, res) {
     return res.status(400).json({ success: false, message: 'orderId eksik.' });
   }
 
-  const supplierId = process.env.TRENDYOL_SUPPLIER_ID;
-  const apiKey = process.env.TRENDYOL_API_KEY;
-  const apiSecret = process.env.TRENDYOL_API_SECRET;
-
-  const authHeader = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64');
-  const baseUrl = 'https://stageapi.trendyol.com/stagesapigw';
+  const { getTrendyolCredentials } = await import("@/lib/getTrendyolCredentials");
+  const { shipmentPackagesUrl } = await import("@/lib/marketplaces/trendyolConfig");
+  const creds = await getTrendyolCredentials(req);
+  if (!creds) {
+    return res.status(400).json({ success: false, message: "Trendyol API bilgileri eksik. API Ayarları → Trendyol." });
+  }
+  const authHeader = Buffer.from(`${creds.apiKey}:${creds.apiSecret}`).toString("base64");
+  const url = shipmentPackagesUrl(creds.supplierId);
 
   const shipmentData = {
     lines: [
@@ -29,17 +31,14 @@ export default async function handler(req, res) {
   };
 
   try {
-    const response = await fetch(
-      `${baseUrl}/suppliers/${supplierId}/shipment-packages`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Basic ${authHeader}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(shipmentData)
-      }
-    );
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${authHeader}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(shipmentData)
+    });
 
     const result = await response.json();
 

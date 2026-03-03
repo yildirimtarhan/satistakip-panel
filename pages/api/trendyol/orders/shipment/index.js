@@ -4,10 +4,14 @@ export default async function handler(req, res) {
 
   try {
     const { orderNumber, cargoTrackingNumber, cargoCompanyId, items } = req.body;
-    const { TRENDYOL_SUPPLIER_ID, TRENDYOL_API_KEY, TRENDYOL_API_SECRET, TRENDYOL_API_BASE } = process.env;
-    const auth = Buffer.from(`${TRENDYOL_API_KEY}:${TRENDYOL_API_SECRET}`).toString("base64");
-
-    const url = `${TRENDYOL_API_BASE}/suppliers/${TRENDYOL_SUPPLIER_ID}/shipment-packages`;
+    const { getTrendyolCredentials } = await import("@/lib/getTrendyolCredentials");
+    const { shipmentPackagesUrl } = await import("@/lib/marketplaces/trendyolConfig");
+    const creds = await getTrendyolCredentials(req);
+    if (!creds) {
+      return res.status(400).json({ message: "Trendyol API bilgileri eksik. API Ayarları → Trendyol." });
+    }
+    const auth = Buffer.from(`${creds.apiKey}:${creds.apiSecret}`).toString("base64");
+    const url = shipmentPackagesUrl(creds.supplierId);
 
     const body = {
       orderNumber,

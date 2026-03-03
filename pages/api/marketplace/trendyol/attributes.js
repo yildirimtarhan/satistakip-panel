@@ -16,23 +16,20 @@ export default async function handler(req, res) {
       });
     }
 
-    const SUPPLIER_ID = process.env.TRENDYOL_SUPPLIER_ID;
-    const API_KEY = process.env.TRENDYOL_API_KEY;
-    const API_SECRET = process.env.TRENDYOL_API_SECRET;
-
-    if (!SUPPLIER_ID || !API_KEY || !API_SECRET) {
-      return res.status(500).json({
+    const { getTrendyolCredentials } = await import("@/lib/getTrendyolCredentials");
+    const { categoryAttributesUrl } = await import("@/lib/marketplaces/trendyolConfig");
+    const creds = await getTrendyolCredentials(req);
+    if (!creds) {
+      return res.status(400).json({
         success: false,
-        message: "Trendyol API bilgileri eksik!"
+        message: "Trendyol API bilgileri eksik. API Ayarları → Trendyol."
       });
     }
 
-    const URL = `https://api.trendyol.com/sapigw/product-categories/${categoryId}/attributes`;
-
+    const URL = categoryAttributesUrl(categoryId);
     const response = await axios.get(URL, {
       headers: {
-        Authorization:
-          "Basic " + Buffer.from(API_KEY + ":" + API_SECRET).toString("base64"),
+        Authorization: "Basic " + Buffer.from(creds.apiKey + ":" + creds.apiSecret).toString("base64"),
       },
     });
 

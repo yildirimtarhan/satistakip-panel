@@ -6,6 +6,7 @@ import jwt from "jsonwebtoken";
 // Pazaryeri servisleri (dosyaları daha önce oluşturmuştuk)
 import { n11CreateProduct } from "@/lib/marketplaces/n11Service";
 import { trendyolCreateProduct } from "@/lib/marketplaces/trendyolService";
+import { getTrendyolCredentials } from "@/lib/getTrendyolCredentials";
 import { hbCreateProduct } from "@/lib/marketplaces/hbService";
 import { amazonCreateProduct } from "@/lib/marketplaces/amazonService";
 import { pazaramaCreateProduct } from "@/lib/marketplaces/pazaramaService";
@@ -193,7 +194,8 @@ export default async function handler(req, res) {
     // ---------------- TRENDYOL ----------------
     if (sendTo.trendyol) {
       try {
-        const result = await trendyolCreateProduct(newProduct);
+        const tyCreds = await getTrendyolCredentials(req);
+        const result = await trendyolCreateProduct(newProduct, tyCreds || undefined);
         marketplaceResults.trendyol = {
           status: result.success ? "Success" : "Error",
           productId: result.productId || null,

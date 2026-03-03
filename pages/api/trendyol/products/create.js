@@ -2,6 +2,7 @@ import jwt from "jsonwebtoken";
 import axios from "axios";
 import dbConnect from "@/lib/dbConnect";
 import Settings from "@/models/Settings";
+import { productCreateUrl } from "@/lib/marketplaces/trendyolConfig";
 
 async function getTrendyolSettings({ companyId, userId }) {
   await dbConnect();
@@ -33,8 +34,8 @@ export default async function handler(req, res) {
     const { product } = req.body;
     if (!product) return res.status(400).json({ success: false, message: "product verisi zorunlu" });
 
-    // Basic Auth
     const credentials = Buffer.from(`${cfg.apiKey}:${cfg.apiSecret}`).toString("base64");
+    const createUrl = productCreateUrl(cfg.supplierId);
 
     const item = {
       barcode: product.barcode,
@@ -55,7 +56,7 @@ export default async function handler(req, res) {
     };
 
     const response = await axios.post(
-      `https://apigw.trendyol.com/integration/product/sellers/${cfg.supplierId}/products`,
+      createUrl,
       { items: [item] },
       {
         headers: {

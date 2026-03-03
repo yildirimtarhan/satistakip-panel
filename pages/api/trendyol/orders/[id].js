@@ -1,35 +1,37 @@
 // pages/api/trendyol/orders/[id].js
-
-import axios from "axios";
+// Güncel API: orderNumber ile GET /order/sellers/{sellerId}/orders?orderNumber=...
+import { orderDetailUrl } from "@/lib/marketplaces/trendyolConfig";
+import { getTrendyolCredentials } from "@/lib/getTrendyolCredentials";
 
 export default async function handler(req, res) {
   const { id } = req.query;
 
-  const baseUrl = process.env.TRENDYOL_API_BASE;
-  const supplierId = process.env.TRENDYOL_SUPPLIER_ID;
-  const apiKey = process.env.TRENDYOL_API_KEY;
-  const apiSecret = process.env.TRENDYOL_API_SECRET;
+  const creds = await getTrendyolCredentials(req);
+  if (!creds) {
+    return res.status(400).json({ error: "Trendyol API bilgileri eksik. API Ayarları → Trendyol." });
+  }
+  const { supplierId, apiKey, apiSecret } = creds;
 
   const authHeader = Buffer.from(`${apiKey}:${apiSecret}`).toString("base64");
+  const url = orderDetailUrl(supplierId, id);
 
   try {
-    const trendyolRes = await axios.get(`${baseUrl}/orders/${id}`, {
+    const response = await fetch(url, {
       headers: {
         "Authorization": `Basic ${authHeader}`,
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
+        "User-Agent": process.env.TRENDYOL_USER_AGENT || "SatisTakip/1.0",
       },
     });
+    const data = await response.json();
+    if (!response.ok) return res.status(response.status).json({ error: "Trendyol API hatası", detail: data });
 
-    return res.status(200).json(trendyolRes.data);
+    // API cevabı: { content: [paket1, ...], totalElements, ... } — tek sipariş için content[0]
+    const single = Array.isArray(data.content) && data.content.length ? data.content[0] : data;
+    return res.status(200).json(single);
   } catch (error) {
-    const status = error.response?.status || 500;
-    const detail = error.response?.data || error.message;
-
-    console.error("🔥 Trendyol API Hatası:", detail);
-    return res.status(status).json({ error: "Trendyol API hatası", detail });
+    console.error("🔥 Trendyol API Hatası:", error.message);
+    return res.status(500).json({ error: "Trendyol API hatası", detail: error.message });
   }
 }
