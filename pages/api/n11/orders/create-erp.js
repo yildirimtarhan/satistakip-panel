@@ -7,6 +7,7 @@ import N11Order from "@/models/N11Order";
 import Cari from "@/models/Cari";
 import Product from "@/models/Product";
 import Transaction from "@/models/Transaction";
+import { createPazaryeriBorcAndUpdateBakiye } from "@/lib/pazaryeriCari";
 import { getN11OrderDetailByOrderNumber } from "@/lib/marketplaces/n11Service";
 
 function normalizePhoneTR(phone = "") {
@@ -221,6 +222,7 @@ export default async function handler(req, res) {
 
       const totalTRY = subTotal + vatTotal;
 
+      const saleDate = parseN11Date(orderDoc.raw?.createDate) || new Date();
       const tx = await Transaction.create([{
         userId: userIdStr,
         companyId: companyIdStr,
@@ -229,7 +231,7 @@ export default async function handler(req, res) {
         saleNo,
         accountId: cari._id,
         accountName: String(cari.ad || "").trim() || extractBuyerFromOrderDoc(orderDoc).fullName,
-        date: parseN11Date(orderDoc.raw?.createDate) || new Date(),
+        date: saleDate,
         paymentMethod: "open",
         note: "N11 siparişinden satış",
         currency: "TRY",
@@ -239,6 +241,20 @@ export default async function handler(req, res) {
         direction: "borc",
         amount: totalTRY,
       }], { session }).then((arr) => arr[0]);
+
+      // Pazaryeri muhasebe: N11 carisine borç (platformun size borcu)
+      await createPazaryeriBorcAndUpdateBakiye({
+        pazaryeriAd: "N11",
+        companyIdObj,
+        companyIdStr,
+        userIdStr,
+        userIdObj,
+        saleNo,
+        totalTRY,
+        note: `N11 sipariş ${orderDoc.orderNumber || orderDoc.orderId}`,
+        date: saleDate,
+        session,
+      });
 
       // stok düş (sadece eşleşen ürünlerde)
       for (const i of normalizedItems) {

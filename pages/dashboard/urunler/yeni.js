@@ -36,6 +36,7 @@ export default function NewProductPage() {
     description: "",
     images: [],
 
+    stock: "",
     priceTl: "",
     discountPriceTl: "",
     vatRate: 20,
@@ -71,6 +72,8 @@ export default function NewProductPage() {
       idefix: false,
       pttavm: false,
     },
+
+    variants: [],
   });
 
   // N11 çok seviyeli kategori seçim state'leri
@@ -177,6 +180,40 @@ const loadBrandsByCategory = async (categoryId) => {
     }));
   };
 
+  const addVariant = () => {
+    setForm((prev) => ({
+      ...prev,
+      variants: [
+        ...prev.variants,
+        {
+          color: "",
+          size: "",
+          barcode: "",
+          sku: "",
+          stock: 0,
+          priceTl: "",
+          images: [],
+        },
+      ],
+    }));
+  };
+
+  const removeVariant = (index) => {
+    setForm((prev) => ({
+      ...prev,
+      variants: prev.variants.filter((_, i) => i !== index),
+    }));
+  };
+
+  const updateVariant = (index, field, value) => {
+    setForm((prev) => {
+      const next = [...(prev.variants || [])];
+      if (!next[index]) return prev;
+      next[index] = { ...next[index], [field]: value };
+      return { ...prev, variants: next };
+    });
+  };
+
   // 🔥 Backend'e giden gerçek payload
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -194,6 +231,18 @@ const loadBrandsByCategory = async (categoryId) => {
         return;
       }
 
+      const normalizedVariants = (form.variants || []).map((v) => ({
+        color: String(v.color || ""),
+        size: String(v.size || ""),
+        barcode: String(v.barcode || ""),
+        sku: String(v.sku || ""),
+        stock: Number(v.stock ?? 0),
+        priceTl: Number(v.priceTl ?? 0),
+        images: Array.isArray(v.images) ? v.images.filter((x) => x && String(x).trim()) : [],
+      }));
+
+      const totalStockFromVariants = normalizedVariants.reduce((sum, v) => sum + (v.stock || 0), 0);
+
       const payload = {
         // GENEL
         name: form.name,
@@ -205,8 +254,8 @@ const loadBrandsByCategory = async (categoryId) => {
         description: form.description,
         images: form.images.filter((x) => x && x.trim() !== ""),
 
-        // STOK & FİYAT
-        stock: 0,
+        // STOK & FİYAT (varyant varsa toplam stok da gönderilir)
+        stock: normalizedVariants.length > 0 ? totalStockFromVariants : Number(form.stock ?? 0),
         priceTl: Number(form.priceTl || 0),
         discountPriceTl: Number(form.discountPriceTl || 0),
         vatRate: Number(form.vatRate || 20),
@@ -267,6 +316,9 @@ const loadBrandsByCategory = async (categoryId) => {
         },
 
         sendTo: form.sendTo,
+
+        // Varyantlar (pazaryeri uyumlu: renk, beden, barkod, stok, fiyat, görsel)
+        variants: normalizedVariants,
       };
 
       console.log("🟦 PRODUCT ADD BODY:", payload);
@@ -348,9 +400,10 @@ const loadBrandsByCategory = async (categoryId) => {
         }}
       >
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid grid-cols-4 mb-4">
+          <TabsList className="grid grid-cols-5 mb-4">
             <TabsTrigger value="general">Genel Bilgiler</TabsTrigger>
             <TabsTrigger value="stockPrice">Stok &amp; Fiyat</TabsTrigger>
+            <TabsTrigger value="variants">Varyantlar</TabsTrigger>
             <TabsTrigger value="marketplaces">Pazaryeri Ayarları</TabsTrigger>
             <TabsTrigger value="sync">Pazaryerlerine Gönder</TabsTrigger>
           </TabsList>
@@ -423,23 +476,20 @@ const loadBrandsByCategory = async (categoryId) => {
                 />
               </div>
 
-              {/* 🔥 Cloudinary + Çoklu URL Destekli Görsel Alanı */}
+              {/* Görsel: Hem yükleme hem URL — pazaryeri standartlarına uygun */}
               <div className="md:col-span-2 space-y-3">
                 <Label>Ürün Görselleri</Label>
-
-                {/* Cloudinary Uploader */}
+                <p className="text-sm text-gray-500">
+                  Görsel yükleyin veya doğrudan URL girin (pazaryerleri genelde en az 1 görsel ister; ilk görsel kapak olur).
+                </p>
                 <CloudinaryUploader
                   images={form.images}
                   setImages={(imgs) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      images: imgs,
-                    }))
+                    setForm((prev) => ({ ...prev, images: imgs }))
                   }
                 />
-
                 <Label className="text-sm text-gray-600">
-                  Veya URL ile ekleyin (her satıra bir görsel):
+                  Veya URL ile ekleyin (her satıra bir görsel linki):
                 </Label>
                 <Textarea
                   rows={3}
@@ -449,12 +499,9 @@ const loadBrandsByCategory = async (categoryId) => {
                       .split("\n")
                       .map((l) => l.trim())
                       .filter(Boolean);
-                    setForm((prev) => ({
-                      ...prev,
-                      images: lines,
-                    }));
+                    setForm((prev) => ({ ...prev, images: lines }));
                   }}
-                  placeholder={"https://resim1.jpg\nhttps://resim2.jpg"}
+                  placeholder="https://example.com/urun1.jpg"
                 />
               </div>
             </div>
@@ -463,6 +510,16 @@ const loadBrandsByCategory = async (categoryId) => {
           {/* STOK & FİYAT */}
           <TabsContent value="stockPrice">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-xl shadow-sm">
+              <div>
+                <Label>Stok (varyant yoksa kullanılır)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={form.stock}
+                  onChange={(e) => handleChange("stock", e.target.value)}
+                  placeholder="0"
+                />
+              </div>
               <div>
                 <Label>Satış Fiyatı (TL)</Label>
                 <Input
@@ -517,6 +574,109 @@ const loadBrandsByCategory = async (categoryId) => {
                   value={form.eurPrice}
                   onChange={(e) => handleChange("eurPrice", e.target.value)}
                 />
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* VARYANTLAR — renk, beden, barkod, stok, fiyat (pazaryeri uyumlu) */}
+          <TabsContent value="variants">
+            <div className="bg-white p-4 rounded-xl shadow-sm space-y-4">
+              <p className="text-sm text-gray-600">
+                Tek ürün için bu sekmeyi boş bırakın. Renk/beden gibi varyantlar varsa aşağıdan ekleyin; her varyantın kendi barkodu, stoku ve fiyatı olabilir.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={addVariant}
+                className="mb-2"
+              >
+                + Varyant Ekle
+              </Button>
+              <div className="space-y-4">
+                {form.variants.map((v, index) => (
+                  <div
+                    key={index}
+                    className="border rounded-lg p-4 bg-gray-50/50 space-y-3"
+                  >
+                    <div className="flex justify-between items-center">
+                      <span className="font-medium text-sm">Varyant {index + 1}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeVariant(index)}
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        Kaldır
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div>
+                        <Label className="text-xs">Renk</Label>
+                        <Input
+                          value={v.color || ""}
+                          onChange={(e) => updateVariant(index, "color", e.target.value)}
+                          placeholder="Örn: Siyah"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Beden / Ölçü</Label>
+                        <Input
+                          value={v.size || ""}
+                          onChange={(e) => updateVariant(index, "size", e.target.value)}
+                          placeholder="Örn: M, 42"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Barkod</Label>
+                        <Input
+                          value={v.barcode || ""}
+                          onChange={(e) => updateVariant(index, "barcode", e.target.value)}
+                          placeholder="13 hane"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">SKU</Label>
+                        <Input
+                          value={v.sku || ""}
+                          onChange={(e) => updateVariant(index, "sku", e.target.value)}
+                          placeholder="Varyant kodu"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Stok</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          value={v.stock === undefined || v.stock === "" ? "" : v.stock}
+                          onChange={(e) => updateVariant(index, "stock", e.target.value === "" ? "" : Number(e.target.value))}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Fiyat (TL)</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={v.priceTl === undefined || v.priceTl === "" ? "" : v.priceTl}
+                          onChange={(e) => updateVariant(index, "priceTl", e.target.value === "" ? "" : Number(e.target.value))}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <Label className="text-xs">Varyant görsel URL’leri (isteğe bağlı, her satıra bir link)</Label>
+                      <Textarea
+                        rows={2}
+                        className="mt-1"
+                        value={Array.isArray(v.images) ? v.images.join("\n") : ""}
+                        onChange={(e) => {
+                          const lines = e.target.value.split("\n").map((l) => l.trim()).filter(Boolean);
+                          updateVariant(index, "images", lines);
+                        }}
+                        placeholder="https://..."
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </TabsContent>

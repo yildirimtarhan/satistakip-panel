@@ -30,7 +30,8 @@ export default async function handler(req, res) {
       `${process.env.HB_MERCHANT_ID}:${process.env.HB_SECRET_KEY}`
     ).toString("base64");
 
-    const apiUrl = `https://mpop-sit.hepsiburada.com/api/oms/v1/orders?offset=${offset}&limit=${limit}&beginDate=${encodeURIComponent(
+    const baseUrl = process.env.HEPSIBURADA_BASE_URL || process.env.HB_BASE_URL || "https://mpop-sit.hepsiburada.com";
+    const apiUrl = `${baseUrl.replace(/\/$/, "")}/api/oms/v1/orders?offset=${offset}&limit=${limit}&beginDate=${encodeURIComponent(
       beginDate
     )}&endDate=${encodeURIComponent(endDate)}`;
 

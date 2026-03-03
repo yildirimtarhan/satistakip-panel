@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { jwtDecode } from "jwt-decode";
 import { useEffect, useState } from "react";
-import { BarChart3, TrendingUp, Globe, ChevronDown, ChevronRight, Package, DollarSign, Box, Users, LayoutDashboard } from "lucide-react";
+import { BarChart3, TrendingUp, Globe, ChevronDown, ChevronRight, Package, DollarSign, Box, Users, LayoutDashboard, X } from "lucide-react";
 
 const raporMenuItems = [
   {
@@ -22,7 +22,7 @@ const raporMenuItems = [
   },
 ];
 
-const MenuItem = ({ href, icon, label }) => {
+const MenuItem = ({ href, icon, label, onLinkClick }) => {
   const router = useRouter();
   const active =
     router.pathname === href || router.pathname.startsWith(href + "/");
@@ -30,12 +30,9 @@ const MenuItem = ({ href, icon, label }) => {
   return (
     <Link
       href={href}
-      className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition
-        ${
-          active
-            ? "bg-orange-100 text-orange-700"
-            : "text-slate-700 hover:bg-slate-100"
-        }`}
+      onClick={onLinkClick}
+      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition touch-manipulation
+        ${active ? "bg-orange-100 text-orange-700" : "text-slate-700 hover:bg-slate-100"}`}
     >
       <span className="text-lg">{icon}</span>
       <span>{label}</span>
@@ -49,14 +46,15 @@ const SectionTitle = ({ children }) => (
   </div>
 );
 
-const SubmenuItem = ({ href, icon: Icon, label, description }) => {
+const SubmenuItem = ({ href, icon: Icon, label, description, onLinkClick }) => {
   const router = useRouter();
   const active = router.pathname === href || router.pathname.startsWith(href + "/");
   return (
     <Link
       href={href}
       title={description}
-      className={`flex items-center gap-2 pl-8 pr-3 py-2 rounded-lg text-sm transition
+      onClick={onLinkClick}
+      className={`flex items-center gap-2 pl-8 pr-3 py-2.5 rounded-lg text-sm transition touch-manipulation
         ${active ? "bg-orange-50 text-orange-700" : "text-slate-600 hover:bg-slate-50"}`}
     >
       {Icon && <Icon size={16} className="shrink-0" />}
@@ -65,10 +63,67 @@ const SubmenuItem = ({ href, icon: Icon, label, description }) => {
   );
 };
 
-export default function Sidebar() {
+const HB_MENU = [
+  { href: "/dashboard/hepsiburada/orders", label: "HB Siparişleri", icon: "🛍️" },
+  { href: "/dashboard/hepsiburada/products", label: "HB Ürünleri", icon: "📦" },
+  { href: "/dashboard/hepsiburada/price-stock", label: "HB Fiyat/Stok Güncelle", icon: "💰" },
+];
+
+function HepsiburadaSubmenu({ onLinkClick }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const isActive = HB_MENU.some((m) => router.pathname === m.href || router.pathname.startsWith(m.href + "/"));
+  return (
+    <div className="mb-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`flex items-center justify-between w-full gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition touch-manipulation
+          ${open || isActive ? "bg-slate-100 text-slate-800" : "text-slate-700 hover:bg-slate-100"}`}
+      >
+        <span className="flex items-center gap-3">
+          <span className="text-lg">🛒</span>
+          <span>Hepsiburada</span>
+        </span>
+        {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+      </button>
+      {(open || isActive) && (
+        <div className="mt-1 space-y-0.5">
+          {HB_MENU.map((item) => {
+            const active = router.pathname === item.href || router.pathname.startsWith(item.href + "/");
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={onLinkClick}
+                className={`flex items-center gap-2 pl-8 pr-3 py-2.5 rounded-lg text-sm transition touch-manipulation
+                  ${active ? "bg-orange-50 text-orange-700" : "text-slate-600 hover:bg-slate-50"}`}
+              >
+                <span>{item.icon}</span>
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function Sidebar({ mobileOpen = false, onClose }) {
   const router = useRouter();
   const [role, setRole] = useState(null);
   const [openRaporlar, setOpenRaporlar] = useState(false);
+
+  useEffect(() => {
+    if (mobileOpen) document.body.style.overflow = "hidden";
+    else document.body.style.overflow = "";
+    return () => { document.body.style.overflow = ""; };
+  }, [mobileOpen]);
+
+  const handleLinkClick = () => {
+    if (onClose) onClose();
+  };
 
   useEffect(() => {
     try {
@@ -90,37 +145,56 @@ export default function Sidebar() {
     router.replace("/auth/login");
   };
 
+  const asideClass =
+    "h-screen w-64 border-r bg-white p-4 flex flex-col z-50 " +
+    "md:relative md:translate-x-0 md:shadow-none " +
+    (mobileOpen
+      ? "fixed inset-y-0 left-0 translate-x-0 shadow-xl max-w-[85vw]"
+      : "fixed inset-y-0 left-0 -translate-x-full md:translate-x-0");
+
   return (
-    <aside className="h-screen w-64 border-r bg-white p-4 flex flex-col">
-      {/* Logo */}
-      <div className="flex items-center gap-2 mb-5 px-2">
-        <div className="w-9 h-9 rounded-xl bg-orange-500 shadow-sm flex items-center justify-center text-white font-bold">
-          ST
-        </div>
-        <div>
-          <div className="font-bold text-lg leading-tight">SatışTakip ERP</div>
-          <div className="text-[11px] text-slate-500">
-            Çoklu Firma • Çoklu Kullanıcı
+    <aside className={asideClass}>
+      {/* Mobil: Kapat butonu */}
+      <div className="flex items-center justify-between mb-3 md:mb-5">
+        <div className="flex items-center gap-2 px-2">
+          <div className="w-9 h-9 rounded-xl bg-orange-500 shadow-sm flex items-center justify-center text-white font-bold">
+            ST
+          </div>
+          <div>
+            <div className="font-bold text-lg leading-tight">SatışTakip ERP</div>
+            <div className="text-[11px] text-slate-500 hidden md:block">
+              Çoklu Firma • Çoklu Kullanıcı
+            </div>
           </div>
         </div>
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="md:hidden p-2 rounded-lg hover:bg-slate-100 touch-manipulation"
+            aria-label="Menüyü kapat"
+          >
+            <X size={24} />
+          </button>
+        )}
       </div>
 
       {/* Menü */}
       <nav className="flex-1 space-y-1 overflow-y-auto">
         <SectionTitle>Genel</SectionTitle>
-        <MenuItem href="/dashboard" icon="🏠" label="Anasayfa" />
-        <MenuItem href="/dashboard/ayarlar/firma" icon="🏢" label="Firma Ayarları" />
-        <MenuItem href="/dashboard/api-settings" icon="⚙️" label="API Ayarları" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard" icon="🏠" label="Anasayfa" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/ayarlar/firma" icon="🏢" label="Firma Ayarları" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/api-settings" icon="⚙️" label="API Ayarları" />
 
         <SectionTitle>E-Dönüşüm</SectionTitle>
-        <MenuItem href="/dashboard/e-donusum" icon="🌀" label="E-Dönüşüm Paketi" />
-        <MenuItem href="/dashboard/e-donusum/e-imza" icon="✍️" label="E-İmza Başvuru" />
-        <MenuItem href="/dashboard/e-donusum/kep" icon="📬" label="KEP Adresi" />
-        <MenuItem href="/dashboard/e-donusum/mali-muhur" icon="🔐" label="Mali Mühür" />
-        <MenuItem href="/dashboard/e-donusum/efatura-kontor" icon="🧾" label="E-Fatura Kontör" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/e-donusum" icon="🌀" label="E-Dönüşüm Paketi" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/e-donusum/e-imza" icon="✍️" label="E-İmza Başvuru" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/e-donusum/kep" icon="📬" label="KEP Adresi" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/e-donusum/mali-muhur" icon="🔐" label="Mali Mühür" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/e-donusum/efatura-kontor" icon="🧾" label="E-Fatura Kontör" />
 
-        <MenuItem href="/dashboard/edonusum/efatura-basvuru" icon="🧾" label="E-Fatura Başvuru" />
-        <MenuItem href="/dashboard/edonusum/basvurularim" icon="📄" label="Başvurularım" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/edonusum/efatura-basvuru" icon="🧾" label="E-Fatura Başvuru" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/edonusum/basvurularim" icon="📄" label="Başvurularım" />
 
         {role === "admin" && (
           <MenuItem
@@ -131,32 +205,31 @@ export default function Sidebar() {
         )}
 
         <SectionTitle>Pazaryerleri</SectionTitle>
-        <MenuItem href="/dashboard/hepsiburada/orders" icon="🛍️" label="HB Siparişleri" />
-        <MenuItem href="/dashboard/hepsiburada/products" icon="📦" label="HB Ürünleri" />
-        <MenuItem href="/dashboard/trendyol/orders" icon="🧾" label="Trendyol Siparişleri" />
-        <MenuItem href="/dashboard/trendyol/products" icon="📦" label="Trendyol Ürünleri" />
-        <MenuItem href="/dashboard/n11/orders" icon="🛒" label="N11 Siparişleri" />
-        <MenuItem href="/dashboard/n11/products" icon="📦" label="N11 Ürün Listesi" />
-        <MenuItem href="/dashboard/n11/add-product" icon="➕" label="N11 Ürün Gönder" />
-        <MenuItem href="/dashboard/n11/shipment-templates" icon="📋" label="N11 Kargo Şablonları" />
-        <MenuItem href="/dashboard/pazaryeri-gonder" icon="🚀" label="Pazaryerine Gönder" />
+        <HepsiburadaSubmenu onLinkClick={handleLinkClick} />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/trendyol/orders" icon="🧾" label="Trendyol Siparişleri" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/trendyol/products" icon="📦" label="Trendyol Ürünleri" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/n11/orders" icon="🛒" label="N11 Siparişleri" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/n11/products" icon="📦" label="N11 Ürün Listesi" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/n11/add-product" icon="➕" label="N11 Ürün Gönder" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/n11/shipment-templates" icon="📋" label="N11 Kargo Şablonları" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/pazaryeri-gonder" icon="🚀" label="Pazaryerine Gönder" />
 
         <SectionTitle>E-Belge</SectionTitle>
-        <MenuItem href="/dashboard/efatura" icon="📄" label="E-Fatura Paneli" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/efatura" icon="📄" label="E-Fatura Paneli" />
 
         {/* ================= ERP MODÜLLERİ ================= */}
         <SectionTitle>ERP Modülleri</SectionTitle>
 
-        <MenuItem href="/dashboard/cari" icon="👥" label="Cariler" />
-        <MenuItem href="/dashboard/cari-ekstre" icon="📈" label="Cari Ekstre" />
-        <MenuItem href="/dashboard/cari-tahsilat" icon="💰" label="Tahsilat / Ödeme" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/cari" icon="👥" label="Cariler" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/cari-ekstre" icon="📈" label="Cari Ekstre" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/cari-tahsilat" icon="💰" label="Tahsilat / Ödeme" />
 
-        <MenuItem href="/dashboard/urunler" icon="📦" label="Ürünler" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/urunler" icon="📦" label="Ürünler" />
 
         {/* 🔥 ALIŞLAR MENÜSÜ (YENİ) */}
         <SectionTitle>Alışlar</SectionTitle>
-        <MenuItem href="/dashboard/urun-alis" icon="📥" label="Ürün Alışı" />
-        <MenuItem href="/dashboard/alislar" icon="📄" label="Alış Listesi" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/urun-alis" icon="📥" label="Ürün Alışı" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/alislar" icon="📄" label="Alış Listesi" />
         <MenuItem
   href="/dashboard/alislar-iptal"
   icon="⛔"
@@ -165,8 +238,8 @@ export default function Sidebar() {
 
 
 
-        <MenuItem href="/dashboard/urun-satis" icon="🛒" label="Ürün Satış" />
-        <MenuItem href="/dashboard/satislar" icon="🧾" label="Satışlar" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/urun-satis" icon="🛒" label="Ürün Satış" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/satislar" icon="🧾" label="Satışlar" />
         <MenuItem
   href="/dashboard/satis-iade-iptal"
   icon="🔄"
@@ -191,7 +264,7 @@ export default function Sidebar() {
             {openRaporlar && (
               <div className="mt-1 space-y-0.5">
                 {menu.submenu.map((item) => (
-                  <SubmenuItem
+                  <SubmenuItem onLinkClick={handleLinkClick}
                     key={item.href}
                     href={item.href}
                     icon={item.icon}
@@ -204,7 +277,7 @@ export default function Sidebar() {
           </div>
         ))}
 
-        <MenuItem href="/dashboard/teklifler" icon="📃" label="Teklif Formu" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/teklifler" icon="📃" label="Teklif Formu" />
 
         {role === "admin" && (
   <>

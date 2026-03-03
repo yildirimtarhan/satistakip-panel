@@ -1,10 +1,9 @@
 // pages/api/hepsiburada-api/orders/local.js
-import clientPromise from "@/lib/mongodb";
+import { connectToDatabase } from "@/lib/mongodb";
 
 export default async function handler(req, res) {
   try {
-    const client = await clientPromise;
-    const db = client.db("satistakip");
+    const { db } = await connectToDatabase();
     const col = db.collection("hb_orders");
 
     const docs = await col
@@ -40,13 +39,15 @@ export default async function handler(req, res) {
       });
     }
 
-    // ✅ DB'deki gerçek siparişleri map'le
+    // ✅ DB'deki gerçek siparişleri map'le (ERP bilgisi dahil)
     const orders = docs.map((d) => ({
       orderNumber: d.data?.orderNumber || d.orderNumber,
-      status: d.data?.status || d.data?.orderStatus || "-",
+      status: d.data?.status || d.data?.orderStatus || d.data?.deliveryStatus || "-",
       updatedAt: d.data?.lastStatusUpdateDate || d.fetchedAt,
       trackingNumber: d.data?.shipmentTrackingNumber || null,
-      raw: d.data
+      raw: d.data,
+      erpPushed: !!d.erpPushed,
+      erpSaleNo: d.erpSaleNo || null,
     }));
 
     return res.status(200).json({

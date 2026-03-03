@@ -10,8 +10,9 @@ export default async function handler(req, res) {
     ).toString("base64");
 
     const productData = req.body;
+    const baseUrl = process.env.HEPSIBURADA_BASE_URL || process.env.HB_BASE_URL || "https://mpop-sit.hepsiburada.com";
 
-    const response = await fetch("https://mpop-sit.hepsiburada.com/product/api/products", {
+    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/product/api/products`, {
       method: "POST",
       headers: {
         Authorization: `Basic ${authString}`,

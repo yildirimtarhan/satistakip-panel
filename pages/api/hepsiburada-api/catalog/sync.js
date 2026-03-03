@@ -1,21 +1,24 @@
 // 📁 /pages/api/hepsiburada-api/catalog/sync.js
-import clientPromise from "@/lib/mongodb";
+import { connectToDatabase } from "@/lib/mongodb";
+import { getHepsiburadaAuth, getHepsiburadaUserAgent, getHepsiburadaBaseUrl } from "@/lib/hepsiburadaEnv";
 
 export default async function handler(req, res) {
   if (req.method !== "POST")
     return res.status(405).json({ message: "Yalnızca POST isteğine izin verilir" });
 
+  const hbAuth = getHepsiburadaAuth();
+  if (!hbAuth)
+    return res.status(400).json({ success: false, message: "HEPSIBURADA_AUTH (veya HB_MERCHANT_ID+HB_SECRET_KEY) tanımlı değil" });
+
   try {
-    const client = await clientPromise;
-    const db = client.db("satistakip");
+    const { db } = await connectToDatabase();
     const products = await db.collection("products").find({}).toArray();
 
     if (!products.length)
       return res.status(400).json({ success: false, message: "Gönderilecek ürün bulunamadı" });
 
-    const hbAuth = Buffer.from(
-      `${process.env.HB_MERCHANT_ID}:${process.env.HB_SECRET_KEY}`
-    ).toString("base64");
+    const ua = getHepsiburadaUserAgent();
+    const baseUrl = getHepsiburadaBaseUrl();
 
     const results = [];
 
@@ -39,13 +42,13 @@ export default async function handler(req, res) {
 
       try {
         const response = await fetch(
-          "https://mpop-sit.hepsiburada.com/api/product/api/v1/listings",
+          `${baseUrl}/product/api/v1/listings`,
           {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              Authorization: `Basic ${hbAuth}`,
-              "User-Agent": process.env.HB_USER_AGENT || "tigdes_dev",
+              Authorization: hbAuth,
+              "User-Agent": ua,
             },
             body: JSON.stringify(payload),
           }

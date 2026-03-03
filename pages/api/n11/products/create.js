@@ -40,64 +40,55 @@ export default async function handler(req, res) {
     const companyId = decoded?.companyId;
     const userId = decoded?.userId || decoded?.id || decoded?._id;
 
-    // ✅ BODY KONTROL
-    const { productId, n11Override } = req.body || {};
-    if (!productId) {
-      return res.status(400).json({ success: false, message: "productId zorunludur" });
-    }
+    // ✅ BODY KONTROL — productId (ERP ürünü) veya product (link ile yükleme payload'ı)
+    const { productId, product: productPayload, n11Override } = req.body || {};
+    let product;
 
-    // ✅ ÜRÜN BUL (companyId veya userId ile — migration fallback)
-    const product = await Product.findOne({
-      _id: productId,
-      ...(companyId ? { $or: [{ companyId }, { userId }] } : { userId }),
-    });
-
-    if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: "Ürün bulunamadı",
+    if (productPayload && typeof productPayload === "object" && (productPayload.name || productPayload.title)) {
+      // Link ile yükleme: doğrudan gönderilen ürün verisi
+      product = {
+        name: productPayload.name || productPayload.title,
+        title: productPayload.title || productPayload.name,
+        description: productPayload.description || "",
+        barcode: productPayload.barcode || productPayload.barkod,
+        sku: productPayload.sku || productPayload.stockCode || productPayload.barcode,
+        price: productPayload.price ?? productPayload.salePrice ?? 0,
+        listPrice: productPayload.listPrice ?? productPayload.price,
+        stock: productPayload.stock ?? productPayload.quantity ?? 0,
+        images: productPayload.images || [],
+      };
+    } else if (productId) {
+      const found = await Product.findOne({
+        _id: productId,
+        ...(companyId ? { $or: [{ companyId }, { userId }] } : { userId }),
       });
+      if (!found) {
+        return res.status(404).json({ success: false, message: "Ürün bulunamadı" });
+      }
+      product = found;
+    } else {
+      return res.status(400).json({ success: false, message: "productId veya product (link ile yükleme) zorunludur" });
     }
 
     // ✅ N11 CREATE ÇAĞRISI — n11Override ile form verilerini doğrudan geçir
-    const result = await n11CreateProduct(req, product, n11Override);
+    const result = await n11CreateProduct(req, product, n11Override || {});
 
-    /**
-     * ======================================================
-     * 🔥 TASK STATUS ZİNCİRİ – EN KRİTİK YAMA
-     * ======================================================
-     * taskId GELİR GELMEZ DB'YE YAZIYORUZ
-     * aksi halde task-status endpoint'i çalışmaz
-     */
-    if (result?.success && result?.taskId) {
-      await Product.findByIdAndUpdate(productId, {
-        n11TaskId: result.taskId,
-        n11TaskStatus: "IN_QUEUE",
-        n11TaskReason: "",
-        n11LastCheckAt: new Date(),
-      });
+    if (productId && product._id) {
+      // ERP ürünü ise taskId'yi DB'ye yaz (task-status için)
+      if (result?.success && result?.taskId) {
+        await Product.findByIdAndUpdate(productId, {
+          n11TaskId: result.taskId,
+          n11TaskStatus: "IN_QUEUE",
+          n11TaskReason: "",
+          n11LastCheckAt: new Date(),
+        });
+      }
+      product.integrationStatus = product.integrationStatus || {};
+      product.integrationStatus.n11 = result?.success
+        ? { status: "success", taskId: result.taskId || null, sentAt: new Date(), message: result.message || "N11'e gönderildi" }
+        : { status: "error", taskId: result?.taskId || null, sentAt: new Date(), message: result?.message || "N11 gönderim hatası" };
+      await product.save();
     }
-
-    // ✅ integrationStatus (mevcut yapıyı BOZMADAN)
-    product.integrationStatus = product.integrationStatus || {};
-
-    if (result?.success) {
-      product.integrationStatus.n11 = {
-        status: "success",
-        taskId: result.taskId || null,
-        sentAt: new Date(),
-        message: result.message || "N11'e gönderildi",
-      };
-    } else {
-      product.integrationStatus.n11 = {
-        status: "error",
-        taskId: result?.taskId || null,
-        sentAt: new Date(),
-        message: result?.message || "N11 gönderim hatası",
-      };
-    }
-
-    await product.save();
 
     return res.status(200).json(result);
   } catch (error) {

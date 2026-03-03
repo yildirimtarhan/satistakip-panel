@@ -16,42 +16,65 @@ export default async function handler(req, res) {
     }
 
     const tokenObj = await getHBToken(cfg);
-    const { parentId, leaf = "false", page = 0, size = 200, search } = req.query;
+    const { parentId, leaf = "false", page = 0, size, search } = req.query;
 
     let url, params;
+    const singlePageSize = Number(size) || 200;
+    // Arama varken çok sayfa çek (telefon kılıfı vb. tüm katalogda aransın)
+    const fetchAllWhenSearching = search && search.length >= 2;
 
     if (parentId) {
       url = `${cfg.baseUrl}/product/api/categories/${parentId}/sub-categories`;
       params = {};
     } else {
       url = `${cfg.baseUrl}/product/api/categories/get-all-categories`;
-      params = { leaf, status: "ACTIVE", available: true, page, size };
+      params = { leaf, status: "ACTIVE", available: true, page: fetchAllWhenSearching ? 0 : page, size: singlePageSize };
+      if (search && search.trim()) params.search = search.trim();
     }
 
-    const response = await axios.get(url, {
-      params,
-      headers: hbApiHeaders(cfg, tokenObj),
-      timeout: 20000,
-    });
+    let categories = [];
+    let totalFromApi;
+    if (parentId || !fetchAllWhenSearching) {
+      const response = await axios.get(url, { params, headers: hbApiHeaders(cfg, tokenObj), timeout: 25000 });
+      const raw = response.data;
+      categories = raw?.data || raw?.categories || (Array.isArray(raw) ? raw : []);
+      totalFromApi = raw?.totalElements ?? categories.length;
+    } else {
+      // Arama: tüm sayfaları çek (HB genelde sayfa başı 100–200 limit)
+      let totalElements = 9999;
+      let currentPage = 0;
+      const perPage = 200;
+      while (categories.length < totalElements) {
+        const res = await axios.get(url, {
+          params: { ...params, page: currentPage, size: perPage },
+          headers: hbApiHeaders(cfg, tokenObj),
+          timeout: 25000,
+        });
+        const data = res.data?.data || res.data?.categories || (Array.isArray(res.data) ? res.data : []);
+        categories = categories.concat(data);
+        totalElements = res.data?.totalElements ?? categories.length;
+        if (data.length < perPage || categories.length >= totalElements) break;
+        currentPage++;
+        if (currentPage > 50) break; // güvenlik limiti
+      }
+      totalFromApi = categories.length;
+    }
 
-    const raw = response.data;
-    // HB yanit yapisi: { success, data: [...], totalElements, ... }
-    let categories = raw?.data || raw?.categories || (Array.isArray(raw) ? raw : []);
-
-    // Client-side search filtrele
+    // Arama: HB search desteklemiyorsa client-side filtrele (path/name)
     if (search && search.length >= 2) {
-      const q = search.toLowerCase();
-      categories = categories.filter((c) =>
-        (c.name || c.displayName || "").toLowerCase().includes(q) ||
-        (c.paths || []).some((p) => p.toLowerCase().includes(q))
-      );
+      const q = search.toLowerCase().trim();
+      categories = categories.filter((c) => {
+        const name = (c.name || c.displayName || c.categoryName || "").toLowerCase();
+        const pathStr = (c.paths && Array.isArray(c.paths) ? c.paths.join(" ") : (c.path || "")).toLowerCase();
+        return name.includes(q) || pathStr.includes(q);
+      });
     }
 
-    // Normalise: id ve name alanlarini standartlastir
+    // Normalise: id ve name alanlarini standartlastir (path: dizi veya string)
     const normalized = categories.map((c) => ({
       id: c.categoryId || c.id,
       name: c.name || c.displayName || c.categoryName,
-      path: c.paths ? c.paths.join(" > ") : "",
+      path: (c.paths && Array.isArray(c.paths) ? c.paths.join(" > ") : (c.path || "")).trim(),
       leaf: c.leaf ?? false,
       parentId: c.parentCategoryId,
     }));
@@ -59,9 +82,9 @@ export default async function handler(req, res) {
     return res.json({
       success: true,
       categories: normalized,
-      total: raw?.totalElements || normalized.length,
+      total: totalFromApi ?? normalized.length,
       page: Number(page),
-      size: Number(size),
+      size: Number(singlePageSize),
     });
   } catch (err) {
     const detail = err?.response?.data;

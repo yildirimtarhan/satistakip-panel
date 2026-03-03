@@ -2,6 +2,7 @@ import dbConnect from "@/lib/dbConnect";
 import Transaction from "@/models/Transaction";
 import User from "@/models/User";
 import { verifyToken } from "@/utils/auth";
+import { reversePazaryeriBorcBySaleNo } from "@/lib/pazaryeriCari";
 import mongoose from "mongoose";
 
 export default async function handler(req, res) {
@@ -132,6 +133,23 @@ export default async function handler(req, res) {
     });
 
     console.log("✅ CANCEL RECEIPT CREATED:", String(cancelTx._id), "REF:", saleNo);
+
+    const companyIdForPazaryeri = first.companyId || companyId || "";
+    if (companyIdForPazaryeri && typeof saleNo === "string") {
+      if (saleNo.startsWith("HB-")) {
+        try {
+          await reversePazaryeriBorcBySaleNo(saleNo, companyIdForPazaryeri, "Hepsiburada");
+        } catch (e) {
+          console.warn("Pazaryeri borç iptali (HB):", e?.message);
+        }
+      } else if (saleNo.startsWith("N11-")) {
+        try {
+          await reversePazaryeriBorcBySaleNo(saleNo, companyIdForPazaryeri, "N11");
+        } catch (e) {
+          console.warn("Pazaryeri borç iptali (N11):", e?.message);
+        }
+      }
+    }
 
     return res.status(200).json({
       ok: true,

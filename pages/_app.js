@@ -1,12 +1,13 @@
 // 📁 /pages/_app.js
 import "@/styles/globals.css";
+import Head from "next/head";
 import { useEffect } from "react";
 import { useRouter } from "next/router";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import RequireAuth from "@/components/RequireAuth";
 import Cookies from "js-cookie";
 import { CompanyProvider } from "@/context/CompanyContext";
-import { ToastProvider } from "@/hooks/useToast"; // ✅ EKLENDİ
+import { ToastProvider } from "@/hooks/useToast";
 
 export default function App({ Component, pageProps }) {
   const router = useRouter();
@@ -49,24 +50,26 @@ export default function App({ Component, pageProps }) {
     return () => clearInterval(interval);
   }, []);
 
-  if (isDashboard) {
-    return (
-      <RequireAuth cookieMode={true}>
-        <CompanyProvider>
-          <ToastProvider> {/* ✅ EKLENDİ */}
-            <DashboardLayout>
-              <Component {...pageProps} />
-            </DashboardLayout>
-          </ToastProvider> {/* ✅ EKLENDİ */}
-        </CompanyProvider>
-      </RequireAuth>
-    );
-  }
-
-  // ✅ DÜZELTİLDİ: Parantez hatası giderildi
   return (
-    <ToastProvider>
-      <Component {...pageProps} />
-    </ToastProvider>
+    <>
+      <Head>
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover" />
+      </Head>
+      {isDashboard ? (
+        <RequireAuth cookieMode={true}>
+          <CompanyProvider>
+            <ToastProvider>
+              <DashboardLayout>
+                <Component {...pageProps} />
+              </DashboardLayout>
+            </ToastProvider>
+          </CompanyProvider>
+        </RequireAuth>
+      ) : (
+        <ToastProvider>
+          <Component {...pageProps} />
+        </ToastProvider>
+      )}
+    </>
   );
 }

@@ -8,6 +8,7 @@ import N11Order from '@/models/N11Order';
 import Cari from '@/models/Cari';
 import Product from '@/models/Product';
 import Transaction from '@/models/Transaction';
+import { createPazaryeriBorcAndUpdateBakiye } from '@/lib/pazaryeriCari';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
@@ -218,6 +219,7 @@ async function createSaleFromN11Order({ decodedUserId, decodedCompanyId, cariId,
 
   const nameForErp = accountDisplayName || extractBuyer(order).fullName;
   const accountName = (typeof nameForErp === 'string' && nameForErp.trim() && nameForErp !== 'N11 Müşteri') ? nameForErp.trim() : '';
+  const saleDate = parseN11Date(order.createDate) || new Date();
   const tx = await Transaction.create({
     userId: decodedUserId,
     companyId: decodedCompanyId || '',
@@ -226,7 +228,7 @@ async function createSaleFromN11Order({ decodedUserId, decodedCompanyId, cariId,
     saleNo,
     accountId: cariId,
     accountName,
-    date: parseN11Date(order.createDate) || new Date(),
+    date: saleDate,
     paymentMethod: 'open',
     note: 'N11 siparişi otomatik satış',
     currency: 'TRY',
@@ -236,6 +238,21 @@ async function createSaleFromN11Order({ decodedUserId, decodedCompanyId, cariId,
     direction: 'borc',
     amount: totalTRY,
   });
+
+  // Pazaryeri muhasebe: N11 carisine borç (platformun size borcu)
+  if (companyIdObj) {
+    await createPazaryeriBorcAndUpdateBakiye({
+      pazaryeriAd: 'N11',
+      companyIdObj,
+      companyIdStr: decodedCompanyId || '',
+      userIdStr: decodedUserId,
+      userIdObj: mongoose.Types.ObjectId.isValid(decodedUserId) ? new mongoose.Types.ObjectId(decodedUserId) : null,
+      saleNo,
+      totalTRY,
+      note: `N11 sipariş ${order?.orderNumber || ''}`,
+      date: saleDate,
+    });
+  }
 
   // STOK DÜŞ
   for (const i of normalizedItems) {

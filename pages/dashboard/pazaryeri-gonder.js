@@ -20,6 +20,14 @@ export default function PazaryeriGonderPage() {
   const [sending, setSending]       = useState(false);
   const [taskResult, setTaskResult] = useState(null);
 
+  // Link ve kategori ile yükleme: ERP yerine URL + manuel alanlar
+  const [uploadMode, setUploadMode] = useState("erp"); // "erp" | "link"
+  const [linkUrl, setLinkUrl] = useState("");
+  const [linkFetching, setLinkFetching] = useState(false);
+  const [linkProduct, setLinkProduct] = useState({
+    title: "", description: "", price: "", stock: "1", barcode: "",
+  });
+
   // N11 form (shipmentTemplate: API'ye gidecek değer; özel seçilince input'tan dolar)
   const [n11Form, setN11Form] = useState({
     catL1: "", catL2: "", catL3: "", preparingDay: "3",
@@ -74,6 +82,7 @@ export default function PazaryeriGonderPage() {
   const [hbAttrVals, setHbAttrVals] = useState({});
   const [hbCatSearch, setHbCatSearch] = useState("");
   const hbSearchTimer = useRef(null);
+  const [hbCargoFirms, setHbCargoFirms] = useState([]); // API'den; boşsa statik liste kullanılır
 
   // Görsel URL'leri
   const [imageUrls, setImageUrls]   = useState([""]);
@@ -89,8 +98,24 @@ export default function PazaryeriGonderPage() {
       .catch(() => {});
   }, []);
 
+  const fetchProductFromLink = () => {
+    if (!linkUrl.trim().startsWith("http")) { alert("Geçerli bir ürün linki girin (http/https)"); return; }
+    setLinkFetching(true);
+    fetch(`/api/products/fetch-from-url?url=${encodeURIComponent(linkUrl.trim())}`, { headers: headers() })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.success) {
+          setLinkProduct((p) => ({ ...p, title: d.title || p.title, description: d.description || p.description }));
+          if (d.images?.length) setImageUrls(d.images.filter(Boolean).length ? d.images : [""]);
+        } else alert(d.message || "Bilgiler alınamadı");
+      })
+      .catch(() => alert("Link işlenemedi"))
+      .finally(() => setLinkFetching(false));
+  };
+
   /* ── Ürün seçilince detay yükle ── */
   useEffect(() => {
+    if (uploadMode === "link") return;
     if (!selectedId) { setProduct(null); return; }
     fetch(`/api/products/get?id=${selectedId}`, { headers: headers() })
       .then((r) => r.json())
@@ -111,7 +136,7 @@ export default function PazaryeriGonderPage() {
         setImageUrls(imgs.length ? imgs : [""]);
       })
       .catch(() => {});
-  }, [selectedId]);
+  }, [selectedId, uploadMode]);
 
   /* ── N11 Level-1 kategoriler ── */
   useEffect(() => {
@@ -162,6 +187,19 @@ export default function PazaryeriGonderPage() {
     fetchN11Attrs(n11Form.catL3);
   }, [n11Form.catL3]);
 
+  /* ── HB: kargo firmaları (shipping-external API) ── */
+  useEffect(() => {
+    if (activeTab !== "hepsiburada") return;
+    fetch("/api/hepsiburada/cargo-firms", { headers: headers() })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.success && Array.isArray(d.cargoFirms) && d.cargoFirms.length > 0) {
+          setHbCargoFirms(d.cargoFirms.filter((f) => f.visible !== false));
+        }
+      })
+      .catch(() => {});
+  }, [activeTab]);
+
   /* ── HB: arama debounce → kategori yükle ── */
   const fetchHBCats = (q) => {
     setHbCatLoading(true);
@@ -211,8 +249,43 @@ export default function PazaryeriGonderPage() {
   const warnImages  = validImages.filter((u) => !isDirectImageUrl(u));
 
   /* ── Gönderim ── */
+  const getEffectiveProduct = () => {
+    if (uploadMode === "link") {
+      return {
+        name: linkProduct.title,
+        title: linkProduct.title,
+        description: linkProduct.description,
+        barcode: linkProduct.barcode,
+        barkod: linkProduct.barcode,
+        sku: linkProduct.barcode,
+        stockCode: linkProduct.barcode,
+        price: Number(linkProduct.price) || 0,
+        listPrice: Number(linkProduct.price) || 0,
+        salePrice: Number(linkProduct.price) || 0,
+        stock: Number(linkProduct.stock) || 0,
+        quantity: Number(linkProduct.stock) || 0,
+        images: validImages,
+      };
+    }
+    return product;
+  };
+
   const handleSend = async () => {
-    if (!selectedId) { alert("Ürün seçin"); return; }
+    const effective = getEffectiveProduct();
+    if (uploadMode === "erp" && !selectedId) { alert("Ürün seçin veya 'Link ve kategori ile yükle' modunu kullanın."); return; }
+    if (uploadMode === "link" && !(linkProduct.title || effective?.title)) { alert("Ürün başlığı girin veya linkten bilgi getirin."); return; }
+    if (activeTab === "hepsiburada" && !hbForm.categoryId) {
+      alert("Hepsiburada için önce kategori seçmelisiniz. 'Kategori Ara' alanına en az 2 harf yazın (örn. Hafıza Kartı), açılan listeden bir kategori seçin.");
+      return;
+    }
+    if (activeTab === "n11" && !(n11Form.catL3 || n11Form.catL2 || n11Form.catL1)) {
+      alert("N11 için kategori seçin.");
+      return;
+    }
+    if (activeTab === "trendyol" && !tyForm.categoryId) {
+      alert("Trendyol için kategori seçin.");
+      return;
+    }
     setSending(true);
     setTaskResult(null);
     try {
@@ -221,53 +294,73 @@ export default function PazaryeriGonderPage() {
       if (activeTab === "n11") {
         const leafCatId = n11Form.catL3 || n11Form.catL2 || n11Form.catL1;
         endpoint = "/api/n11/products/create";
-
-        // Attribute'ları oluştur
         const attrPayload = Object.entries(n11AttrVals)
           .filter(([, v]) => v)
           .map(([attrId, val]) => {
             const attr = n11Attrs.find((a) => a.id === attrId);
-            // customValue=false → valueId zorunlu (GetCategoryAttributeValue'dan gelen gerçek ID)
             if (attr && !attr.allowCustom && attr.values?.length) {
               const valObj = attr.values.find((v) => v.id === val || v.name === val);
               if (valObj?.id) return { id: Number(attrId), valueId: Number(valObj.id) };
             }
-            // customValue=true → serbest metin veya öneri listesinden seçilen isim
             return { id: Number(attrId), customValue: val };
           });
 
-        // Görsel listesini de ürüne kaydet (bu çalışıyor çünkü "images" allowed)
-        if (validImages.length > 0) {
+        if (uploadMode === "erp" && validImages.length > 0 && selectedId) {
           await fetch(`/api/products/update?id=${selectedId}`, {
             method: "PUT", headers: headers(),
             body: JSON.stringify({ images: validImages }),
           });
         }
 
-        body = {
-          productId: selectedId,
-          n11Override: {
-            categoryId: leafCatId,
-            attributes: attrPayload,
-            shipmentTemplate: n11Form.shipmentTemplate,
-            preparingDay: n11Form.preparingDay,
-            vatRate: n11Form.vatRate,
-            description: n11Form.description || undefined,
-          },
-        };
+        if (uploadMode === "link") {
+          body = {
+            product: {
+              name: effective.title,
+              title: effective.title,
+              description: effective.description,
+              barcode: effective.barcode,
+              sku: effective.barcode,
+              stockCode: effective.barcode,
+              price: effective.price,
+              listPrice: effective.listPrice,
+              stock: effective.stock,
+              images: validImages,
+            },
+            n11Override: {
+              categoryId: leafCatId,
+              attributes: attrPayload,
+              shipmentTemplate: n11Form.shipmentTemplate,
+              preparingDay: n11Form.preparingDay,
+              vatRate: n11Form.vatRate,
+              description: n11Form.description || effective.description,
+            },
+          };
+        } else {
+          body = {
+            productId: selectedId,
+            n11Override: {
+              categoryId: leafCatId,
+              attributes: attrPayload,
+              shipmentTemplate: n11Form.shipmentTemplate,
+              preparingDay: n11Form.preparingDay,
+              vatRate: n11Form.vatRate,
+              description: n11Form.description || undefined,
+            },
+          };
+        }
       } else if (activeTab === "trendyol") {
         endpoint = "/api/trendyol/products/create";
         body = {
           product: {
-            barcode: product?.barcode || product?.barkod,
-            title: product?.name || product?.title,
-            description: product?.description,
+            barcode: effective?.barcode || effective?.barkod,
+            title: effective?.name || effective?.title,
+            description: effective?.description,
             categoryId: tyForm.categoryId,
             brandId: tyForm.brandId,
-            stockCode: tyForm.stockCode || product?.sku || product?.barcode,
-            quantity: product?.stock ?? 0,
-            listPrice: product?.listPrice || product?.price,
-            salePrice: product?.price || product?.salePrice,
+            stockCode: tyForm.stockCode || effective?.sku || effective?.barcode,
+            quantity: effective?.stock ?? 0,
+            listPrice: effective?.listPrice || effective?.price,
+            salePrice: effective?.price || effective?.salePrice,
             vatRate: tyForm.vatRate,
             cargoCompanyId: tyForm.cargoCompanyId,
             images: validImages,
@@ -276,27 +369,30 @@ export default function PazaryeriGonderPage() {
         };
       } else {
         endpoint = "/api/hepsiburada/products/create";
-        // HB attribute payload
-        const hbAttrPayload = {};
-        hbAttrs.forEach((attr) => {
-          const val = hbAttrVals[attr.id || attr.name];
-          if (val) hbAttrPayload[attr.name || attr.id] = val;
-        });
+        const hbAttrList = hbAttrs
+          .map((attr) => {
+            const key = attr.id ?? attr.attributeId ?? attr.name;
+            const val = hbAttrVals[key] ?? hbAttrVals[attr.id || attr.name];
+            const attrId = Number(attr.id ?? attr.attributeId ?? 0);
+            if (!attrId || !val) return null;
+            return { attributeId: attrId, value: String(val) };
+          })
+          .filter(Boolean);
         body = {
           product: {
-            barcode: product?.barcode || product?.barkod,
-            title: product?.name || product?.title,
-            description: product?.description,
+            barcode: effective?.barcode || effective?.barkod,
+            title: effective?.name || effective?.title,
+            description: effective?.description,
             categoryId: hbForm.categoryId,
             brandName: hbForm.brandName,
-            stockCode: product?.sku || product?.stockCode || product?.barcode,
+            stockCode: effective?.sku || effective?.stockCode || effective?.barcode,
             vatRate: hbForm.vatRate,
             guaranteePeriod: hbForm.guaranteePeriod,
             cargoCompany1: hbForm.cargoCompany1,
             cargoCompany2: hbForm.cargoCompany2,
             cargoCompany3: hbForm.cargoCompany3,
             images: validImages,
-            hbAttributes: hbAttrPayload,
+            hbAttributes: hbAttrList,
           },
         };
       }
@@ -329,33 +425,91 @@ export default function PazaryeriGonderPage() {
         : "border-transparent text-gray-500 hover:text-gray-700 bg-gray-50"
     }`;
 
+  const canSend = uploadMode === "erp"
+    ? !!selectedId
+    : !!(linkProduct.title && (activeTab === "n11" ? (n11Form.catL3 || n11Form.catL2 || n11Form.catL1) : activeTab === "trendyol" ? tyForm.categoryId : hbForm.categoryId));
+
   return (
     <div className="p-6 max-w-3xl">
       <h1 className="text-2xl font-bold mb-6">Pazaryerine Ürün Gönder</h1>
 
-      {/* Ürün Seç */}
-      <div className="mb-6">
-        <label className="block text-sm font-medium mb-1">ERP Ürünü</label>
-        <select
-          className="w-full border rounded-lg p-2"
-          value={selectedId}
-          onChange={(e) => setSelectedId(e.target.value)}
-        >
-          <option value="">— Ürün seçin —</option>
-          {products.map((p) => (
-            <option key={p._id} value={p._id}>
-              {p.name || p.title} | {p.sku || p.barcode || "SKU yok"}
-            </option>
-          ))}
-        </select>
-        {product && (
-          <div className="mt-2 text-sm text-gray-500 flex gap-4">
-            <span>Fiyat: <b>{fmt(product.price)} TL</b></span>
-            <span>Stok: <b>{product.stock ?? 0}</b></span>
-            <span>Barkod: <b>{product.barcode || product.barkod || "—"}</b></span>
-          </div>
-        )}
+      {/* Mod: ERP veya Link + Kategori */}
+      <div className="mb-4 flex gap-4 items-center border-b pb-4">
+        <span className="text-sm font-medium text-gray-600">Yükleme:</span>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input type="radio" name="uploadMode" checked={uploadMode === "erp"} onChange={() => { setUploadMode("erp"); setTaskResult(null); }} />
+          <span>ERP&apos;den ürün seç</span>
+        </label>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input type="radio" name="uploadMode" checked={uploadMode === "link"} onChange={() => { setUploadMode("link"); setSelectedId(""); setProduct(null); setTaskResult(null); }} />
+          <span>Link ve kategori ile yükle</span>
+        </label>
       </div>
+
+      {uploadMode === "erp" && (
+        <div className="mb-6">
+          <label className="block text-sm font-medium mb-1">ERP Ürünü</label>
+          <select
+            className="w-full border rounded-lg p-2"
+            value={selectedId}
+            onChange={(e) => setSelectedId(e.target.value)}
+          >
+            <option value="">— Ürün seçin —</option>
+            {products.map((p) => (
+              <option key={p._id} value={p._id}>
+                {p.name || p.title} | {p.sku || p.barcode || "SKU yok"}
+              </option>
+            ))}
+          </select>
+          {product && (
+            <div className="mt-2 text-sm text-gray-500 flex gap-4">
+              <span>Fiyat: <b>{fmt(product.price)} TL</b></span>
+              <span>Stok: <b>{product.stock ?? 0}</b></span>
+              <span>Barkod: <b>{product.barcode || product.barkod || "—"}</b></span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {uploadMode === "link" && (
+        <div className="mb-6 p-4 bg-slate-50 border rounded-lg space-y-4">
+          <p className="text-sm font-medium text-slate-700">Link ve kategori ile ürün yükle (N11, Trendyol, Hepsiburada)</p>
+          <div className="flex gap-2">
+            <input
+              type="url"
+              className="flex-1 border rounded p-2 text-sm"
+              placeholder="Ürün sayfası linki (https://...)"
+              value={linkUrl}
+              onChange={(e) => setLinkUrl(e.target.value)}
+            />
+            <button type="button" onClick={fetchProductFromLink} disabled={linkFetching || !linkUrl.trim()} className="px-4 py-2 bg-blue-600 text-white rounded text-sm disabled:opacity-50">
+              {linkFetching ? "Getiriliyor…" : "Bilgileri getir"}
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Ürün adı *</label>
+              <input type="text" className="w-full border rounded p-2 text-sm" placeholder="Başlık" value={linkProduct.title} onChange={(e) => setLinkProduct((p) => ({ ...p, title: e.target.value }))} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Barkod / Stok kodu</label>
+              <input type="text" className="w-full border rounded p-2 text-sm" placeholder="Barkod" value={linkProduct.barcode} onChange={(e) => setLinkProduct((p) => ({ ...p, barcode: e.target.value }))} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Fiyat (TL)</label>
+              <input type="number" step="0.01" min="0" className="w-full border rounded p-2 text-sm" placeholder="0" value={linkProduct.price} onChange={(e) => setLinkProduct((p) => ({ ...p, price: e.target.value }))} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Stok</label>
+              <input type="number" min="0" className="w-full border rounded p-2 text-sm" placeholder="1" value={linkProduct.stock} onChange={(e) => setLinkProduct((p) => ({ ...p, stock: e.target.value }))} />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Açıklama</label>
+            <textarea className="w-full border rounded p-2 text-sm min-h-[60px]" placeholder="Ürün açıklaması" value={linkProduct.description} onChange={(e) => setLinkProduct((p) => ({ ...p, description: e.target.value }))} />
+          </div>
+        </div>
+      )}
 
       {/* Görsel URL'leri */}
       <div className="mb-6 border rounded-lg p-4 bg-gray-50">
@@ -550,7 +704,7 @@ export default function PazaryeriGonderPage() {
               </div>
 
               <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded p-2">
-                Dip seviye kategoriyi seçince zorunlu alanlar otomatik yüklenir. Görsel: {validImages.length} adet.
+                Dip seviye kategoriyi seçince zorunlu alanlar (Kart Türü, Bellek Kapasitesi vb.) otomatik yüklenir; hepsini doldurun. Görsel: {validImages.length} adet.
               </div>
             </div>
           )}
@@ -596,16 +750,28 @@ export default function PazaryeriGonderPage() {
           {/* HEPSİBURADA */}
           {activeTab === "hepsiburada" && (
             <div className="space-y-4">
+              <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-3">
+                <p className="font-medium mb-1">Göndermeden önce:</p>
+                <ol className="list-decimal list-inside space-y-0.5">
+                  <li><strong>Kategori Ara</strong> alanına en az 2 harf yazın (örn. Hafıza Kartı, Telefon Kılıfı).</li>
+                  <li>Açılan listeden <strong>kategori seçin</strong>.</li>
+                  <li>Görünen <strong>Kategori Özellikleri</strong>ni (Kart Türü, Kapasite vb.) doldurun.</li>
+                  <li><a href="/dashboard/api-settings" className="underline">API Ayarları</a>ndan Hepsiburada kullanıcı adı, şifre ve Merchant ID girin.</li>
+                </ol>
+              </div>
               {/* Kategori arama + seç */}
               <div>
                 <label className="block text-sm font-medium mb-1">Kategori Ara *</label>
                 <input
                   type="text"
                   className="w-full border rounded-lg p-2 text-sm mb-1"
-                  placeholder="En az 2 harf yazın (örn: Cep Telefonu, Hafıza Kartı...)"
+                  placeholder="En az 2 harf yazın (örn: Hafıza Kartı, Telefon Kılıfı, Cep Telefonu...)"
                   value={hbCatSearch}
                   onChange={(e) => setHbCatSearch(e.target.value)}
                 />
+                {product && /hafıza|hafiza|memory|gb\s*hafıza/i.test(product.name || product.title || "") && hbCatSearch.length < 2 && (
+                  <p className="text-xs text-gray-500 mb-1">Bu ürün için &quot;Hafıza Kartı&quot; yazarak kategori arayabilirsiniz.</p>
+                )}
                 {hbCatLoading && <p className="text-xs text-blue-500">Kategoriler aranıyor...</p>}
                 {!hbCatLoading && hbCats.length === 0 && hbCatSearch.length >= 2 && (
                   <p className="text-xs text-red-500">Sonuç bulunamadı. Farklı bir terim deneyin.</p>
@@ -666,7 +832,59 @@ export default function PazaryeriGonderPage() {
                   <label className="block text-sm font-medium mb-1">Kargo 1</label>
                   <select className="w-full border rounded-lg p-2 text-sm" value={hbForm.cargoCompany1}
                     onChange={(e) => setHbForm((f) => ({ ...f, cargoCompany1: e.target.value }))}>
-                    {["ups","aras","mng","yurtici","ptt","horoz","surat","trendyolexpress"].map((c) => <option key={c} value={c}>{c.toUpperCase()}</option>)}
+                    {(() => {
+                      const fallback = [
+                        { id: "ups", name: "UPS" }, { id: "aras", name: "ARAS" }, { id: "mng", name: "MNG" },
+                        { id: "yurtici", name: "YURTİÇİ" }, { id: "ptt", name: "PTT" }, { id: "horoz", name: "HOROZ" },
+                        { id: "surat", name: "SÜRAT" }, { id: "trendyolexpress", name: "TRENDYOLEXPRESS" },
+                        { id: "cetinoran", name: "ÇETİN ORAN" }, { id: "fedex", name: "FEDEX" }, { id: "dhl", name: "DHL" },
+                        { id: "sendeo", name: "SENDEO" }, { id: "netlog", name: "NETLOG" }, { id: "hepsijet", name: "HEPSİJET" },
+                      ];
+                      const list = hbCargoFirms.length > 0
+                        ? hbCargoFirms.map((f) => ({ id: String(f.name || f.id).toLowerCase().replace(/\s+/g, ""), name: f.name || String(f.id) }))
+                        : fallback;
+                      return list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>);
+                    })()}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Kargo 2</label>
+                  <select className="w-full border rounded-lg p-2 text-sm" value={hbForm.cargoCompany2}
+                    onChange={(e) => setHbForm((f) => ({ ...f, cargoCompany2: e.target.value }))}>
+                    <option value="">— Seçin —</option>
+                    {(() => {
+                      const fallback = [
+                        { id: "ups", name: "UPS" }, { id: "aras", name: "ARAS" }, { id: "mng", name: "MNG" },
+                        { id: "yurtici", name: "YURTİÇİ" }, { id: "ptt", name: "PTT" }, { id: "horoz", name: "HOROZ" },
+                        { id: "surat", name: "SÜRAT" }, { id: "trendyolexpress", name: "TRENDYOLEXPRESS" },
+                        { id: "cetinoran", name: "ÇETİN ORAN" }, { id: "fedex", name: "FEDEX" }, { id: "dhl", name: "DHL" },
+                        { id: "sendeo", name: "SENDEO" }, { id: "netlog", name: "NETLOG" }, { id: "hepsijet", name: "HEPSİJET" },
+                      ];
+                      const list = hbCargoFirms.length > 0
+                        ? hbCargoFirms.map((f) => ({ id: String(f.name || f.id).toLowerCase().replace(/\s+/g, ""), name: f.name || String(f.id) }))
+                        : fallback;
+                      return list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>);
+                    })()}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Kargo 3</label>
+                  <select className="w-full border rounded-lg p-2 text-sm" value={hbForm.cargoCompany3}
+                    onChange={(e) => setHbForm((f) => ({ ...f, cargoCompany3: e.target.value }))}>
+                    <option value="">— Seçin —</option>
+                    {(() => {
+                      const fallback = [
+                        { id: "ups", name: "UPS" }, { id: "aras", name: "ARAS" }, { id: "mng", name: "MNG" },
+                        { id: "yurtici", name: "YURTİÇİ" }, { id: "ptt", name: "PTT" }, { id: "horoz", name: "HOROZ" },
+                        { id: "surat", name: "SÜRAT" }, { id: "trendyolexpress", name: "TRENDYOLEXPRESS" },
+                        { id: "cetinoran", name: "ÇETİN ORAN" }, { id: "fedex", name: "FEDEX" }, { id: "dhl", name: "DHL" },
+                        { id: "sendeo", name: "SENDEO" }, { id: "netlog", name: "NETLOG" }, { id: "hepsijet", name: "HEPSİJET" },
+                      ];
+                      const list = hbCargoFirms.length > 0
+                        ? hbCargoFirms.map((f) => ({ id: String(f.name || f.id).toLowerCase().replace(/\s+/g, ""), name: f.name || String(f.id) }))
+                        : fallback;
+                      return list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>);
+                    })()}
                   </select>
                 </div>
               </div>
@@ -713,9 +931,9 @@ export default function PazaryeriGonderPage() {
               )}
 
               <div className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded p-2">
-                Hepsiburada bağlantısı için{" "}
-                <a href="/dashboard/api-settings" className="underline font-medium">API Ayarlarına</a>
-                {" "}kullanıcı adı, şifre ve Merchant ID girmeyi unutmayın.
+                Kategori seçince <strong>Kategori Özellikleri</strong> (Kart Türü, Kapasite vb.) kutusu açılır; zorunlu alanları doldurun. Bağlantı için{" "}
+                <a href="/dashboard/api-settings" className="underline font-medium">API Ayarları</a>
+                {" "}sayfasından Hepsiburada <strong>kullanıcı adı</strong>, <strong>şifre</strong> ve <strong>Merchant ID</strong> girin.
               </div>
             </div>
           )}
@@ -726,7 +944,7 @@ export default function PazaryeriGonderPage() {
       <div className="mt-4 flex gap-3">
         <button
           onClick={handleSend}
-          disabled={sending || !selectedId}
+          disabled={sending || !canSend}
           className="bg-orange-600 hover:bg-orange-700 text-white px-6 py-2 rounded-lg font-semibold disabled:opacity-50"
         >
           {sending ? "Gönderiliyor..." : `${MARKETPLACES.find((m) => m.key === activeTab)?.label}'e Gönder`}
