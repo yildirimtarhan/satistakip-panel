@@ -65,11 +65,23 @@ TRENDYOL_USER_AGENT=SatisTakip/1.0
 
 Uygulama içinde **Dashboard → API Ayarları → Trendyol** sekmesinden de Supplier ID, API Key ve API Secret girilebilir. Bu değerler veritabanında saklanır; ortam değişkenleri yoksa buradaki değerler kullanılır.
 
+## 401 Unauthorized / TrendyolAuthorizationException
+
+Render veya canlıda **401** veya **TrendyolAuthorizationException** alıyorsanız bu **kimlik doğrulama** hatasıdır (IP değil):
+
+- **API Key** ve **API Secret** yanlış, süresi dolmuş veya başka bir hesaba ait olabilir.
+- **Yapmanız gerekenler:**
+  1. **Stage kullanıyorsanız:** https://stagepartner.trendyol.com/account/login → **Hesap Bilgilerim** → API Key ve API Secret’ı **baştan kopyalayın** (boşluk/eksik karakter olmasın).
+  2. **Canlı kullanıyorsanız:** Canlı satıcı paneli → Hesap Bilgilerim’den API bilgilerini alın.
+  3. **Dashboard → API Ayarları → Trendyol** bölümüne bu değerleri yapıştırıp kaydedin. Supplier ID’nin de (örn. 2738) doğru olduğundan emin olun.
+  4. Tarayıcıda sayfayı yenileyip tekrar deneyin.
+
 ## Bağlantı testi
 
 - API ayarlarını kaydettikten sonra **Trendyol bağlantı testi** butonu ile `/api/trendyol/test-connection` çağrılır.
 - Başarılı olursa sipariş listesi ve diğer Trendyol sayfaları stage API ile çalışır.
 - Test ortamında bağlantı başarısız veya “HTML yanıt” alıyorsanız büyük olasılıkla **IP kısıtlaması** vardır; yukarıdaki “IP kısıtlaması” bölümüne bakın.
+- **401 / Yetki hatası** alıyorsanız yukarıdaki “401 Unauthorized” bölümüne bakın.
 
 ## Entegrasyon dokümanı
 

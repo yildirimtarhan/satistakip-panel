@@ -38,10 +38,14 @@ export default async function handler(req, res) {
     if (!response.ok) {
       const text = await response.text();
       console.error("❌ Trendyol Orders API hatası:", text);
+      const is401 = response.status === 401;
+      const message = is401
+        ? "Trendyol yetki hatası (401). API Key ve API Secret'ı Stage panel (Hesap Bilgilerim) veya canlı panelden yeniden kopyalayıp API Ayarları → Trendyol bölümüne girin."
+        : "Trendyol API erişimi başarısız.";
       return res.status(response.status).json({
         success: false,
-        message: "Trendyol API erişimi başarısız.",
-        error: text,
+        message,
+        error: text?.slice?.(0, 300),
       });
     }
 

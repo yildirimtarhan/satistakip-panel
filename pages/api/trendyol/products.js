@@ -27,7 +27,10 @@ export default async function handler(req, res) {
     const text = await response.text();
 
     if (!response.ok) {
-      const msg = text.startsWith("<") ? `Trendyol API HTTP ${response.status} (HTML yanıt — yetki veya endpoint kontrolü gerekebilir)` : text.slice(0, 200);
+      const is401 = response.status === 401;
+      const msg = is401
+        ? "Trendyol yetki hatası (401). API Key ve API Secret'ı Stage/Canlı panel Hesap Bilgilerim'den yeniden kopyalayıp API Ayarları → Trendyol'a girin."
+        : (text.startsWith("<") ? `Trendyol API HTTP ${response.status} (HTML — yetki veya endpoint kontrolü)` : text.slice(0, 200));
       console.warn("Trendyol products API:", response.status, msg.slice(0, 100));
       return res.status(response.status).json({
         message: msg,

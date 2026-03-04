@@ -23,6 +23,8 @@ export default function ApiSettings() {
   const [token, setToken] = useState("");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
+  const [testingTrendyol, setTestingTrendyol] = useState(false);
+  const [testResultTrendyol, setTestResultTrendyol] = useState(null);
 
   useEffect(() => {
     const t = Cookies.get("token") || localStorage.getItem("token") || "";
@@ -73,6 +75,23 @@ export default function ApiSettings() {
       setTestResult({ success: false, message: e.message });
     }
     setTesting(false);
+  };
+
+  const testTrendyolConnection = async () => {
+    setTestingTrendyol(true);
+    setTestResultTrendyol(null);
+    try {
+      const res = await fetch("/api/trendyol/test-connection", {
+        method: "GET",
+        credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const data = await res.json();
+      setTestResultTrendyol({ success: data.success, message: data.message || data.error });
+    } catch (e) {
+      setTestResultTrendyol({ success: false, message: e.message });
+    }
+    setTestingTrendyol(false);
   };
 
   const inp = "border border-gray-300 rounded-lg p-2.5 w-full text-sm focus:outline-none focus:ring-2 focus:ring-orange-400";
@@ -157,13 +176,28 @@ export default function ApiSettings() {
       {activeTab === "trendyol" && (
         <div>
           <h2 className="text-lg font-semibold mb-1 text-gray-800">Trendyol API Ayarlari</h2>
-          <p className="text-xs text-gray-500 mb-4">Trendyol Satici Paneli &gt; API Erisim bilgilerini girin.</p>
+          <p className="text-xs text-gray-500 mb-4">Trendyol Satici Paneli &gt; Hesap Bilgilerim &gt; API bilgilerini girin.</p>
           <label className={lbl}>Supplier ID</label>
-          <input className={inp} value={form.trendyolSupplierId} onChange={(e) => setForm((p) => ({ ...p, trendyolSupplierId: e.target.value }))} />
+          <input className={inp} value={form.trendyolSupplierId} onChange={(e) => setForm((p) => ({ ...p, trendyolSupplierId: e.target.value }))} placeholder="örn. 2738 (test)" />
           <label className={lbl}>API Key</label>
-          <input className={inp} value={form.trendyolApiKey} onChange={(e) => setForm((p) => ({ ...p, trendyolApiKey: e.target.value }))} />
+          <input className={inp} value={form.trendyolApiKey} onChange={(e) => setForm((p) => ({ ...p, trendyolApiKey: e.target.value }))} placeholder="Hesap Bilgilerim'den" />
           <label className={lbl}>API Secret</label>
-          <input className={inp} type="password" value={form.trendyolApiSecret} onChange={(e) => setForm((p) => ({ ...p, trendyolApiSecret: e.target.value }))} />
+          <input className={inp} type="password" value={form.trendyolApiSecret} onChange={(e) => setForm((p) => ({ ...p, trendyolApiSecret: e.target.value }))} placeholder="Hesap Bilgilerim'den" />
+          <div className="mt-4 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={testTrendyolConnection}
+              disabled={testingTrendyol || !form.trendyolSupplierId || !form.trendyolApiKey || !form.trendyolApiSecret}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-orange-500 hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed text-white"
+            >
+              {testingTrendyol ? "Test ediliyor…" : "Bağlantıyı test et"}
+            </button>
+            {testResultTrendyol && (
+              <span className={`text-sm font-medium ${testResultTrendyol.success ? "text-green-600" : "text-red-600"}`}>
+                {testResultTrendyol.success ? "✅ " : "❌ "}{testResultTrendyol.message}
+              </span>
+            )}
+          </div>
         </div>
       )}
 
