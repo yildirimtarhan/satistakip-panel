@@ -1,6 +1,6 @@
 // pages/api/auth/me.js
 import jwt from "jsonwebtoken";
-import clientPromise from "@/lib/mongodb";
+import { connectToDatabase } from "@/lib/mongodb";
 
 export default async function handler(req, res) {
   const authHeader = req.headers.authorization;
@@ -15,8 +15,7 @@ export default async function handler(req, res) {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const client = await clientPromise;
-    const db = client.db("satistakip");
+    const { db } = await connectToDatabase();
     const users = db.collection("users");
 
     // 🟢 Artık kullanıcıyı email ile doğruluyoruz

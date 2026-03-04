@@ -68,12 +68,12 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block font-medium mb-1">Telefon veya E-mail</label>
+            <label className="block font-medium mb-1">Cep telefonu veya E-posta</label>
             <input
               type="text"
               name="loginId"
               className="w-full border rounded-lg p-2"
-              placeholder="Telefon: +90 5xx... | Email: mail@example.com"
+              placeholder="05xx xxx xx xx veya e-posta adresiniz"
               value={form.loginId}
               onChange={handleChange}
               required

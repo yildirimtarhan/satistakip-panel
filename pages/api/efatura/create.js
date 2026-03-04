@@ -1,5 +1,5 @@
 // 📄 /pages/api/efatura/create.js
-import clientPromise from "@/lib/mongodb";
+import { connectToDatabase } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 import jwt from "jsonwebtoken";
 import fs from "fs";
@@ -54,8 +54,7 @@ export default async function handler(req, res) {
     }
 
     // 📦 Mongo bağlantısı
-    const client = await clientPromise;
-    const db = client.db("satistakip");
+    const { db } = await connectToDatabase();
 
     const accountsCol = db.collection("accounts");
     const productsCol = db.collection("products");

@@ -1,10 +1,9 @@
 // 📁 /pages/api/efatura/sent.js
-import clientPromise from "@/lib/mongodb";
+import { connectToDatabase } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 
 export default async function handler(req, res) {
-  const client = await clientPromise;
-  const db = client.db("satistakip");
+  const { db } = await connectToDatabase();
   const sent = db.collection("efatura_sent");
 
   try {

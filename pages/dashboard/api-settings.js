@@ -9,14 +9,17 @@ export default function ApiSettings() {
     hbUsername: "",
     hbPassword: "",
     hbTestMode: false,
+    hbStoreName: "",
 
     trendyolSupplierId: "",
     trendyolApiKey: "",
     trendyolApiSecret: "",
+    trendyolStoreName: "",
 
     n11AppKey: "",
     n11AppSecret: "",
     n11Environment: "production",
+    n11StoreName: "",
   });
 
   const [message, setMessage] = useState("");
@@ -143,6 +146,10 @@ export default function ApiSettings() {
           <input className={inp} type="password" placeholder="Sifreniz" value={form.hbPassword}
             onChange={(e) => setForm((p) => ({ ...p, hbPassword: e.target.value }))} />
 
+          <label className={lbl}>Satici / Magaza adi</label>
+          <input className={inp} placeholder="Kargo ciktilarinda gorunecek magaza adi" value={form.hbStoreName}
+            onChange={(e) => setForm((p) => ({ ...p, hbStoreName: e.target.value }))} />
+
           <button onClick={testHBConnection} disabled={testing}
             className="mt-4 px-4 py-2 bg-orange-100 text-orange-700 border border-orange-300 rounded-lg text-sm font-medium hover:bg-orange-200 disabled:opacity-50">
             {testing ? "Test ediliyor..." : "Baglanti Test Et"}
@@ -170,6 +177,9 @@ export default function ApiSettings() {
             <option value="production">Production (Canli)</option>
             <option value="sandbox">Sandbox (Test)</option>
           </select>
+          <label className={lbl}>Satici / Magaza adi</label>
+          <input className={inp} placeholder="Kargo ciktilarinda gorunecek magaza adi" value={form.n11StoreName}
+            onChange={(e) => setForm((p) => ({ ...p, n11StoreName: e.target.value }))} />
         </div>
       )}
 
@@ -183,21 +193,23 @@ export default function ApiSettings() {
           <input className={inp} value={form.trendyolApiKey} onChange={(e) => setForm((p) => ({ ...p, trendyolApiKey: e.target.value }))} placeholder="Hesap Bilgilerim'den" />
           <label className={lbl}>API Secret</label>
           <input className={inp} type="password" value={form.trendyolApiSecret} onChange={(e) => setForm((p) => ({ ...p, trendyolApiSecret: e.target.value }))} placeholder="Hesap Bilgilerim'den" />
-          <div className="mt-4 flex items-center gap-3">
-            <button
-              type="button"
-              onClick={testTrendyolConnection}
-              disabled={testingTrendyol || !form.trendyolSupplierId || !form.trendyolApiKey || !form.trendyolApiSecret}
-              className="px-4 py-2 rounded-lg text-sm font-medium bg-orange-500 hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed text-white"
-            >
-              {testingTrendyol ? "Test ediliyor…" : "Bağlantıyı test et"}
-            </button>
-            {testResultTrendyol && (
-              <span className={`text-sm font-medium ${testResultTrendyol.success ? "text-green-600" : "text-red-600"}`}>
-                {testResultTrendyol.success ? "✅ " : "❌ "}{testResultTrendyol.message}
-              </span>
-            )}
-          </div>
+          <label className={lbl}>Satici / Magaza adi</label>
+          <input className={inp} placeholder="Kargo ciktilarinda gorunecek magaza adi" value={form.trendyolStoreName}
+            onChange={(e) => setForm((p) => ({ ...p, trendyolStoreName: e.target.value }))} />
+          <button
+            type="button"
+            onClick={testTrendyolConnection}
+            disabled={testingTrendyol || !form.trendyolSupplierId || !form.trendyolApiKey || !form.trendyolApiSecret}
+            className="mt-4 px-4 py-2 bg-orange-100 text-orange-700 border border-orange-300 rounded-lg text-sm font-medium hover:bg-orange-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {testingTrendyol ? "Test ediliyor..." : "Baglanti Test Et"}
+          </button>
+
+          {testResultTrendyol && (
+            <div className={`mt-3 p-3 rounded-lg text-sm ${testResultTrendyol.success ? "bg-green-50 border border-green-200 text-green-700" : "bg-red-50 border border-red-200 text-red-700"}`}>
+              {testResultTrendyol.success ? "✅ " : "❌ "}{testResultTrendyol.message}
+            </div>
+          )}
         </div>
       )}
 

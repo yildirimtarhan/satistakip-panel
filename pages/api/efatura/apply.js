@@ -1,5 +1,5 @@
 // 📁 /pages/api/efatura/apply.js
-import clientPromise from "@/lib/mongodb";
+import { connectToDatabase } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 import jwt from "jsonwebtoken";
 
@@ -26,8 +26,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ message: "Kullanıcı bilgisi bulunamadı" });
     }
 
-    const client = await clientPromise;
-    const db = client.db("satistakip");
+    const { db } = await connectToDatabase();
     const col = db.collection("efatura_applications");
 
     // 🧾 Kullanıcının mevcut başvurusu

@@ -16,12 +16,16 @@ export function ShippingLabelModal({
   paymentType = "",
   items = [],
   campaignCode = "",
+  /** Pazaryeri API mağaza adı (API Ayarları → N11 → Satıcı/Mağaza adı) */
+  storeName = "",
 }) {
   const printRef = useRef(null);
 
-  const senderName = sender.companyName || sender.firmaAdi || "—";
+  const firmaAdi = sender.companyName || sender.firmaAdi || "—";
+  const senderName = firmaAdi;
   const senderPhone = sender.phone || sender.telefon || "—";
   const senderAddress = sender.address || sender.adres || "—";
+  const mağazaAdi = storeName || sender.storeName || "";
   const recipientName = recipient.name || recipient.fullName || "—";
   const recipientAddress = recipient.address || recipient.fullAddress || "—";
   const recipientDistrict = recipient.district || "—";
@@ -40,7 +44,8 @@ export function ShippingLabelModal({
       </div>
       <div class="section">
         <div class="section-title">Gönderici Bilgileri</div>
-        <p><span class="label">Şirket:</span> ${String(senderName).replace(/</g, "&lt;")}</p>
+        <p><span class="label">Firma:</span> ${String(senderName).replace(/</g, "&lt;")}</p>
+        ${mağazaAdi ? `<p><span class="label">Mağaza:</span> ${String(mağazaAdi).replace(/</g, "&lt;")}</p>` : ""}
         <p><span class="label">Tel:</span> ${String(senderPhone).replace(/</g, "&lt;")}</p>
         <p><span class="label">Adres:</span> ${String(senderAddress).replace(/</g, "&lt;")}</p>
         <p class="print-date">${new Date().toLocaleDateString("tr-TR", { dateStyle: "medium" })}</p>
@@ -153,10 +158,11 @@ export function ShippingLabelModal({
               <div className="text-xs text-gray-500 mt-0.5">Kargo Etiketi</div>
             </div>
 
-            {/* Gönderici Firma Bilgileri */}
+            {/* Gönderici: Firma + Pazaryeri mağaza adı */}
             <div className="mb-4">
               <h3 className="text-xs font-bold text-gray-700 mb-2 pb-1 border-b border-gray-200">Gönderici Bilgileri</h3>
-              <p className="text-sm"><span className="font-semibold text-gray-600">Şirket:</span> {senderName}</p>
+              <p className="text-sm"><span className="font-semibold text-gray-600">Firma:</span> {senderName}</p>
+              {mağazaAdi ? <p className="text-sm"><span className="font-semibold text-gray-600">Mağaza:</span> {mağazaAdi}</p> : null}
               <p className="text-sm"><span className="font-semibold text-gray-600">Tel:</span> {senderPhone}</p>
               <p className="text-sm"><span className="font-semibold text-gray-600">Adres:</span> {senderAddress}</p>
               <p className="text-xs text-gray-500 mt-1">{new Date().toLocaleDateString("tr-TR", { dateStyle: "medium" })}</p>

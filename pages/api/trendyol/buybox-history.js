@@ -1,9 +1,8 @@
 // 📄 /pages/api/trendyol/buybox-history.js
-import clientPromise from "@/lib/mongodb";
+import { connectToDatabase } from "@/lib/mongodb";
 
 export default async function handler(req, res) {
-  const client = await clientPromise;
-  const db = client.db("satistakip");
+  const { db } = await connectToDatabase();
   const history = db.collection("buybox_history");
 
   if (req.method === "POST") {

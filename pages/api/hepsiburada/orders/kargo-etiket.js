@@ -1,10 +1,22 @@
 /**
  * Hepsiburada kargo teslim etiketi — yazdırılabilir HTML döner.
  * GET /api/hepsiburada/orders/kargo-etiket?orderNumber=XXX
- * Sipariş hb_orders veya query'den alınır; getKargoEtiketHtml ile HTML üretilir.
+ * Gönderen adı: API Ayarları → Hepsiburada → Satıcı/Mağaza adı (yoksa .env HEPSIBURADA_SENDER_NAME veya "Satıcı").
  */
+import jwt from "jsonwebtoken";
 import { connectToDatabase } from "@/lib/mongodb";
 import { getKargoEtiketHtml } from "@/lib/hepsiburadaKargoEtiketSablonu";
+
+function getTokenFromRequest(req) {
+  const auth = req.headers.authorization;
+  if (auth && /^Bearer\s+/i.test(auth)) return auth.replace(/^Bearer\s+/i, "").trim();
+  const cookie = req.headers.cookie;
+  if (cookie) {
+    const m = cookie.match(/\btoken=([^;]+)/);
+    if (m) return m[1].trim();
+  }
+  return null;
+}
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
@@ -21,6 +33,25 @@ export default async function handler(req, res) {
 
   try {
     const { db } = await connectToDatabase();
+
+    let senderName = process.env.HEPSIBURADA_SENDER_NAME || "Satıcı";
+    let firmaAdi = "";
+    const token = getTokenFromRequest(req);
+    if (token && process.env.JWT_SECRET) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const companyId = decoded?.companyId || null;
+        const userId = decoded?.userId;
+        const querySettings = companyId ? { companyId } : { userId };
+        const settingsDoc = await db.collection("settings").findOne(querySettings);
+        const storeName = settingsDoc?.hepsiburada?.storeName || "";
+        if (storeName) senderName = storeName;
+        const getQueryCompany = companyId ? { $or: [ { companyId: String(companyId) }, { userId: String(userId) } ] } : { userId: String(userId) };
+        const companyDoc = await db.collection("company_settings").findOne(getQueryCompany);
+        firmaAdi = companyDoc?.firmaAdi || "";
+      } catch (_) {}
+    }
+
     const col = db.collection("hb_orders");
     const doc = await col.findOne({
       $or: [{ orderNumber: String(orderNumber) }, { "data.orderNumber": String(orderNumber) }],
@@ -40,7 +71,8 @@ export default async function handler(req, res) {
       district: ship.district || ship.town || "",
       city: ship.city || ship.province || "",
       phone: ship.phone || ship.gsm || ship.mobile || data.phone || "",
-      senderName: process.env.HEPSIBURADA_SENDER_NAME || "Satıcı",
+      senderName,
+      firmaAdi,
     };
 
     const html = getKargoEtiketHtml(labelData);

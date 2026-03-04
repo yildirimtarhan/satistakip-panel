@@ -3,6 +3,7 @@
 import dbConnect from "@/lib/mongodb";
 import bcrypt from "bcryptjs";
 import User from "@/models/User";
+import { sendPasswordChangedEmail } from "@/lib/emailNotifications";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -32,7 +33,14 @@ export default async function handler(req, res) {
     user.password = hashedPassword;
     await user.save();
 
-    return res.status(200).json({ message: "Şifre başarıyla güncellendi ✅" });
+    // Şifre değişti onay maili (Brevo yoksa atlanır)
+    try {
+      await sendPasswordChangedEmail(user.email);
+    } catch (e) {
+      console.warn("Şifre değişti maili gönderilemedi:", e?.message);
+    }
+
+    return res.status(200).json({ message: "Şifre başarıyla güncellendi." });
   } catch (error) {
     console.error("Şifre sıfırlama hatası:", error);
     return res.status(500).json({ message: "Sunucu hatası" });

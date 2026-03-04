@@ -32,12 +32,21 @@ export default async function handler(req, res) {
     // ==========================
     if (req.method === "POST") {
       const {
-        modules = {}, // { efatura: true, earsiv: true, eirsaliye: false }
+        modules = {},
         packageType = "standart",
         contactName = "",
         contactPhone = "",
         contactEmail = "",
         note = "",
+        companyTitle = "",
+        vknTckn = "",
+        taxOffice = "",
+        address = "",
+        phone = "",
+        email = "",
+        website = "",
+        logo = "",
+        signature = "",
       } = req.body || {};
 
       if (!modules.efatura && !modules.earsiv && !modules.eirsaliye) {
@@ -45,12 +54,25 @@ export default async function handler(req, res) {
           message: "En az bir modül seçmelisiniz (E-Fatura / E-Arşiv / E-İrsaliye)",
         });
       }
+      if (!companyTitle?.trim() || !vknTckn?.trim()) {
+        return res.status(400).json({
+          message: "Firma ünvanı ve VKN/TCKN zorunludur.",
+        });
+      }
 
       const now = new Date();
 
+      const vknClean = String(vknTckn).replace(/\D/g, "").slice(0, 11);
+      let userObjectId;
+      try {
+        userObjectId = new ObjectId(userId);
+      } catch (_) {
+        userObjectId = null;
+      }
       const doc = {
         userId: String(userId),
-        companyId: decoded.companyId || null, // İleride çoklu firma için
+        userObjectId: userObjectId || undefined,
+        companyId: decoded.companyId || null,
         modules: {
           efatura: !!modules.efatura,
           earsiv: !!modules.earsiv,
@@ -62,8 +84,21 @@ export default async function handler(req, res) {
           phone: contactPhone,
           email: contactEmail,
         },
+        company: {
+          companyTitle: companyTitle.trim(),
+          vknTckn: vknClean,
+          taxOffice: taxOffice || "",
+          address: address || "",
+          phone: phone || "",
+          email: email || "",
+          website: website || "",
+        },
+        companyTitle: companyTitle.trim(),
+        vknTckn: vknClean,
+        logo: logo && String(logo).startsWith("data:image") ? logo : "",
+        signature: signature && String(signature).startsWith("data:image") ? signature : "",
         note,
-        status: "pending", // pending | approved | rejected
+        status: "pending",
         adminNote: "",
         adminUserId: null,
         createdAt: now,
@@ -71,6 +106,37 @@ export default async function handler(req, res) {
       };
 
       const result = await col.insertOne(doc);
+
+      // Firma ayarlarına da logo/imza ve temel bilgileri yaz (panel genelinde kullanılsın)
+      try {
+        const companyCol = db.collection("company_settings");
+        const userIdStr = String(userId);
+        const companyIdStr = decoded.companyId ? String(decoded.companyId) : null;
+        const $set = {
+          firmaAdi: companyTitle.trim(),
+          vergiNo: String(vknTckn).replace(/\D/g, "").slice(0, 11),
+          vergiDairesi: taxOffice || "",
+          adres: address || "",
+          telefon: phone || contactPhone || "",
+          eposta: email || contactEmail || "",
+          web: website || "",
+          yetkili: contactName || "",
+          updatedAt: now,
+          userId: userIdStr,
+        };
+        if (logo && String(logo).startsWith("data:image")) $set.logo = logo;
+        if (signature && String(signature).startsWith("data:image")) $set.imza = signature;
+        if (companyIdStr) $set.companyId = companyIdStr;
+
+        const existing = await companyCol.findOne({ userId: userIdStr });
+        if (existing) {
+          await companyCol.updateOne({ _id: existing._id }, { $set });
+        } else {
+          await companyCol.insertOne({ ...$set, createdAt: now });
+        }
+      } catch (companyErr) {
+        console.warn("company_settings güncellenemedi (başvuru kaydı yine de alındı):", companyErr.message);
+      }
 
       return res.status(200).json({
         success: true,

@@ -20,18 +20,29 @@ export default async function handler(req, res) {
     }
 
     const cleanLoginId = String(loginId).trim();
+    const digitsOnly = cleanLoginId.replace(/\D/g, "");
 
     let user = null;
 
-    // 📌 Telefon ile giriş mi?
-    if (
-      cleanLoginId.startsWith("+90") ||
-      cleanLoginId.replace(/\D/g, "").length >= 10
-    ) {
-      user = await User.findOne({ phone: cleanLoginId }).lean();
+    // 📌 Cep telefonu ile giriş: 10+ rakam varsa telefon kabul et (05xx, 5xx, +90 5xx vb.)
+    if (digitsOnly.length >= 10) {
+      const tenDigit = digitsOnly.slice(-10); // 5059112749
+      const with0 = "0" + tenDigit;            // 05059112749
+      const with90 = "90" + tenDigit;         // 905059112749
+      const withPlus90 = "+90" + tenDigit;   // +905059112749
+      const phoneVariants = [
+        cleanLoginId,
+        digitsOnly,
+        tenDigit,
+        with0,
+        with90,
+        withPlus90,
+        "+90 " + tenDigit.replace(/(\d{3})(\d{3})(\d{2})(\d{2})/, "$1 $2 $3 $4"),
+      ].filter(Boolean);
+      user = await User.findOne({ phone: { $in: phoneVariants } }).lean();
     }
 
-    // 📌 Email ile giriş mi?
+    // 📌 Email ile giriş
     if (!user) {
       user = await User.findOne({ email: cleanLoginId.toLowerCase() }).lean();
     }

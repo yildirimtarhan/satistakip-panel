@@ -1,5 +1,5 @@
 // 📁 /pages/api/admin/efatura/applications.js
-import clientPromise from "@/lib/mongodb";
+import { connectToDatabase } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 import jwt from "jsonwebtoken";
 
@@ -26,8 +26,7 @@ export default async function handler(req, res) {
       return res.status(403).json({ message: "Bu işlem için yetkiniz yok" });
     }
 
-    const client = await clientPromise;
-    const db = client.db("satistakip");
+    const { db } = await connectToDatabase();
     const appsCol = db.collection("efatura_applications");
     const usersCol = db.collection("users");
 

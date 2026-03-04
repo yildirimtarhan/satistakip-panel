@@ -24,26 +24,36 @@ export default function AdminBasvuruOnay() {
     fetchList();
   }, []);
 
+  const [updatingId, setUpdatingId] = useState(null);
+
   const updateStatus = async (id, status) => {
     const token = localStorage.getItem("token");
+    const idStr = id?.toString?.() ?? id;
+    if (!idStr) return;
 
-    const res = await fetch("/api/edonusum/admin/applications", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        id,
-        status,
-        adminNote: status === "rejected" ? "Admin tarafından reddedildi" : "",
-      }),
-    });
+    setUpdatingId(idStr);
+    try {
+      const res = await fetch("/api/edonusum/admin/applications", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          id: idStr,
+          status,
+          adminNote: status === "rejected" ? "Admin tarafından reddedildi" : "",
+        }),
+      });
 
-    if (res.ok) {
-      fetchList();
-    } else {
-      alert("İşlem başarısız");
+      if (res.ok) {
+        await fetchList();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.message || "İşlem başarısız");
+      }
+    } finally {
+      setUpdatingId(null);
     }
   };
 
@@ -74,16 +84,18 @@ export default function AdminBasvuruOnay() {
 
           <div className="flex gap-2">
             <button
-              className="bg-green-600 text-white px-3 py-1 rounded"
+              className="bg-green-600 text-white px-3 py-1 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={updatingId !== null}
               onClick={() => updateStatus(item._id, "approved")}
             >
-              ✔ Onayla
+              {updatingId === (item._id?.toString?.() ?? item._id) ? "..." : "✔ Onayla"}
             </button>
             <button
-              className="bg-red-600 text-white px-3 py-1 rounded"
+              className="bg-red-600 text-white px-3 py-1 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={updatingId !== null}
               onClick={() => updateStatus(item._id, "rejected")}
             >
-              ✖ Reddet
+              {updatingId === (item._id?.toString?.() ?? item._id) ? "..." : "✖ Reddet"}
             </button>
           </div>
         </div>

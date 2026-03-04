@@ -32,9 +32,28 @@ Trendyol **test (stage) ortamında** API erişimi için **IP yetkilendirmesi** i
   2. **Canlı ortam:** Canlı API’de (production) genelde IP kısıtlaması yoktur; sadece test ortamında sık görülür. Önce canlı panelden API bilgilerinizi alıp canlı endpoint ile deneyebilirsiniz (gerçek sipariş/ürün oluşturmamak için dikkatli test edin).
   3. **Sabit IP’li sunucu:** Uygulamanızı Render, AWS, vb. sabit IP’li veya Trendyol’un tanıdığı bir sunucuda çalıştırıp oradan API çağrısı yapmak; Trendyol’a bu sunucu IP’sini bildirerek yetkilendirme talep etmek.
 
-**Render’da test:** Daha önce Render IP’lerini Trendyol’a verdiyse, uygulamayı Render’a deploy edip oradan Trendyol API’yi deneyin. API çağrıları Render sunucusundan gideceği için IP uyumlu olabilir; Dashboard → Trendyol Siparişleri / Ürünleri sayfaları canlı (deploy) ortamda çalışıyor mu kontrol edebilirsiniz.
+**Stage panele girişte "Sorry, you have been blocked" (Cloudflare):** Stage partner sayfası (`stagepartner.trendyol.com`) Cloudflare ile erişimi kısıtlıyor olabilir. Sabit IP yoluna geçince API çağrıları sunucudan gideceği için panel engeli API’yi etkilemez.
 
-Özet: Stage’de “HTML dönüyor” veya “erişim reddedildi” benzeri durumlar çoğunlukla **IP kısıtlaması** kaynaklıdır; IP’nizi Trendyol’a bildirip yetkilendirme almanız gerekir.
+---
+
+## Sabit IP ile ilerleme (önerilen yol)
+
+Stage ortamında başka yol kalmadığında **sabit IP** ile ilerleyin:
+
+1. **Sabit IP’yi belirleyin**
+   - Uygulama **Render**’da çalışıyorsa: Render’ın çıkış IP’lerini (outbound IP) alın veya Trendyol’a “Render’dan çıkış yapıyoruz” diye yazıp Render’ın kullandığı IP aralığını yetkilendirmelerini isteyin.
+   - İsterseniz **VPS / sunucu** (AWS, DigitalOcean, vb.) kullanıp oradaki sabit IP’yi bildirin.
+
+2. **Trendyol’a bildirin**
+   - **entegrasyon@trendyol.com** adresine e-posta atın.
+   - Konu: Stage API erişimi / IP yetkilendirmesi.
+   - Metinde: Kullandığınız **sabit IP adresi(leri)** veya “Render kullanıyoruz, outbound IP’lerinizi paylaşın” deyin; Supplier ID (örn. 2738) ve test hesabı kullandığınızı yazın.
+
+3. **Yetkilendirme sonrası**
+   - API çağrıları bu sabit IP’den gideceği için uygulamayı **Render’a deploy** edin (veya ilgili sunucuda çalıştırın).
+   - Dashboard → API Ayarları → Trendyol’da kayıtlı API Key/Secret ile **Bağlantıyı test et** ve **Trendyol Siparişleri / Ürünleri** sayfalarını kullanın.
+
+Özet: Stage için **sabit IP yetkilendirmesi** şart; IP’yi Trendyol’a bildirip onay aldıktan sonra aynı IP’den çıkış yapan sunucuda (Render vb.) test edin.
 
 ## Kendi test hesabınız
 

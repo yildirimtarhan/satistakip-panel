@@ -30,6 +30,21 @@ export default function EFaturaPanel() {
     return <div className="p-6 text-center">Yükleniyor...</div>;
   }
 
+  // Erişim durumunu yeniden kontrol et (onay sonrası sayfa yenilemeden güncelleme)
+  const refreshAccess = async () => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    try {
+      const res = await fetch("/api/efatura/access", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setAccess((prev) => ({ ...prev, ...data }));
+    } catch (err) {
+      setAccess((prev) => ({ ...prev, allowed: false, status: "error" }));
+    }
+  };
+
   // ❌ Onay yoksa uyarı
   if (!access.allowed) {
     return (
@@ -52,12 +67,24 @@ export default function EFaturaPanel() {
             </b>
           </p>
 
-          <Link
-            href="/dashboard/edonusum/efatura-basvuru"
-            className="inline-block bg-orange-600 text-white px-4 py-2 rounded-lg"
-          >
-            📝 E-Fatura Başvurusu Yap
-          </Link>
+          <div className="flex flex-wrap justify-center gap-3">
+            <button
+              type="button"
+              onClick={refreshAccess}
+              className="inline-block bg-slate-600 text-white px-4 py-2 rounded-lg hover:bg-slate-700"
+            >
+              🔄 Durumu yenile
+            </button>
+            <Link
+              href="/dashboard/edonusum/efatura-basvuru"
+              className="inline-block bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700"
+            >
+              📝 E-Fatura Başvurusu Yap
+            </Link>
+          </div>
+          <p className="text-sm text-slate-500 mt-2">
+            Başvurunuz onaylandıysa &quot;Durumu yenile&quot;ye tıklayın veya sayfayı yenileyin (F5).
+          </p>
         </div>
       </div>
     );

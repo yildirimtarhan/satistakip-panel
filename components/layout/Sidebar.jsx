@@ -213,6 +213,7 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
         <MenuItem onLinkClick={handleLinkClick} href="/dashboard/n11/add-product" icon="➕" label="N11 Ürün Gönder" />
         <MenuItem onLinkClick={handleLinkClick} href="/dashboard/n11/shipment-templates" icon="📋" label="N11 Kargo Şablonları" />
         <MenuItem onLinkClick={handleLinkClick} href="/dashboard/pazaryeri-gonder" icon="🚀" label="Pazaryerine Gönder" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/pazaryeri/buybox" icon="💱" label="Trendyol BuyBox" />
 
         <SectionTitle>E-Belge</SectionTitle>
         <MenuItem onLinkClick={handleLinkClick} href="/dashboard/efatura" icon="📄" label="E-Fatura Paneli" />

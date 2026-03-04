@@ -25,14 +25,17 @@ export default async function handler(req, res) {
       hbUsername:    settingsDoc.hepsiburada?.username   || "",
       hbPassword:    settingsDoc.hepsiburada?.password   || "",
       hbTestMode:    settingsDoc.hepsiburada?.testMode   || false,
+      hbStoreName:   settingsDoc.hepsiburada?.storeName   || "",
 
       trendyolSupplierId: settingsDoc.trendyol?.supplierId || "",
       trendyolApiKey:     settingsDoc.trendyol?.apiKey     || "",
       trendyolApiSecret:  settingsDoc.trendyol?.apiSecret  || "",
+      trendyolStoreName:  settingsDoc.trendyol?.storeName   || "",
 
       n11AppKey:      settingsDoc.n11?.appKey      || "",
       n11AppSecret:   settingsDoc.n11?.appSecret   || "",
       n11Environment: settingsDoc.n11?.environment || "production",
+      n11StoreName:   settingsDoc.n11?.storeName   || "",
     };
 
     return res.status(200).json({ settings: safeSettings });

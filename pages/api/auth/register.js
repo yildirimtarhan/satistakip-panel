@@ -1,6 +1,7 @@
 import dbConnect from "@/lib/mongodb";
 import User from "@/models/User";
 import bcrypt from "bcryptjs";
+import { sendWelcomeEmail } from "@/lib/emailNotifications";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -50,6 +51,14 @@ export default async function handler(req, res) {
       approved: false, // ❗ Admin onayı ZORUNLU
       createdAt: new Date(),
     });
+
+    // Hoşgeldiniz maili (Brevo yoksa sessizce atlanır)
+    try {
+      const name = [ad, soyad].filter(Boolean).join(" ").trim() || "Kullanıcı";
+      await sendWelcomeEmail(cleanedEmail, name);
+    } catch (e) {
+      console.warn("Hoşgeldiniz maili gönderilemedi:", e?.message);
+    }
 
     return res.status(201).json({
       message: "Kayıt başarılı! Admin onayı sonrası giriş yapabilirsiniz.",

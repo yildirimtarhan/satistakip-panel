@@ -1,5 +1,5 @@
 // 📁 /pages/api/stock/logs.js
-import clientPromise from "@/lib/mongodb";
+import { connectToDatabase } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 import jwt from "jsonwebtoken";
 
@@ -11,8 +11,7 @@ export default async function handler(req, res) {
     const token = auth.split(" ")[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const client = await clientPromise;
-    const db = client.db("satistakip");
+    const { db } = await connectToDatabase();
 
     const { productId, accountId, type, startDate, endDate } = req.query;
 

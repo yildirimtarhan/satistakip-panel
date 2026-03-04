@@ -1,5 +1,5 @@
 // 📁 /pages/api/trendyol/buybox-monitor.js
-import clientPromise from "@/lib/mongodb";
+import { connectToDatabase } from "@/lib/mongodb";
 import { priceAndInventoryUrl } from "@/lib/marketplaces/trendyolConfig";
 
 function roundPriceTL(x) {
@@ -45,8 +45,7 @@ export default async function handler(req, res) {
    * }
    */
   try {
-    const client = await clientPromise;
-    const db = client.db();
+    const { db } = await connectToDatabase();
 
     const { autoUpdate = false, marginPct = 15, minMarginPct = 10, items = [] } = req.body || {};
     if (!Array.isArray(items) || items.length === 0) {

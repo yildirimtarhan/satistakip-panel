@@ -1,4 +1,4 @@
-import clientPromise from "@/lib/mongodb";
+import { connectToDatabase } from "@/lib/mongodb";
 import jwt from "jsonwebtoken";
 
 export default async function handler(req, res) {
@@ -15,8 +15,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ message: "Geçersiz veri" });
     }
 
-    const client = await clientPromise;
-    const db = client.db("satistakip");
+    const { db } = await connectToDatabase();
     const collection = db.collection("hareketler");
 
     const docs = data.map((item) => ({

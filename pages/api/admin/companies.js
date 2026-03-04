@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import dbConnect from "@/lib/dbConnect";
 import jwt from "jsonwebtoken";
 import Transaction from "@/models/Transaction";
@@ -24,9 +25,14 @@ export default async function handler(req, res) {
     }
 
     // 🔥 FİRMALAR = TRANSACTION ÜZERİNDEN
-    const companyIds = await Transaction.distinct("companyId", {
-      companyId: { $ne: null },
+    let companyIds = await Transaction.distinct("companyId", {
+      companyId: { $nin: [null, ""] },
     });
+
+    // Geçersiz / boş ObjectId'leri filtrele (CastError önlemi)
+    companyIds = companyIds.filter(
+      (id) => id != null && id !== "" && mongoose.Types.ObjectId.isValid(id)
+    );
 
     if (!companyIds.length) {
       return res.status(200).json([]);

@@ -1,4 +1,4 @@
-import clientPromise from "@/lib/mongodb";
+import { connectToDatabase } from "@/lib/mongodb";
 
 export default async function handler(req, res) {
   const { id } = req.query; // id = orderNumber
@@ -41,8 +41,7 @@ export default async function handler(req, res) {
     if (!order) {
       console.log("📦 OMS bulamadı → MongoDB fallback çalışıyor…");
 
-      const client = await clientPromise;
-      const db = client.db("satistakip");
+      const { db } = await connectToDatabase();
       const mongoOrder = await db.collection("hb_orders").findOne({
         orderNumber: id,
       });

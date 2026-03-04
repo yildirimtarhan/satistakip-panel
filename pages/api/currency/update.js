@@ -1,13 +1,11 @@
 // 📁 /pages/api/currency/update.js
-import clientPromise from "@/lib/mongodb"; // senin mevcut Mongo helper'ın
-// Eğer yoksa, kendi Mongo bağlayıcını kullan (örn. mongoose bağlayıcın)
+import { connectToDatabase } from "@/lib/mongodb";
 
 const DEFAULT_API = "https://api.exchangerate.host/latest?base=USD&symbols=TRY,EUR";
 
 export default async function handler(req, res) {
   try {
-    const client = await clientPromise;
-    const db = client.db(); // default db
+    const { db } = await connectToDatabase();
 
     if (req.method === "GET") {
       // Son kaydı getir

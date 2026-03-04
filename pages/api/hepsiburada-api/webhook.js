@@ -1,5 +1,5 @@
 // pages/api/hepsiburada-api/webhook.js
-import clientPromise from "@/lib/mongodb";
+import { connectToDatabase } from "@/lib/mongodb";
 
 /**
  * Hepsiburada Webhook (SIT)
@@ -47,8 +47,7 @@ export default async function handler(req, res) {
     console.log(`📩 [HB Webhook] Event: ${eventType} | Order: ${orderNo || "—"}`);
 
     // 🔎 DB bağlan
-    const client = await clientPromise;
-    const db = client.db("satistakip");
+    const { db } = await connectToDatabase();
 
     // 📝 Event’i her durumda logla
     await db.collection("webhookEvents").insertOne({

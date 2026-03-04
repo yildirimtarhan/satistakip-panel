@@ -28,7 +28,8 @@ export default async function handler(req, res) {
      * }
      */
 
-    if (!decoded.companyId) {
+    // GET için companyId yoksa userId ile listele (e-fatura vb. ekranlarda ürünler gelsin)
+    if (req.method !== "GET" && !decoded.companyId) {
       return res.status(401).json({ message: "Firma bilgisi yok" });
     }
 
@@ -36,9 +37,9 @@ export default async function handler(req, res) {
     // 📌 GET — ÜRÜN LİSTELE (MULTI TENANT)
     // =====================================================
     if (req.method === "GET") {
-      const filter = {
-        companyId: decoded.companyId,
-      };
+      const filter = decoded.companyId
+        ? { companyId: decoded.companyId }
+        : { userId: String(decoded.userId) };
 
       // Satış ekranı için opsiyonel stok filtresi
       if (req.query.onlyInStock === "true") {

@@ -1,4 +1,4 @@
-import clientPromise from "@/lib/mongodb";
+import { connectToDatabase } from "@/lib/mongodb";
 import jwt from "jsonwebtoken";
 
 export default async function handler(req, res) {
@@ -9,8 +9,7 @@ export default async function handler(req, res) {
     const token = authHeader.split(" ")[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const client = await clientPromise;
-    const db = client.db("satistakip");
+    const { db } = await connectToDatabase();
     const collection = db.collection("transactions");
 
     if (req.method === "GET") {

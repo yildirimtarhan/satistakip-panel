@@ -19,14 +19,17 @@ export default async function handler(req, res) {
       hbUsername,
       hbPassword,
       hbTestMode,
+      hbStoreName,
 
       trendyolSupplierId,
       trendyolApiKey,
       trendyolApiSecret,
+      trendyolStoreName,
 
       n11AppKey,
       n11AppSecret,
       n11Environment,
+      n11StoreName,
     } = req.body || {};
 
     const { db } = await connectToDatabase();
@@ -42,18 +45,21 @@ export default async function handler(req, res) {
         username: hbUsername || "",
         password: hbPassword || "",
         testMode: hbTestMode || false,
+        storeName: hbStoreName || "",
       },
 
       trendyol: {
         supplierId: trendyolSupplierId || "",
         apiKey: trendyolApiKey || "",
         apiSecret: trendyolApiSecret || "",
+        storeName: trendyolStoreName || "",
       },
 
       n11: {
         appKey: n11AppKey || "",
         appSecret: n11AppSecret || "",
         environment: n11Environment || "production",
+        storeName: n11StoreName || "",
       },
 
       updatedAt: new Date(),

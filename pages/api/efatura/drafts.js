@@ -1,12 +1,11 @@
 // 📁 /pages/api/efatura/drafts.js
-import clientPromise from "@/lib/mongodb";
+import { connectToDatabase } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 import jwt from "jsonwebtoken";
 
 export default async function handler(req, res) {
   try {
-    const client = await clientPromise;
-    const db = client.db("satistakip");
+    const { db } = await connectToDatabase();
     const col = db.collection("efatura_drafts");
 
     // 🔐 Kullanıcı doğrulama

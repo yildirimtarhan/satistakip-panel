@@ -8,15 +8,13 @@ export default function Basvurularim() {
   const fetchApps = async () => {
     try {
       const token = localStorage.getItem("token");
-
-      const res = await fetch("/api/edonusum/applications", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+      // E-Fatura başvuruları /api/efatura/applications'a kaydedildiği için buradan çekiyoruz
+      const res = await fetch("/api/efatura/applications", {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
 
       const data = await res.json();
-      setList(data.list || []);
+      setList(data.applications || data.list || []);
     } catch (err) {
       console.error("Başvurular alınamadı:", err);
     } finally {

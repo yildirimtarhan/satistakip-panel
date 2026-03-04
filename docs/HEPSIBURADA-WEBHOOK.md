@@ -1,5 +1,40 @@
 # Hepsiburada Sipariş Webhook Kurulumu
 
+## Webhook için zorunlu testler (canlıya almadan önce)
+
+Aşağıdaki adımları tamamladıktan sonra Hepsiburada sipariş tarafını canlıya alabilirsiniz.
+
+| # | Test | Nasıl yapılır | Tamamlandı |
+|---|------|----------------|------------|
+| 1 | **Webhook URL’i Hepsiburada’ya kayıt** | Entegrasyon ekibine webhook URL, Basic Auth kullanıcı/şifre ve Transaction Type listesini iletin (aşağıdaki “Hepsiburada’ya verilecek bilgiler” tablosu). | ☐ |
+| 2 | **.env’de webhook kimliği** | `HB_WEBHOOK_USERNAME` ve `HB_WEBHOOK_PASSWORD` değerleri Hepsiburada’ya verdiğinizle **birebir aynı** olsun. | ☐ |
+| 3 | **Webhook endpoint sağlık kontrolü** | Tarayıcı veya Postman: `GET https://SIZIN_DOMAIN/api/hepsiburada-api/orders/webhook` + Basic Auth (webhook username/password). Yanıt **200** ve `success: true` olmalı. | ☐ |
+| 4 | **Test siparişi oluşturma** | Panel: Hepsiburada → Siparişler → “Test siparişi oluştur” **veya** `POST /api/hepsiburada-api/orders/create-test`. İstek başarılı olmalı. | ☐ |
+| 5 | **CreateOrderV2 webhook’unun düşmesi** | Test siparişi oluşturulunca Hepsiburada sizin endpoint’e **CreateOrderV2** POST atar. Sunucu log’unda webhook isteği görülmeli; yanıt **200** dönmeli. | ☐ |
+| 6 | **Veritabanı kayıtları** | MongoDB’de `webhookEvents` koleksiyonunda yeni event, `hb_orders` koleksiyonunda yeni sipariş kaydı oluşmalı. | ☐ |
+| 7 | **Panelde sipariş görünümü** | Panel → Hepsiburada → Siparişler sayfasında “Yenile” yapın; oluşturulan test siparişi listede görünmeli. | ☐ |
+| 8 | **(İsteğe bağlı) Teslimat webhook’ları** | Merchant SIT Portal’a giriş yapıp aynı siparişte “Kargoya ver” / “Teslim edildi” işaretleyin; DeliveryShippedV2, DeliveryDeliveredV2 gelmeli ve panelde sekme güncellenmeli. | ☐ |
+
+**Not:** Adım 8 (teslimat webhook’ları) için Hepsiburada test portalına (merchant-sit) giriş gerekir. Portal erişiminiz yoksa 1–7 yeterli; canlıda gerçek siparişlerde teslimat webhook’ları zaten çalışır.
+
+**Listeleme (katalog/stok/fiyat) testleri:** Bunlar ayrı bir süreçtir (bkz. `docs/HEPSIBURADA-URUN-KATALOG.md` §8). Sipariş webhook’unu canlıya almak için yukarıdaki 1–7 (ve isteğe bağlı 8) yeterlidir; listeleme canlıya geçişi ayrıca Hepsiburada ile tamamlanır.
+
+---
+
+## Canlıya alma checklist (Hepsiburada sipariş / webhook)
+
+Testler tamamlandıktan sonra:
+
+| # | Yapılacak | Tamamlandı |
+|---|-----------|------------|
+| 1 | **Canlı webhook kaydı** | Hepsiburada **canlı** satıcı hesabında webhook’u kaydedin: aynı endpoint URL (`https://SIZIN_CANLI_DOMAIN/api/hepsiburada-api/orders/webhook`), canlı için kullanacağınız Basic Auth kullanıcı/şifre, Transaction Type: CreateOrderV2, CancelOrderLineV2, DeliveryShippedV2, DeliveryDeliveredV2, DeliveryUndeliveredV2. | ☐ |
+| 2 | **.env canlı değerleri** | Canlı Merchant ID, Secret (veya AUTH Base64), User-Agent; `HEPSIBURADA_BASE_URL=https://mpop.hepsiburada.com`. `HB_WEBHOOK_USERNAME` / `HB_WEBHOOK_PASSWORD` canlı webhook kaydındaki kimlikle aynı olsun. | ☐ |
+| 3 | **Panel API Ayarları** | Hepsiburada için test modunu kapatın (Test modu: kapalı) ve canlı Merchant ID / kullanıcı adı / şifre girin (veya .env kullanıyorsanız paneli canlı bilgilerle uyumlu bırakın). | ☐ |
+| 4 | **Deploy / sunucu** | Uygulama canlı ortamda (satistakip.online veya kendi domain’iniz) çalışıyor olsun; webhook URL’i Hepsiburada’nın erişebileceği bir adres olsun. | ☐ |
+| 5 | **Canlı sipariş denemesi** | Canlı hesapta gerçek (veya test) bir sipariş oluşunca webhook’un düştüğünü ve siparişin panelde göründüğünü kontrol edin. | ☐ |
+
+---
+
 ## Hepsiburada ile ne yapalım? (Özet)
 
 | Ne? | Durum / Aksiyon |

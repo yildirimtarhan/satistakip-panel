@@ -1,11 +1,10 @@
-import clientPromise from "@/lib/mongodb";
+import { connectToDatabase } from "@/lib/mongodb";
 
 export default async function handler(req, res) {
   try {
     const { offset = 0, limit = 100, beginDate, endDate } = req.query;
 
-    const client = await clientPromise;
-    const db = client.db("satistakip");
+    const { db } = await connectToDatabase();
     const col = db.collection("hb_orders");
 
     // ✅ Step 1: SIT ortamında API bazen boş döner — önce DB göster

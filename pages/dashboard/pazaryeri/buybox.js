@@ -50,6 +50,15 @@ export default function BuyboxPanel() {
     setLoading(false);
   };
 
+  // 🔹 Token (Trendyol API Ayarları — otomatik güncelleme için)
+  const getAuthHeaders = () => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    return {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+  };
+
   // 🔹 Analiz çalıştır
   const runBuybox = async () => {
     setLoading(true);
@@ -63,7 +72,8 @@ export default function BuyboxPanel() {
 
       const res = await fetch("/api/trendyol/buybox-monitor", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
+        credentials: "include",
         body: JSON.stringify({ autoUpdate, marginPct: margin, minMarginPct: minMargin, items }),
       });
       const data = await res.json();
@@ -74,7 +84,8 @@ export default function BuyboxPanel() {
         for (const r of data.results) {
           await fetch("/api/trendyol/buybox-history", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: getAuthHeaders(),
+            credentials: "include",
             body: JSON.stringify({
               barcode: r.barcode,
               suggestedPrice: r.suggestedSalePrice,
@@ -85,9 +96,12 @@ export default function BuyboxPanel() {
         }
 
         fetchHistory();
+      } else {
+        alert(data?.message || "BuyBox analizi başarısız.");
       }
     } catch (e) {
       console.error(e);
+      alert("BuyBox isteği sırasında hata oluştu.");
     }
     setLoading(false);
   };
@@ -105,7 +119,7 @@ export default function BuyboxPanel() {
   // 🔹 Geçmişi getir
   const fetchHistory = async () => {
     try {
-      const r = await fetch("/api/trendyol/buybox-history");
+      const r = await fetch("/api/trendyol/buybox-history", { headers: getAuthHeaders(), credentials: "include" });
       const d = await r.json();
       if (d?.ok) setHistory(d.data);
     } catch (e) {

@@ -9,6 +9,7 @@
 import { connectToDatabase } from "@/lib/mongodb";
 import { createSaleCancelBySaleNoAndCompany } from "@/lib/saleCancelBySaleNo";
 import { reversePazaryeriBorcBySaleNo } from "@/lib/pazaryeriCari";
+import { sendNewOrderEmail } from "@/lib/emailNotifications";
 import {
   getWebhookCredentials,
   getHepsiburadaMerchantId,
@@ -267,6 +268,22 @@ export default async function handler(req, res) {
         { upsert: true }
       );
       console.log("💾 Sipariş kaydedildi:", orderNumber);
+
+      // Yeni sipariş bildirimi: onaylı kullanıcılara mail (arka planda, webhook yanıtını geciktirmemek için)
+      try {
+        const users = await db.collection("users").find(
+          { approved: true, email: { $exists: true, $ne: "" } },
+          { projection: { email: 1 } }
+        ).toArray();
+        const emails = [...new Set(users.map((u) => u.email).filter(Boolean))];
+        emails.forEach((email) => {
+          sendNewOrderEmail(email, String(orderNumber), "Hepsiburada").catch((e) =>
+            console.warn("Yeni sipariş maili gönderilemedi:", email, e?.message)
+          );
+        });
+      } catch (e) {
+        console.warn("Yeni sipariş bildirim mailleri atlanamadı:", e?.message);
+      }
     }
 
     return res.status(200).json({ success: true });

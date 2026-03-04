@@ -1,9 +1,8 @@
-import clientPromise from "@/lib/mongodb";
+import { connectToDatabase } from "@/lib/mongodb";
 
 export default async function handler(req, res) {
   try {
-    const client = await clientPromise;
-    const db = client.db("satistakip");
+    const { db } = await connectToDatabase();
     const collections = await db.listCollections().toArray();
 
     res.status(200).json({

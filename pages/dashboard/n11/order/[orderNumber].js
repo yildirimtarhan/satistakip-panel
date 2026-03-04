@@ -309,21 +309,28 @@ const [erpMessage, setErpMessage] = useState("");
   // 🧾 RAW JSON Toggle (default gizli)
   const [showRaw, setShowRaw] = useState(false);
 
-  // Gönderici bilgisini firma ayarlarından al (etiket için)
+  // Gönderici: Firma Ayarları + API Ayarları (pazaryeri mağaza adı)
+  const [labelStoreName, setLabelStoreName] = useState("");
   useEffect(() => {
     if (!showLabelModal) return;
     const token = getToken();
     if (!token) return;
-    fetch("/api/company/me", { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.company) {
+    const headers = { Authorization: `Bearer ${token}` };
+    Promise.all([
+      fetch("/api/company/me", { headers }).then((r) => r.json()),
+      fetch("/api/settings/get", { headers }).then((r) => r.json()),
+    ])
+      .then(([companyRes, settingsRes]) => {
+        if (companyRes.company) {
           setLabelSender({
-            companyName: data.company.firmaAdi || "",
-            phone: data.company.telefon || data.company.eposta || "",
-            address: data.company.adres || "",
+            companyName: companyRes.company.firmaAdi || "",
+            firmaAdi: companyRes.company.firmaAdi || "",
+            phone: companyRes.company.telefon || companyRes.company.eposta || "",
+            address: companyRes.company.adres || "",
           });
         }
+        const n11Store = settingsRes?.settings?.n11StoreName || "";
+        if (n11Store) setLabelStoreName(n11Store);
       })
       .catch(() => {});
   }, [showLabelModal]);
@@ -701,6 +708,7 @@ const res = await fetch("/api/cari/link-order", {
         open={showLabelModal}
         onClose={() => setShowLabelModal(false)}
         sender={labelSender}
+        storeName={labelStoreName}
         recipient={{
           name: buyerName,
           address: fullAddress,

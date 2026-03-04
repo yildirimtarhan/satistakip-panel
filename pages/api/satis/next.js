@@ -1,4 +1,4 @@
-import clientPromise from "@/lib/mongodb";
+import { connectToDatabase } from "@/lib/mongodb";
 import { verifyToken } from "@/utils/auth";
 
 export default async function handler(req, res) {
@@ -9,8 +9,7 @@ export default async function handler(req, res) {
     const userId = decoded.userId;
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
-    const client = await clientPromise;
-    const db = client.db();
+    const { db } = await connectToDatabase();
 
     const year = new Date().getFullYear();
 

@@ -25,24 +25,39 @@ export default async function handler(req, res) {
 
     const conn = await dbConnect();
     const db = conn.connection.db;
-    const col = db.collection("edonusum_applications");
+    // E-Fatura başvuruları efatura_applications koleksiyonuna kaydediliyor
+    const col = db.collection("efatura_applications");
 
-    // 📌 GET → Liste
+    // 📌 GET → Liste (panel contactName/contactEmail bekliyor; API contact.name/contact.email dönüyor)
     if (req.method === "GET") {
       const list = await col.find({}).sort({ createdAt: -1 }).toArray();
-      return res.status(200).json({ success: true, items: list });
+      const items = list.map((item) => ({
+        ...item,
+        contactName: item.contact?.name ?? item.contactName ?? "-",
+        contactEmail: item.contact?.email ?? item.contactEmail ?? "-",
+        contactPhone: item.contact?.phone ?? item.contactPhone ?? "",
+      }));
+      return res.status(200).json({ success: true, items });
     }
 
     // 📌 PUT → Onay / Red
     if (req.method === "PUT") {
       const { id, status, adminNote } = req.body;
+      const idStr = typeof id === "string" ? id : id?.toString?.();
 
-      if (!id || !status) {
+      if (!idStr || !status) {
         return res.status(400).json({ message: "id ve status zorunlu" });
       }
 
-      await col.updateOne(
-        { _id: new ObjectId(id) },
+      let oid;
+      try {
+        oid = new ObjectId(idStr);
+      } catch {
+        return res.status(400).json({ message: "Geçersiz başvuru id" });
+      }
+
+      const result = await col.updateOne(
+        { _id: oid },
         {
           $set: {
             status,
@@ -52,6 +67,9 @@ export default async function handler(req, res) {
         }
       );
 
+      if (result.matchedCount === 0) {
+        return res.status(404).json({ message: "Başvuru bulunamadı" });
+      }
       return res.status(200).json({ success: true });
     }
 

@@ -25,13 +25,16 @@ export default async function handler(req, res) {
   try {
     const { db } = await connectToDatabase();
     const col = db.collection("company_settings");
+    const userIdStr = String(userId || "");
+    const companyIdStr = companyId ? String(companyId) : null;
 
-    // ✅ Multi-tenant query (companyId varsa onu baz al, yoksa userId)
-    // Eski kayıtlar için fallback
-    const query = companyId ? { companyId } : { userId };
+    // GET: Önce companyId ile ara, yoksa userId ile (eski kayıtlar sadece userId ile olabilir)
+    const getQuery = companyIdStr
+      ? { $or: [ { companyId: companyIdStr }, { userId: userIdStr } ] }
+      : { userId: userIdStr };
 
     if (req.method === "GET") {
-      const doc = await col.findOne(query);
+      const doc = await col.findOne(getQuery);
 
       return res.status(200).json(
         doc || {
@@ -44,6 +47,7 @@ export default async function handler(req, res) {
           vergiNo: "",
           adres: "",
           logo: "",
+          imza: "",
         }
       );
     }
@@ -59,9 +63,9 @@ export default async function handler(req, res) {
         vergiNo = "",
         adres = "",
         logo = "",
+        imza = "",
       } = req.body || {};
 
-      // ✅ $set içine multi-tenant alanlarını düzgün ekle
       const $set = {
         firmaAdi,
         yetkili,
@@ -72,26 +76,26 @@ export default async function handler(req, res) {
         vergiNo,
         adres,
         logo,
+        imza,
         updatedAt: new Date(),
-
-        // tenant alanları
-        userId: String(userId || ""),
+        userId: userIdStr,
       };
+      if (companyIdStr) $set.companyId = companyIdStr;
 
-      if (companyId) {
-        $set.companyId = String(companyId);
+      // Koleksiyonda unique index userId üzerinde: aynı userId ile ikinci doc eklenemez.
+      // Önce bu kullanıcıya ait doc'u userId ile bul (multi-tenant bozulmaz), varsa güncelle, yoksa tek doc ekle.
+      const existing = await col.findOne({ userId: userIdStr });
+      if (existing) {
+        await col.updateOne(
+          { _id: existing._id },
+          { $set }
+        );
+      } else {
+        await col.insertOne({
+          ...$set,
+          createdAt: new Date(),
+        });
       }
-
-      await col.updateOne(
-        query,
-        {
-          $set,
-          $setOnInsert: {
-            createdAt: new Date(),
-          },
-        },
-        { upsert: true }
-      );
 
       return res.status(200).json({ message: "Firma ayarları kaydedildi" });
     }
