@@ -1,6 +1,41 @@
 // 📄 /pages/dashboard/efatura/onizleme.js
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
+
+// Taslak API formatından görüntüleme formatına map (customer, items, totals)
+function draftToView(draft) {
+  if (!draft) return null;
+  const items = draft.items || [];
+  const kalemler = items.map((k) => ({
+    urunAd: k.name ?? k.urunAd ?? "-",
+    miktar: k.quantity ?? k.miktar ?? 0,
+    birimFiyat: k.price ?? k.birimFiyat ?? 0,
+  }));
+  const araToplam = draft.totals?.subtotal ?? kalemler.reduce((s, k) => s + Number(k.miktar || 0) * Number(k.birimFiyat || 0), 0);
+  const genelIskontoOrani = Number(draft.genelIskontoOrani) || 0;
+  const genelIskontoTutar = draft.genelIskontoTutar != null ? Number(draft.genelIskontoTutar) : (araToplam * genelIskontoOrani / 100);
+  const araToplamIskontolu = araToplam - genelIskontoTutar;
+  const genelToplam = draft.totals?.total ?? draft.genelToplam ?? 0;
+  const kdvOrani = items[0]?.kdvOran ?? draft.kdvOrani ?? 20;
+  const kdvTutar = Number(genelToplam) - Number(araToplamIskontolu);
+  return {
+    cariAd: draft.customer?.title ?? draft.cariAd ?? "-",
+    kalemler,
+    kdvOrani,
+    araToplam,
+    genelIskontoOrani,
+    genelIskontoTutar,
+    araToplamIskontolu,
+    kdvTutar,
+    genelToplam,
+    not: draft.notes ?? draft.not ?? "",
+    tip: draft.invoiceType ?? draft.tip ?? "EARSIV",
+    vadeTarihi: draft.vadeTarihi,
+    invoiceNumber: draft.invoiceNumber,
+    createdAt: draft.createdAt,
+    _id: draft._id,
+  };
+}
 
 export default function EFaturaOnizleme() {
   const router = useRouter();
@@ -8,45 +43,38 @@ export default function EFaturaOnizleme() {
 
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [emailSending, setEmailSending] = useState(false);
   const [fatura, setFatura] = useState(null);
   const [error, setError] = useState("");
 
-  // Basit XML string üretici (şimdilik demo amaçlı)
+  const view = useMemo(() => draftToView(fatura), [fatura]);
+
+  // Basit XML string üretici (şimdilik demo amaçlı) – view veya fatura ile uyumlu
   const buildXml = (draft) => {
     if (!draft) return "";
-
+    const v = draftToView(draft);
     const issueDate = new Date(draft.createdAt || Date.now())
       .toISOString()
       .substring(0, 10);
-
-    const linesXml =
-      (draft.kalemler || [])
-        .map((k, i) => {
-          const miktar = Number(k.miktar || 0);
-          const birimFiyat = Number(k.birimFiyat || 0);
-          const kdvOran = Number(draft.kdvOrani || 20);
-          const araToplam = miktar * birimFiyat;
-          const kdvTutar = (araToplam * kdvOran) / 100;
-          const toplam = araToplam + kdvTutar;
-
-          return `
+    const linesXml = (v?.kalemler || [])
+      .map((k, i) => {
+        const miktar = Number(k.miktar || 0);
+        const birimFiyat = Number(k.birimFiyat || 0);
+        const araToplam = miktar * birimFiyat;
+        return `
     <cac:InvoiceLine>
       <cbc:ID>${i + 1}</cbc:ID>
       <cbc:InvoicedQuantity>${miktar}</cbc:InvoicedQuantity>
-      <cbc:LineExtensionAmount currencyID="TRY">${araToplam.toFixed(
-        2
-      )}</cbc:LineExtensionAmount>
+      <cbc:LineExtensionAmount currencyID="TRY">${araToplam.toFixed(2)}</cbc:LineExtensionAmount>
       <cac:Item>
-        <cbc:Name>${k.urunAd || ""}</cbc:Name>
+        <cbc:Name>${(k.urunAd || "").replace(/</g, " ")}</cbc:Name>
       </cac:Item>
       <cac:Price>
-        <cbc:PriceAmount currencyID="TRY">${birimFiyat.toFixed(
-          2
-        )}</cbc:PriceAmount>
+        <cbc:PriceAmount currencyID="TRY">${birimFiyat.toFixed(2)}</cbc:PriceAmount>
       </cac:Price>
     </cac:InvoiceLine>`;
-        })
-        .join("\n") || "";
+      })
+      .join("\n") || "";
 
     return `<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
@@ -54,28 +82,20 @@ export default function EFaturaOnizleme() {
          xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
   <cbc:ID>${draft._id}</cbc:ID>
   <cbc:IssueDate>${issueDate}</cbc:IssueDate>
-  <cbc:InvoiceTypeCode>${
-    draft.tip === "IADE" ? "381" : "380"
-  }</cbc:InvoiceTypeCode>
-
+  <cbc:InvoiceTypeCode>${(draft.invoiceType || draft.tip) === "IADE" ? "381" : "380"}</cbc:InvoiceTypeCode>
   <cac:AccountingSupplierParty>
     <cac:Party>
       <cbc:Name>Kurumsal Tedarikçi</cbc:Name>
     </cac:Party>
   </cac:AccountingSupplierParty>
-
   <cac:AccountingCustomerParty>
     <cac:Party>
-      <cbc:Name>${draft.cariAd || "Müşteri"}</cbc:Name>
+      <cbc:Name>${(v?.cariAd || "Müşteri").replace(/</g, " ")}</cbc:Name>
     </cac:Party>
   </cac:AccountingCustomerParty>
-
   <cac:LegalMonetaryTotal>
-    <cbc:PayableAmount currencyID="TRY">${Number(
-      draft.genelToplam || 0
-    ).toFixed(2)}</cbc:PayableAmount>
+    <cbc:PayableAmount currencyID="TRY">${Number(v?.genelToplam || 0).toFixed(2)}</cbc:PayableAmount>
   </cac:LegalMonetaryTotal>
-
   ${linesXml}
 </Invoice>`;
   };
@@ -118,7 +138,33 @@ export default function EFaturaOnizleme() {
   const handleSend = async () => {
     if (!fatura?._id) return;
     alert("Şimdilik sadece önizleme var. Entegratör API'si geldiğinde bu butonu aktif edeceğiz.");
-    // ADIM 5.2'de /api/efatura/send ile bağlayacağız.
+  };
+
+  const handleMailToCustomer = async (withPdf = false) => {
+    if (!fatura?._id) return;
+    setEmailSending(true);
+    setError("");
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch("/api/efatura/send-customer-email", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          draftId: String(fatura._id),
+          attachPdf: withPdf,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "E-posta gönderilemedi");
+      alert(data.message || "E-posta gönderildi.");
+    } catch (err) {
+      setError(err.message || "E-posta gönderilemedi");
+    } finally {
+      setEmailSending(false);
+    }
   };
 
   if (!id) {
@@ -164,15 +210,9 @@ export default function EFaturaOnizleme() {
   }
 
   const xmlPreview = buildXml(fatura);
-
-  const araToplam = (fatura.kalemler || []).reduce((sum, k) => {
-    const miktar = Number(k.miktar || 0);
-    const birimFiyat = Number(k.birimFiyat || 0);
-    return sum + miktar * birimFiyat;
-  }, 0);
-
-  const kdvTutar = araToplam * Number(fatura.kdvOrani || 0) / 100;
-  const genelToplam = Number(fatura.genelToplam || araToplam + kdvTutar);
+  const araToplam = Number(view?.araToplam ?? 0);
+  const kdvTutar = Number(view?.kdvTutar ?? 0);
+  const genelToplam = Number(view?.genelToplam ?? 0);
 
   return (
     <div className="p-6 space-y-4">
@@ -180,35 +220,54 @@ export default function EFaturaOnizleme() {
         🧾 E-Fatura Önizleme
       </h1>
 
+      {error && (
+        <div className="bg-red-50 text-red-700 px-4 py-2 rounded-lg text-sm">
+          {error}
+        </div>
+      )}
+
       {/* Başlık ve Cari Bilgisi */}
       <div className="bg-white p-4 rounded-xl shadow flex justify-between gap-4">
         <div>
           <p className="font-semibold text-lg">
-            {fatura.tip === "IADE" ? "İADE FATURASI" : "SATIŞ FATURASI"}
+            {view?.tip === "IADE" ? "İADE FATURASI" : "SATIŞ FATURASI"}
+          </p>
+          <p className="text-slate-500 text-sm">
+            Fatura No: {view?.invoiceNumber || "Gönderimde atanacak"}
           </p>
           <p className="text-slate-600">
-            Cari: <span className="font-semibold">{fatura.cariAd || "-"}</span>
+            Cari: <span className="font-semibold">{view?.cariAd ?? "-"}</span>
           </p>
           <p className="text-slate-500 text-sm">
             Oluşturma Tarihi:{" "}
-            {fatura.createdAt
-              ? new Date(fatura.createdAt).toLocaleString("tr-TR")
+            {view?.createdAt
+              ? new Date(view.createdAt).toLocaleString("tr-TR")
               : "-"}
           </p>
+          {view?.vadeTarihi && (
+            <p className="text-slate-500 text-sm">
+              Vade: {new Date(view.vadeTarihi).toLocaleDateString("tr-TR")}
+            </p>
+          )}
         </div>
 
         <div className="text-right">
           <p className="text-sm text-slate-500">
-            KDV Oranı: %{fatura.kdvOrani ?? 20}
+            KDV Oranı: %{view?.kdvOrani ?? 20}
           </p>
           <p className="text-sm text-slate-500">
-            Ara Toplam: {araToplam.toFixed(2)} ₺
+            Ara Toplam: {Number(view?.araToplam ?? 0).toFixed(2)} ₺
           </p>
+          {Number(view?.genelIskontoTutar ?? 0) > 0 && (
+            <p className="text-sm text-amber-700">
+              Genel İskonto: -{Number(view?.genelIskontoTutar ?? 0).toFixed(2)} ₺
+            </p>
+          )}
           <p className="text-sm text-slate-500">
-            KDV: {kdvTutar.toFixed(2)} ₺
+            KDV: {Number(view?.kdvTutar ?? 0).toFixed(2)} ₺
           </p>
           <p className="text-lg font-bold text-orange-600">
-            Genel Toplam: {genelToplam.toFixed(2)} ₺
+            Genel Toplam: {Number(view?.genelToplam ?? 0).toFixed(2)} ₺
           </p>
         </div>
       </div>
@@ -226,7 +285,7 @@ export default function EFaturaOnizleme() {
             </tr>
           </thead>
           <tbody>
-            {(fatura.kalemler || []).map((k, i) => {
+            {(view?.kalemler || []).map((k, i) => {
               const miktar = Number(k.miktar || 0);
               const birimFiyat = Number(k.birimFiyat || 0);
               const ara = miktar * birimFiyat;
@@ -248,30 +307,30 @@ export default function EFaturaOnizleme() {
       </div>
 
       {/* Not */}
-      {fatura.not && (
+      {(view?.not || "").trim() && (
         <div className="bg-white p-4 rounded-xl shadow">
           <h2 className="font-semibold mb-2">Not</h2>
           <p className="text-sm text-slate-700 whitespace-pre-line">
-            {fatura.not}
+            {view.not}
           </p>
         </div>
       )}
 
-      {/* XML Önizleme */}
-      <div className="bg-white p-4 rounded-xl shadow">
-        <h2 className="font-semibold mb-2">XML Önizleme (Demo)</h2>
-        <p className="text-xs text-slate-500 mb-2">
-          Bu yapı özel entegratör tarafına gidecek UBL-TR benzeri fatura
-          verisinin sadeleştirilmiş bir örneğidir. Gerçek şema, entegratör
-          dokümanına göre güncellenecek.
+      {/* XML Önizleme (açılır/kapanır) */}
+      <details className="bg-white rounded-xl shadow">
+        <summary className="font-semibold p-4 cursor-pointer list-none">
+          XML Önizleme (Demo)
+        </summary>
+        <p className="text-xs text-slate-500 px-4 pb-2">
+          UBL-TR benzeri fatura verisi. Gerçek şema entegratör dokümanına göre güncellenecektir.
         </p>
-        <pre className="text-xs bg-slate-900 text-green-200 p-3 rounded-lg overflow-auto max-h-80">
-{xmlPreview}
+        <pre className="text-xs bg-slate-900 text-green-200 p-3 rounded-lg overflow-auto max-h-80 mx-4 mb-4">
+          {xmlPreview}
         </pre>
-      </div>
+      </details>
 
       {/* Butonlar */}
-      <div className="flex justify-between gap-2">
+      <div className="flex flex-wrap justify-between gap-2 items-center">
         <button
           className="btn-gray"
           onClick={() => router.push("/dashboard/efatura/taslaklar")}
@@ -279,18 +338,57 @@ export default function EFaturaOnizleme() {
           ⬅ Taslaklara Dön
         </button>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
+          <button
+            type="button"
+            className="btn-gray"
+            onClick={async () => {
+              try {
+                const token = localStorage.getItem("token");
+                const res = await fetch(`/api/efatura/draft-pdf?id=${fatura._id}`, {
+                  headers: { Authorization: `Bearer ${token}` },
+                });
+                if (!res.ok) throw new Error("PDF alınamadı");
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `E-Fatura-Taslak-${fatura._id}.pdf`;
+                a.click();
+                URL.revokeObjectURL(url);
+              } catch (e) {
+                setError(e.message || "PDF indirilemedi");
+              }
+            }}
+          >
+            📄 PDF İndir
+          </button>
           <button
             className="btn-gray"
             onClick={() =>
-              router.push(`/dashboard/efatura/yeni?id=${fatura._id}`)
+              router.push(`/dashboard/efatura/olustur?id=${fatura._id}`)
             }
           >
             ✏️ Taslağı Düzenle
           </button>
-
           <button
+            type="button"
+            className="btn-primary bg-blue-600 hover:bg-blue-700"
+            onClick={() => handleMailToCustomer(false)}
+            disabled={emailSending}
+          >
+            {emailSending ? "Gönderiliyor..." : "📧 Müşteriye E-posta Gönder"}
+          </button>
+          <button
+            type="button"
             className="btn-primary bg-green-600 hover:bg-green-700"
+            onClick={() => handleMailToCustomer(true)}
+            disabled={emailSending}
+          >
+            {emailSending ? "Gönderiliyor..." : "📧 Müşteriye PDF ile Gönder"}
+          </button>
+          <button
+            className="btn-primary bg-orange-600 hover:bg-orange-700"
             onClick={handleSend}
             disabled={sending}
           >

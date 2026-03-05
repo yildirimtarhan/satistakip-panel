@@ -56,11 +56,11 @@ export default async function handler(req, res) {
     // 📦 Mongo bağlantısı
     const { db } = await connectToDatabase();
 
-    const accountsCol = db.collection("accounts");
+    const cariCol = db.collection("cari");
     const productsCol = db.collection("products");
     const efaturaCol = db.collection("efatura_invoices");
 
-    // 👤 Cari bilgisi
+    // 👤 Cari bilgisi (cariler Cari modeli ile "cari" koleksiyonunda)
     let _cariId;
     try {
       _cariId = new ObjectId(cariId);
@@ -68,13 +68,21 @@ export default async function handler(req, res) {
       return res.status(400).json({ message: "Geçersiz cariId" });
     }
 
-    const cari = await accountsCol.findOne({
-      _id: _cariId,
-      userId: decoded.userId,
-    });
-
+    const cari = await cariCol.findOne({ _id: _cariId });
     if (!cari) {
       return res.status(404).json({ message: "Cari bulunamadı" });
+    }
+    const userIdStr = String(decoded.userId || "");
+    if (decoded.role !== "admin") {
+      const cariUserId = cari.userId ? String(cari.userId) : "";
+      const cariCompanyId = cari.companyId ? String(cari.companyId) : "";
+      const userCompanyId = decoded.companyId ? String(decoded.companyId) : "";
+      const belongs =
+        (cariUserId && cariUserId === userIdStr) ||
+        (cariCompanyId && userCompanyId && cariCompanyId === userCompanyId);
+      if (!belongs) {
+        return res.status(404).json({ message: "Cari bulunamadı" });
+      }
     }
 
     // 🧾 Ürün bilgilerini (varsa) topla

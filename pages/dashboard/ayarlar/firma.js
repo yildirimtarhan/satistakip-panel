@@ -12,6 +12,9 @@ export default function FirmaAyarları() {
     vergiNo: "",
     adres: "",
     logo: "",
+    imza: "",
+    taxtenTestMode: true,
+    efaturaFaturaNoPrefix: "KT",
   });
 
   const handleChange = (e) => {
@@ -167,6 +170,34 @@ export default function FirmaAyarları() {
               className="h-16 mt-2 border rounded"
             />
           )}
+        </div>
+      </div>
+
+      <div className="bg-white p-4 rounded-xl shadow space-y-3">
+        <h2 className="font-semibold text-slate-700">E-Fatura / Taxten (ERP entegrasyonu)</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label>E-Fatura fatura no öneki</label>
+            <input
+              name="efaturaFaturaNoPrefix"
+              value={form.efaturaFaturaNoPrefix ?? "KT"}
+              onChange={handleChange}
+              className="border p-2 rounded w-full"
+              placeholder="KT"
+              maxLength={10}
+            />
+            <p className="text-xs text-slate-500 mt-1">Panelde üretilen numara bu önekle başlar (örn. KT260200000001). Taxten’e bu numara gönderilir.</p>
+          </div>
+          <div className="flex items-end">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.taxtenTestMode !== false}
+                onChange={(e) => setForm({ ...form, taxtenTestMode: e.target.checked })}
+              />
+              Taxten test modu (devrest)
+            </label>
+          </div>
         </div>
       </div>
 

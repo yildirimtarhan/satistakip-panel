@@ -32,10 +32,15 @@ export default async function handler(req, res) {
       const body = req.body || {};
       const {
         customer,
+        accountId,
         items = [],
         notes = "",
         invoiceType = "EARSIV",
+        scenario = "TICARI",
         totals = {},
+        vadeTarihi,
+        genelIskontoOrani,
+        genelIskontoTutar,
       } = body;
 
       if (!customer || !customer.title) {
@@ -54,10 +59,15 @@ export default async function handler(req, res) {
         userId,
         uuid,
         invoiceType,
+        scenario: scenario === "TEMEL" ? "TEMEL" : "TICARI",
         customer,
+        ...(accountId && { accountId: String(accountId) }),
         items,
         notes,
         totals,
+        ...(vadeTarihi && { vadeTarihi }),
+        ...(genelIskontoOrani != null && { genelIskontoOrani: Number(genelIskontoOrani) }),
+        ...(genelIskontoTutar != null && { genelIskontoTutar: Number(genelIskontoTutar) }),
         createdAt: new Date(),
       };
 
@@ -69,17 +79,82 @@ export default async function handler(req, res) {
       });
     }
 
-    // 📌 2) TÜM TASLAKLARI GETİR
+    // 📌 2) TASLAK GÜNCELLE (PUT)
+    if (req.method === "PUT") {
+      const { id } = req.query;
+      if (!id) return res.status(400).json({ message: "ID eksik" });
+      let oid;
+      try {
+        oid = new ObjectId(id);
+      } catch {
+        return res.status(400).json({ message: "Geçersiz id" });
+      }
+      const body = req.body || {};
+      const {
+        customer,
+        accountId,
+        items = [],
+        notes = "",
+        invoiceType = "EARSIV",
+        scenario = "TICARI",
+        totals = {},
+        vadeTarihi,
+        genelIskontoOrani,
+        genelIskontoTutar,
+      } = body;
+      if (!customer || !customer.title) {
+        return res.status(400).json({ message: "Müşteri bilgisi eksik" });
+      }
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ message: "En az bir ürün eklemelisiniz" });
+      }
+      const update = {
+        invoiceType,
+        scenario: scenario === "TEMEL" ? "TEMEL" : "TICARI",
+        customer,
+        ...(accountId !== undefined && { accountId: accountId ? String(accountId) : null }),
+        items,
+        notes,
+        totals,
+        ...(vadeTarihi && { vadeTarihi }),
+        ...(genelIskontoOrani != null && { genelIskontoOrani: Number(genelIskontoOrani) }),
+        ...(genelIskontoTutar != null && { genelIskontoTutar: Number(genelIskontoTutar) }),
+        updatedAt: new Date(),
+      };
+      const result = await col.findOneAndUpdate(
+        { _id: oid, userId },
+        { $set: update },
+        { returnDocument: "after" }
+      );
+      if (!result.value && !result.ok) {
+        return res.status(404).json({ message: "Taslak bulunamadı" });
+      }
+      const draft = await col.findOne({ _id: oid, userId });
+      return res.status(200).json({ message: "Taslak güncellendi", draft: draft || result.value });
+    }
+
+    // 📌 3) TÜM TASLAKLARI GETİR veya TEK TASLAK (id ile)
     if (req.method === "GET") {
+      const { id } = req.query;
+      if (id) {
+        let oid;
+        try {
+          oid = new ObjectId(id);
+        } catch {
+          return res.status(400).json({ message: "Geçersiz id" });
+        }
+        const draft = await col.findOne({ _id: oid, userId });
+        if (!draft) return res.status(404).json({ message: "Taslak bulunamadı" });
+        return res.status(200).json(draft);
+      }
       const drafts = await col
         .find({ userId })
         .sort({ createdAt: -1 })
         .toArray();
-
       return res.status(200).json(drafts);
     }
 
-    // 📌 3) TASLAK SİL (DELETE)
+    // 📌 4) TASLAK SİL (DELETE)
     if (req.method === "DELETE") {
       const { id } = req.query;
 

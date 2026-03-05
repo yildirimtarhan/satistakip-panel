@@ -108,10 +108,16 @@ export default function EFaturaPanel() {
           <div className="mt-2 font-bold">Yeni Fatura Oluştur</div>
         </Link>
 
+        <Link href="/dashboard/efatura/gelenler"
+          className="p-5 bg-white shadow rounded-xl hover:shadow-md transition text-center border">
+          <div className="text-3xl">📥</div>
+          <div className="mt-2 font-bold">Gelen Faturalar</div>
+        </Link>
+
         <Link href="/dashboard/efatura/gonderilenler"
           className="p-5 bg-white shadow rounded-xl hover:shadow-md transition text-center border">
           <div className="text-3xl">📤</div>
-          <div className="mt-2 font-bold">Gönderilen Faturalar</div>
+          <div className="mt-2 font-bold">Giden Faturalar</div>
         </Link>
 
         <Link href="/dashboard/efatura/taslak"
@@ -127,6 +133,10 @@ export default function EFaturaPanel() {
         </Link>
 
       </div>
+
+      <p className="text-sm text-slate-500 text-center">
+        Logo ve imza için <strong>E-Fatura Başvuru</strong> veya <strong>Firma Ayarları</strong> sayfasından yükleme yapabilirsiniz.
+      </p>
 
       {/* Alt Alanlar – şimdilik placeholder */}
       <div className="bg-white p-6 rounded-xl shadow space-y-4">

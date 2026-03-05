@@ -1,6 +1,7 @@
 // 📄 /pages/dashboard/efatura/yeni.js
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
+import { E_FATURA_KDV_ORANLARI, DEFAULT_KDV_ORANI } from "@/lib/efatura/kdvOranlari";
 
 export default function YeniFatura() {
   const router = useRouter();
@@ -17,7 +18,7 @@ export default function YeniFatura() {
     tip: "SATIS", // SATIS / IADE
     kalemler: [],
     not: "",
-    kdvOrani: 20,
+    kdvOrani: DEFAULT_KDV_ORANI,
     genelToplam: 0,
   });
 
@@ -252,19 +253,17 @@ export default function YeniFatura() {
         </button>
       </div>
 
-      {/* KDV – Toplam */}
+      {/* KDV – Toplam (e-fatura oranları) */}
       <div className="bg-white p-4 rounded-xl shadow space-y-2">
         <label className="font-semibold">KDV Oranı</label>
         <select
           className="input w-40"
-          value={form.kdvOrani}
+          value={E_FATURA_KDV_ORANLARI.includes(form.kdvOrani) ? form.kdvOrani : DEFAULT_KDV_ORANI}
           onChange={(e) => setForm({ ...form, kdvOrani: Number(e.target.value) })}
         >
-          <option value={0}>%0</option>
-          <option value={1}>%1</option>
-          <option value={8}>%8</option>
-          <option value={18}>%18</option>
-          <option value={20}>%20</option>
+          {E_FATURA_KDV_ORANLARI.map((oran) => (
+            <option key={oran} value={oran}>%{oran}</option>
+          ))}
         </select>
 
         <p className="text-right text-lg font-bold">

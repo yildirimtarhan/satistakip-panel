@@ -1,10 +1,14 @@
-// 📄 /pages/dashboard/efatura/taslaklar.js
+// 📄 /pages/dashboard/efatura/taslak.js
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/router";
 
 export default function EFaturaTaslaklar() {
+  const router = useRouter();
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [sendingMailId, setSendingMailId] = useState(null);
+  const [syncing, setSyncing] = useState(false);
 
   const fetchList = async () => {
     try {
@@ -46,19 +50,72 @@ export default function EFaturaTaslaklar() {
     }
   };
 
+  const syncFromTaxten = async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/efatura/sync-taxten-drafts", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        await fetchList();
+        alert(data.message || `${data.synced ?? 0} taslak senkronize edildi.`);
+      } else {
+        alert(data.message || "Taxten taslakları alınamadı.");
+      }
+    } catch (err) {
+      alert("Hata: " + (err.message || "Senkronizasyon başarısız"));
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const sendCustomerEmail = async (draftId) => {
+    setSendingMailId(draftId);
+    try {
+      const res = await fetch("/api/efatura/send-customer-email", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: JSON.stringify({ draftId }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        alert("E-posta müşteriye gönderildi: " + (data.message || ""));
+      } else {
+        alert(data.message || "E-posta gönderilemedi");
+      }
+    } catch (err) {
+      alert("Hata: " + (err.message || "E-posta gönderilemedi"));
+    } finally {
+      setSendingMailId(null);
+    }
+  };
+
   return (
     <div className="p-6 space-y-4">
       <h1 className="text-2xl font-bold text-orange-600 text-center">
         📝 E-Fatura Taslaklar
       </h1>
 
-      <div className="flex justify-between my-3">
-        <Link
-          href="/dashboard/efatura/yeni"
-          className="btn-primary"
-        >
+      <div className="flex flex-wrap justify-between items-center gap-3 my-3">
+        <Link href="/dashboard/efatura/olustur" className="btn-primary">
           ➕ Yeni Taslak Oluştur
         </Link>
+        <button
+          type="button"
+          onClick={syncFromTaxten}
+          disabled={syncing}
+          className="bg-slate-600 hover:bg-slate-700 text-white font-medium px-4 py-2 rounded-lg disabled:opacity-50"
+          title="Taxten portalında oluşturduğunuz taslakları buraya çeker"
+        >
+          {syncing ? "Senkronize ediliyor..." : "🔄 Taxten'den taslakları getir"}
+        </button>
       </div>
 
       {/* Yükleniyor */}
@@ -80,9 +137,11 @@ export default function EFaturaTaslaklar() {
               <tr>
                 <th className="px-3 py-2">#</th>
                 <th className="px-3 py-2 text-left">Cari</th>
-                <th className="px-3 py-2 text-left">Fatura Türü</th>
+                <th className="px-3 py-2 text-left">Senaryo</th>
+                <th className="px-3 py-2 text-left">Tür</th>
                 <th className="px-3 py-2">Oluşturma</th>
                 <th className="px-3 py-2 text-right">Toplam</th>
+                <th className="px-3 py-2">Kaynak</th>
                 <th className="px-3 py-2">İşlemler</th>
               </tr>
             </thead>
@@ -92,41 +151,50 @@ export default function EFaturaTaslaklar() {
                   <td className="px-3 py-2">{i + 1}</td>
 
                   <td className="px-3 py-2">
-                    {fatura.cariAd || "-"}
+                    {fatura.customer?.title || fatura.cariAd || "-"}
                   </td>
 
-                  <td className="px-3 py-2">{fatura.tip}</td>
+                  <td className="px-3 py-2">{fatura.scenario === "TEMEL" ? "Temel" : "Ticari"}</td>
+                  <td className="px-3 py-2">{(fatura.invoiceType || fatura.tip) === "IADE" ? "İade" : "Satış"}</td>
 
                   <td className="px-3 py-2">
-                    {new Date(fatura.createdAt).toLocaleDateString(
-                      "tr-TR"
-                    )}
+                    {fatura.createdAt ? new Date(fatura.createdAt).toLocaleDateString("tr-TR") : "-"}
                   </td>
 
                   <td className="px-3 py-2 text-right font-bold">
-                    ₺{(fatura.genelToplam || 0).toLocaleString("tr-TR")}
+                    ₺{(fatura.totals?.total ?? fatura.genelToplam ?? 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}
                   </td>
 
                   <td className="px-3 py-2">
-                    <div className="flex gap-2">
+                    {fatura.source === "taxten" ? (
+                      <span className="inline-block px-2 py-0.5 text-xs font-medium bg-slate-200 text-slate-700 rounded">Taxten</span>
+                    ) : (
+                      <span className="inline-block px-2 py-0.5 text-xs text-slate-500">Panel</span>
+                    )}
+                  </td>
+
+                  <td className="px-3 py-2">
+                    <div className="flex flex-wrap gap-2">
                       <Link
-                        href={`/dashboard/efatura/yeni?id=${fatura._id}`}
+                        href={`/dashboard/efatura/olustur?id=${fatura._id}`}
                         className="text-blue-600"
                       >
                         ✏️ Düzenle
                       </Link>
-
+                      <button
+                        className="text-indigo-600 disabled:opacity-50"
+                        onClick={() => sendCustomerEmail(fatura._id)}
+                        disabled={sendingMailId === fatura._id}
+                        title={fatura.customer?.email ? "Faturayı müşteri e-postasına gönder" : "Müşteri e-postası yok"}
+                      >
+                        {sendingMailId === fatura._id ? "Gönderiliyor..." : "📧 Mail Gönder"}
+                      </button>
                       <button
                         className="text-green-600"
-                        onClick={() =>
-                          router.push(
-                            `/dashboard/efatura/onizleme?id=${fatura._id}`
-                          )
-                        }
+                        onClick={() => router.push(`/dashboard/efatura/onizleme?id=${fatura._id}`)}
                       >
                         📄 Önizle & Gönder
                       </button>
-
                       <button
                         className="text-red-600"
                         onClick={() => deleteDraft(fatura._id)}

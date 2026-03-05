@@ -48,6 +48,8 @@ export default async function handler(req, res) {
           adres: "",
           logo: "",
           imza: "",
+          taxtenTestMode: true,
+          efaturaFaturaNoPrefix: "KT",
         }
       );
     }
@@ -64,6 +66,8 @@ export default async function handler(req, res) {
         adres = "",
         logo = "",
         imza = "",
+        taxtenTestMode,
+        efaturaFaturaNoPrefix,
       } = req.body || {};
 
       const $set = {
@@ -77,6 +81,8 @@ export default async function handler(req, res) {
         adres,
         logo,
         imza,
+        ...(typeof taxtenTestMode === "boolean" && { taxtenTestMode }),
+        ...(efaturaFaturaNoPrefix !== undefined && { efaturaFaturaNoPrefix: String(efaturaFaturaNoPrefix).trim() || "KT" }),
         updatedAt: new Date(),
         userId: userIdStr,
       };

@@ -5,6 +5,7 @@ import Link from "next/link";
 export default function GonderilenlerEFatura() {
   const [faturalar, setFaturalar] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [sendingMailId, setSendingMailId] = useState(null);
 
   useEffect(() => {
     fetchFaturalar();
@@ -21,6 +22,30 @@ export default function GonderilenlerEFatura() {
       console.error("Fatura listesi alınamadı:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const sendCustomerEmail = async (sentId) => {
+    setSendingMailId(sentId);
+    try {
+      const res = await fetch("/api/efatura/send-customer-email", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: JSON.stringify({ sentId }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        alert("E-posta müşteriye gönderildi.");
+      } else {
+        alert(data.message || "E-posta gönderilemedi");
+      }
+    } catch (err) {
+      alert("Hata: " + (err.message || "E-posta gönderilemedi"));
+    } finally {
+      setSendingMailId(null);
     }
   };
 
@@ -76,18 +101,26 @@ export default function GonderilenlerEFatura() {
                   <td className="px-3 py-2 text-right font-bold">
                     ₺{Number(f.toplam || f.total || 0).toLocaleString("tr-TR")}
                   </td>
-                  <td className="px-3 py-2 text-center flex gap-3 justify-center">
-                    <Link
-                      href={`/dashboard/efatura/detay?id=${f._id}`}
-                      className="text-blue-700"
-                    >
-                      👁️
-                    </Link>
-                    {f.pdfUrl && (
-                      <a href={f.pdfUrl} target="_blank" rel="noreferrer" className="text-orange-600">
-                        📄
-                      </a>
-                    )}
+                  <td className="px-3 py-2 text-center">
+                    <div className="flex flex-wrap gap-2 justify-center">
+                      <button
+                        type="button"
+                        className="text-indigo-600 disabled:opacity-50"
+                        onClick={() => sendCustomerEmail(f._id)}
+                        disabled={sendingMailId === f._id}
+                        title="Faturayı müşteri e-postasına gönder"
+                      >
+                        {sendingMailId === f._id ? "Gönderiliyor..." : "📧 Mail Gönder"}
+                      </button>
+                      <Link href={`/dashboard/efatura/detay?id=${f._id}`} className="text-blue-700">
+                        👁️
+                      </Link>
+                      {f.pdfUrl && (
+                        <a href={f.pdfUrl} target="_blank" rel="noreferrer" className="text-orange-600">
+                          📄
+                        </a>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

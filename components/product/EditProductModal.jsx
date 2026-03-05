@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { E_FATURA_KDV_ORANLARI, DEFAULT_KDV_ORANI } from "@/lib/efatura/kdvOranlari";
 
 export default function EditProductModal({ open, onClose, product, onSave, onDelete }) {
   const [data, setData] = useState(product);
@@ -46,8 +47,10 @@ export default function EditProductModal({ open, onClose, product, onSave, onDel
           <select className="input" value={data.birim} onChange={(e) => handleChange("birim", e.target.value)}>
             <option>Adet</option><option>Kutu</option><option>Paket</option><option>KG</option>
           </select>
-          <select className="input" value={data.kdvOrani} onChange={(e) => handleChange("kdvOrani", e.target.value)}>
-            <option value={1}>%1</option><option value={10}>%10</option><option value={20}>%20</option>
+          <select className="input" value={E_FATURA_KDV_ORANLARI.includes(Number(data.kdvOrani)) ? data.kdvOrani : DEFAULT_KDV_ORANI} onChange={(e) => handleChange("kdvOrani", Number(e.target.value))}>
+            {E_FATURA_KDV_ORANLARI.map((oran) => (
+              <option key={oran} value={oran}>%{oran}</option>
+            ))}
           </select>
         </div>
 

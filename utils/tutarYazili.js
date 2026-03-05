@@ -6,8 +6,8 @@ const ONLAR = ["", "On", "Yirmi", "Otuz", "Kırk", "Elli", "Altmış", "Yetmiş"
 const YUZLER = ["", "Yüz", "İki Yüz", "Üç Yüz", "Dört Yüz", "Beş Yüz", "Altı Yüz", "Yedi Yüz", "Sekiz Yüz", "Dokuz Yüz"];
 
 function uceBol(s) {
-  const n = s.replace(/\D/g, "");
-  if (!n || n === "0") return "Sıfır";
+  const n = String(s).replace(/\D/g, "");
+  if (!n || n === "0") return []; // forEach için her zaman dizi döndür
   const parts = [];
   let i = n.length;
   while (i > 0) {
