@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/router';
 import { useN11Orders } from '@/hooks/useN11Orders';
-import { OrderCard } from '@/components/n11/OrderCard';           // ❌ dashboard/n11 değil
+import { OrderCard } from '@/components/n11/OrderCard';
+import { FaturaModal } from '@/components/pazaryeri/FaturaModal';
 
-function FilterBar({ filters = {}, onFilterChange, onSync, syncing, onFixCariNames, fixingCariNames }) {
+const N11_STATUS_MAP = { New: "Yeni", Approved: "Onaylandı", Rejected: "Reddedildi", Shipped: "Kargoda", Delivered: "Teslim", Completed: "Tamamlandı" };
+
+function FilterBar({ filters = {}, onFilterChange, onSync, syncing, onFixCariNames, fixingCariNames, viewMode = 'table', onViewModeChange }) {
   const [localSearch, setLocalSearch] = useState(filters?.search || '');
   
   const handleSearch = (e) => {
@@ -60,6 +63,11 @@ function FilterBar({ filters = {}, onFilterChange, onSync, syncing, onFixCariNam
           >
             {syncing ? 'Senkronize Ediliyor...' : '🔄 Senkronize Et'}
           </button>
+
+          <div className="flex gap-2 border-l pl-4">
+            <button type="button" onClick={() => onViewModeChange?.('card')} className={`px-3 py-2 rounded text-sm ${viewMode === 'card' ? 'bg-orange-500 text-white' : 'bg-gray-100'}`}>Kart</button>
+            <button type="button" onClick={() => onViewModeChange?.('table')} className={`px-3 py-2 rounded text-sm ${viewMode === 'table' ? 'bg-orange-500 text-white' : 'bg-gray-100'}`}>Tablo</button>
+          </div>
         </div>
       </div>
     </div>
@@ -69,9 +77,12 @@ function FilterBar({ filters = {}, onFilterChange, onSync, syncing, onFixCariNam
 export default function N11OrdersPage() {
   const router = useRouter();
   const [filters, setFilters] = useState({ search: '', status: '' });
+  const [viewMode, setViewMode] = useState('table');
   const { orders, loading, error, pagination, fetchOrders, syncOrders, setPage } = useN11Orders(1, 20);
   const [syncing, setSyncing] = useState(false);
   const [fixingCariNames, setFixingCariNames] = useState(false);
+  const [erpLoading, setErpLoading] = useState(false);
+  const [faturaOrderNumber, setFaturaOrderNumber] = useState(null);
 
   const handleSync = async () => {
     setSyncing(true);
@@ -118,7 +129,7 @@ export default function N11OrdersPage() {
     <div className="p-6 max-w-7xl mx-auto">
       <h1 className="text-2xl font-bold mb-6">N11 Siparişleri</h1>
       
-      <FilterBar filters={filters} onFilterChange={handleFilterChange} onSync={handleSync} syncing={syncing} onFixCariNames={handleFixCariNames} fixingCariNames={fixingCariNames} />
+      <FilterBar filters={filters} onFilterChange={handleFilterChange} onSync={handleSync} syncing={syncing} onFixCariNames={handleFixCariNames} fixingCariNames={fixingCariNames} viewMode={viewMode} onViewModeChange={setViewMode} />
 
       {loading ? (
         <div className="flex justify-center items-center h-64">
@@ -126,14 +137,63 @@ export default function N11OrdersPage() {
         </div>
       ) : (
         <>
-          <div className="grid gap-4">
-            {orders.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
-                <p className="text-lg">Henüz sipariş bulunmuyor</p>
-                <p className="text-sm mt-2">Siparişleri çekmek için &quot;Senkronize Et&quot; butonuna tıklayın</p>
+          {orders.length === 0 ? (
+            <div className="text-center py-12 text-gray-500">
+              <p className="text-lg">Henüz sipariş bulunmuyor</p>
+              <p className="text-sm mt-2">Siparişleri çekmek için &quot;Senkronize Et&quot; butonuna tıklayın</p>
+            </div>
+          ) : viewMode === 'table' ? (
+            <div className="bg-white rounded-xl shadow overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="text-left px-4 py-3 font-semibold text-slate-700">Sipariş no</th>
+                      <th className="text-left px-4 py-3 font-semibold text-slate-700">Durum</th>
+                      <th className="text-left px-4 py-3 font-semibold text-slate-700">Son güncelleme</th>
+                      <th className="text-left px-4 py-3 font-semibold text-slate-700">Kargo</th>
+                      <th className="text-center px-4 py-3 font-semibold text-slate-700">Etiket</th>
+                      <th className="text-center px-4 py-3 font-semibold text-slate-700">ERP</th>
+                      <th className="text-center px-4 py-3 font-semibold text-slate-700">Fatura</th>
+                      <th className="text-left px-4 py-3 font-semibold text-slate-700">İşlem</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {orders.map((order) => {
+                      const no = order.orderNumber || order.id;
+                      const status = order.status || '—';
+                      const statusLabel = N11_STATUS_MAP[status] || status;
+                      const date = order.createDate || order.lastStatusUpdateDate || order.updatedAt;
+                      const trackingNumber = order.cargoSenderNumber || order.trackingNumber;
+                      const trackingUrl = trackingNumber ? `https://www.google.com/search?q=${encodeURIComponent(trackingNumber)}+kargo+takip` : null;
+                      return (
+                        <tr key={no} className="border-t border-slate-100 hover:bg-slate-50">
+                          <td className="px-4 py-3 font-mono">{no}</td>
+                          <td className="px-4 py-3"><span className="inline-block px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-800">{statusLabel}</span></td>
+                          <td className="px-4 py-3 text-slate-600">{date ? new Date(date).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}</td>
+                          <td className="px-4 py-3">
+                            {trackingUrl ? <a href={trackingUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Takip</a> : '—'}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <a href={`/api/n11/orders/kargo-etiket?orderNumber=${encodeURIComponent(no)}`} target="_blank" rel="noopener noreferrer" className="text-orange-600 hover:underline font-medium">Etiket</a>
+                          </td>
+                          <td className="px-4 py-3 text-center">{order.erpSaleNo || order.erpPushed ? <span className="text-green-600 font-medium">✓ ERP'de</span> : '—'}</td>
+                          <td className="px-4 py-3 text-center">
+                            <button type="button" onClick={() => setFaturaOrderNumber(no)} className="text-orange-600 hover:underline text-sm font-medium">E-arşiv fatura</button>
+                          </td>
+                          <td className="px-4 py-3">
+                            <button type="button" onClick={() => router.push(`/dashboard/n11/order/${no}`)} className="text-slate-600 hover:text-orange-600 text-sm">Detay</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-            ) : (
-              orders.map((order) => (
+            </div>
+          ) : (
+            <div className="grid gap-4">
+              {orders.map((order) => (
                 <OrderCard
                   key={order.orderNumber || order.id}
                   order={order}
@@ -142,9 +202,9 @@ export default function N11OrdersPage() {
                     if (orderNumber) router.push(`/dashboard/n11/order/${orderNumber}`);
                   }}
                 />
-              ))
-            )}
-          </div>
+              ))}
+            </div>
+          )}
 
           {pagination.totalPages > 1 && (
             <div className="flex justify-center gap-2 mt-6">
@@ -153,6 +213,14 @@ export default function N11OrdersPage() {
               <button onClick={() => setPage(pagination.currentPage + 1)} disabled={pagination.currentPage === pagination.totalPages} className="px-3 py-1 border rounded disabled:opacity-50">Sonraki →</button>
             </div>
           )}
+
+          <FaturaModal
+            open={!!faturaOrderNumber}
+            onClose={() => setFaturaOrderNumber(null)}
+            orderNumber={faturaOrderNumber}
+            marketplace="n11"
+            token={typeof window !== 'undefined' ? (localStorage.getItem('token') || localStorage.getItem('accessToken') || '') : ''}
+          />
         </>
       )}
     </div>

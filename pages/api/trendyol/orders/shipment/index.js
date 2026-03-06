@@ -21,11 +21,12 @@ export default async function handler(req, res) {
       cargoCompanyId,
     };
 
+    const userAgent = process.env.TRENDYOL_USER_AGENT || "SatisTakip/1.0";
     const response = await fetch(url, {
       method: "POST",
       headers: {
         Authorization: `Basic ${auth}`,
-        "User-Agent": "tigdes_dev",
+        "User-Agent": userAgent,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),

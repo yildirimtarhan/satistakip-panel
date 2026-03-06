@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import * as XLSX from "xlsx";
+import { FaturaModal } from "@/components/pazaryeri/FaturaModal";
 import {
   LineChart,
   Line,
@@ -20,6 +21,7 @@ export default function DashboardTrendyolOrdersPage() {
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [dateRange, setDateRange] = useState({ start: "", end: "" });
+  const [faturaOrderNumber, setFaturaOrderNumber] = useState(null);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -196,15 +198,15 @@ export default function DashboardTrendyolOrdersPage() {
                 <th className="text-left p-3 text-sm font-semibold text-gray-700">Ürün</th>
                 <th className="text-left p-3 text-sm font-semibold text-gray-700">Durum</th>
                 <th className="text-left p-3 text-sm font-semibold text-gray-700">Tarih</th>
-                <th className="text-right p-3 text-sm font-semibold text-gray-700">Alış ₺</th>
+                <th className="text-left p-3 text-sm font-semibold text-gray-700">Kargo</th>
+                <th className="text-center p-3 text-sm font-semibold text-gray-700">Etiket</th>
                 <th className="text-right p-3 text-sm font-semibold text-gray-700">Satış ₺</th>
-                <th className="text-right p-3 text-sm font-semibold text-gray-700">Kar ₺</th>
               </tr>
             </thead>
             <tbody>
               {filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="p-6 text-center text-gray-500">
+                  <td colSpan={9} className="p-6 text-center text-gray-500">
                     Sipariş bulunamadı.
                   </td>
                 </tr>
@@ -212,7 +214,7 @@ export default function DashboardTrendyolOrdersPage() {
                 filteredOrders.map((o, i) => (
                   <tr key={o.id || i} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="p-3">
-                      <Link href={`/trendyol/orders/${o.id}`} className="text-orange-600 hover:underline">
+                      <Link href={`/dashboard/trendyol/orders/${o.id}`} className="text-orange-600 hover:underline font-mono">
                         {o.id}
                       </Link>
                     </td>
@@ -220,11 +222,20 @@ export default function DashboardTrendyolOrdersPage() {
                     <td className="p-3 text-gray-700">{o.productName ?? "—"}</td>
                     <td className="p-3">{displayStatus(o.status)}</td>
                     <td className="p-3 text-gray-600">
-                      {o.createdDate ? new Date(o.createdDate).toLocaleString("tr-TR") : "—"}
+                      {o.createdDate ? new Date(o.createdDate).toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" }) : "—"}
                     </td>
-                    <td className="p-3 text-right text-gray-600">{o.purchasePrice ?? "—"}</td>
+                    <td className="p-3">
+                      {o.trackingNumber ? (
+                        <a href={`https://www.google.com/search?q=${encodeURIComponent(o.trackingNumber)}+kargo+takip`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Takip</a>
+                      ) : "—"}
+                    </td>
+                    <td className="p-3 text-center">
+                      <a href={`/api/trendyol/orders/kargo-etiket?orderNumber=${encodeURIComponent(o.id)}`} target="_blank" rel="noopener noreferrer" className="text-orange-600 hover:underline font-medium">Etiket</a>
+                    </td>
+                    <td className="p-3 text-center">
+                      <button type="button" onClick={() => setFaturaOrderNumber(o.id)} className="text-orange-600 hover:underline text-sm font-medium">E-arşiv fatura</button>
+                    </td>
                     <td className="p-3 text-right font-medium">{o.salePrice ?? "—"}</td>
-                    <td className="p-3 text-right text-gray-600">{calculateProfit(o)} ₺</td>
                   </tr>
                 ))
               )}
@@ -232,6 +243,14 @@ export default function DashboardTrendyolOrdersPage() {
           </table>
         </div>
       </div>
+
+      <FaturaModal
+        open={!!faturaOrderNumber}
+        onClose={() => setFaturaOrderNumber(null)}
+        orderNumber={faturaOrderNumber}
+        marketplace="trendyol"
+        token={typeof window !== "undefined" ? localStorage.getItem("token") || localStorage.getItem("accessToken") : ""}
+      />
 
       {filteredOrders.length > 0 && (
         <div className="mt-8 bg-white border rounded-xl shadow-sm p-4">

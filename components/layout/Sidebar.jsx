@@ -285,6 +285,12 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
     <SectionTitle>Admin</SectionTitle>
 
     <MenuItem
+      href="/dashboard/admin"
+      icon="👑"
+      label="Yönetici Paneli"
+    />
+
+    <MenuItem
       href="/dashboard/admin/users"
       icon="🛡️"
       label="Kullanıcı Yönetimi"

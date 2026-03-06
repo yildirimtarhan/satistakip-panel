@@ -31,10 +31,12 @@ export default async function handler(req, res) {
   };
 
   try {
+    const userAgent = process.env.TRENDYOL_USER_AGENT || "SatisTakip/1.0";
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Authorization': `Basic ${authHeader}`,
+        'User-Agent': userAgent,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(shipmentData)

@@ -26,6 +26,26 @@ export default async function handler(req, res) {
       ? { $or: [{ companyId: companyIdStr }, { userId: userIdStr }] }
       : { userId: userIdStr };
 
+    // Tarih filtresi (Taxten tarzı: startDate, endDate)
+    const { startDate, endDate, q } = req.query;
+    if (startDate || endDate) {
+      query.receivedAt = {};
+      if (startDate) query.receivedAt.$gte = new Date(startDate);
+      if (endDate) query.receivedAt.$lte = new Date(endDate);
+    }
+    if (q && String(q).trim()) {
+      const term = String(q).trim();
+      query.$and = query.$and || [];
+      query.$and.push({
+        $or: [
+          { invoiceNo: new RegExp(term, "i") },
+          { faturaNo: new RegExp(term, "i") },
+          { senderTitle: new RegExp(term, "i") },
+          { gonderen: new RegExp(term, "i") },
+        ],
+      });
+    }
+
     const list = await col
       .find(query)
       .sort({ receivedAt: -1, createdAt: -1 })

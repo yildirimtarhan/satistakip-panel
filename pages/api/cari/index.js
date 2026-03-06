@@ -140,6 +140,64 @@ if (req.method === "GET") {
       });
     }
 
+    // ============================================================
+    // 📌 PUT → Cari Güncelle (?cariId=...)
+    // ============================================================
+    if (req.method === "PUT") {
+      const cariId = req.query.cariId;
+      if (!cariId) return res.status(400).json({ message: "cariId gerekli" });
+      let oid;
+      try {
+        oid = new Types.ObjectId(cariId);
+      } catch {
+        return res.status(400).json({ message: "Geçersiz cariId" });
+      }
+      const b = req.body || {};
+      const updateFilter = { _id: oid };
+      if (decoded.role !== "admin") updateFilter.userId = decoded.userId;
+      const updateFields = {
+        updatedAt: new Date(),
+      };
+      if (b.ad !== undefined) updateFields.ad = b.ad;
+      if (b.tur !== undefined) updateFields.tur = b.tur;
+      if (b.telefon !== undefined) updateFields.telefon = b.telefon;
+      if (b.email !== undefined) updateFields.email = b.email;
+      if (b.adres !== undefined) updateFields.adres = b.adres;
+      if (b.il !== undefined) updateFields.il = b.il;
+      if (b.ilce !== undefined) updateFields.ilce = b.ilce;
+      if (b.vergiTipi !== undefined) updateFields.vergiTipi = b.vergiTipi;
+      if (b.vergiNo !== undefined) updateFields.vergiNo = b.vergiNo;
+      if (b.vergiDairesi !== undefined) updateFields.vergiDairesi = b.vergiDairesi;
+      if (b.postaKodu !== undefined) updateFields.postaKodu = b.postaKodu;
+      if (b.unvan !== undefined) updateFields.unvan = b.unvan;
+      if (b.trendyolCustomerId !== undefined) updateFields.trendyolCustomerId = b.trendyolCustomerId;
+      if (b.hbCustomerId !== undefined) updateFields.hbCustomerId = b.hbCustomerId;
+      if (b.n11CustomerId !== undefined) updateFields.n11CustomerId = b.n11CustomerId;
+      if (b.amazonCustomerId !== undefined) updateFields.amazonCustomerId = b.amazonCustomerId;
+      const result = await Cari.updateOne(updateFilter, { $set: updateFields });
+      if (result.matchedCount === 0) return res.status(404).json({ message: "Cari bulunamadı veya yetkiniz yok" });
+      return res.status(200).json({ message: "Cari güncellendi" });
+    }
+
+    // ============================================================
+    // 📌 DELETE → Cari Sil (?cariId=...)
+    // ============================================================
+    if (req.method === "DELETE") {
+      const cariId = req.query.cariId;
+      if (!cariId) return res.status(400).json({ message: "cariId gerekli" });
+      let oid;
+      try {
+        oid = new Types.ObjectId(cariId);
+      } catch {
+        return res.status(400).json({ message: "Geçersiz cariId" });
+      }
+      const deleteFilter = { _id: oid };
+      if (decoded.role !== "admin") deleteFilter.userId = decoded.userId;
+      const result = await Cari.deleteOne(deleteFilter);
+      if (result.deletedCount === 0) return res.status(404).json({ message: "Cari bulunamadı veya yetkiniz yok" });
+      return res.status(200).json({ message: "Cari silindi" });
+    }
+
     return res.status(405).json({ message: "Method not allowed" });
   } catch (err) {
     console.error("🔥 Cari API hatası:", err);

@@ -1,5 +1,6 @@
 // pages/dashboard/hepsiburada/orders/index.js
 import { useEffect, useState, useMemo } from "react";
+import { FaturaModal } from "@/components/pazaryeri/FaturaModal";
 
 const pageWrap = { padding: "24px", maxWidth: 1280, margin: "0 auto" };
 const headers = () => ({
@@ -96,6 +97,7 @@ export default function HepsiburadaOrdersPage() {
   const [pushErpResult, setPushErpResult] = useState(null);
   const [seedLoading, setSeedLoading] = useState(false);
   const [seedResult, setSeedResult] = useState(null);
+  const [faturaOrderNumber, setFaturaOrderNumber] = useState(null);
 
   const [begin, setBegin] = useState(
     () => new Date(Date.now() - 1000 * 60 * 60 * 24 * 30).toISOString().slice(0, 10)
@@ -554,6 +556,9 @@ export default function HepsiburadaOrdersPage() {
                     <th style={{ textAlign: "center", padding: "12px 16px", fontWeight: 600, color: "#475569", borderBottom: "1px solid #e2e8f0" }}>
                       ERP
                     </th>
+                    <th style={{ textAlign: "center", padding: "12px 16px", fontWeight: 600, color: "#475569", borderBottom: "1px solid #e2e8f0" }}>
+                      Fatura
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -642,6 +647,15 @@ export default function HepsiburadaOrdersPage() {
                             <span style={{ color: "#94a3b8", fontSize: 13 }}>—</span>
                           )}
                         </td>
+                        <td style={{ padding: "14px 16px", textAlign: "center" }}>
+                          <button
+                            type="button"
+                            onClick={() => setFaturaOrderNumber(d.orderNumber)}
+                            style={{ fontSize: 12, fontWeight: 500, color: "#EA580C", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+                          >
+                            E-arşiv fatura
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -658,6 +672,14 @@ export default function HepsiburadaOrdersPage() {
           )}
         </div>
       </div>
+
+      <FaturaModal
+        open={!!faturaOrderNumber}
+        onClose={() => setFaturaOrderNumber(null)}
+        orderNumber={faturaOrderNumber}
+        marketplace="hepsiburada"
+        token={typeof window !== "undefined" ? localStorage.getItem("token") || localStorage.getItem("accessToken") : ""}
+      />
     </div>
   );
 }

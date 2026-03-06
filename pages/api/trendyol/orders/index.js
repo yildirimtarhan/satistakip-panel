@@ -51,15 +51,17 @@ export default async function handler(req, res) {
 
     const data = await response.json();
     // Yeni API: { content: [paketler], totalElements, totalPages, page, size }
+    // Trendyol Dec 2025: totalPrice→packageTotalPrice, grossAmount→packageGrossAmount; eski alanlar da desteklensin
     const raw = data.content ?? data.orders ?? (Array.isArray(data) ? data : []);
     const orders = raw.map((p) => ({
-      id: p.orderNumber ?? p.id,
+      id: p.orderNumber ?? p.shipmentPackageId ?? p.id,
       customerName: [p.customerFirstName, p.customerLastName].filter(Boolean).join(" ") || p.customerEmail || "—",
       productName: p.lines?.[0]?.productName ?? p.lines?.[0]?.productCode ?? "—",
       status: p.status ?? p.shipmentPackageStatus ?? "—",
       createdDate: p.orderDate ? new Date(p.orderDate).toISOString() : p.createdDate,
-      salePrice: p.totalPrice ?? p.packageGrossAmount ?? p.grossAmount,
+      salePrice: p.packageTotalPrice ?? p.totalPrice ?? p.packageGrossAmount ?? p.grossAmount,
       purchasePrice: null,
+      trackingNumber: p.cargoTrackingNumber ?? p.trackingNumber ?? null,
     }));
     return res.status(200).json({ success: true, orders, totalElements: data.totalElements, totalPages: data.totalPages, page: data.page });
   } catch (error) {
