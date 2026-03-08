@@ -137,7 +137,37 @@ export default function EFaturaOnizleme() {
 
   const handleSend = async () => {
     if (!fatura?._id) return;
-    alert("Şimdilik sadece önizleme var. Entegratör API'si geldiğinde bu butonu aktif edeceğiz.");
+    if (
+      !confirm(
+        "Bu taslak e-faturayı entegratör (test) hesabı üzerinden göndermek istiyor musun? Devam etmek istiyor musun?"
+      )
+    )
+      return;
+
+    setSending(true);
+    setError("");
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch("/api/efatura/send", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ invoiceId: String(fatura._id) }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || data.message || "E-fatura gönderilemedi");
+      }
+      alert(data.message || "E-fatura entegratöre gönderildi (test hesabı).");
+      // Taslak üzerindeki numara / tarih güncellenmiş olabilir, yeniden yükle
+      await fetchDraft();
+    } catch (err) {
+      setError(err.message || "E-fatura gönderilemedi");
+    } finally {
+      setSending(false);
+    }
   };
 
   const handleMailToCustomer = async (withPdf = false) => {

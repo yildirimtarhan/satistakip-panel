@@ -68,6 +68,8 @@ export default async function handler(req, res) {
         imza = "",
         taxtenTestMode,
         efaturaFaturaNoPrefix,
+        taxtenUsername,
+        taxtenPassword,
       } = req.body || {};
 
       const $set = {
@@ -83,6 +85,8 @@ export default async function handler(req, res) {
         imza,
         ...(typeof taxtenTestMode === "boolean" && { taxtenTestMode }),
         ...(efaturaFaturaNoPrefix !== undefined && { efaturaFaturaNoPrefix: String(efaturaFaturaNoPrefix).trim() || "KT" }),
+        ...(taxtenUsername !== undefined && { taxtenUsername: taxtenUsername || "" }),
+        ...(taxtenPassword !== undefined && { taxtenPassword: taxtenPassword || "" }),
         updatedAt: new Date(),
         userId: userIdStr,
       };

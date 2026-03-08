@@ -15,6 +15,8 @@ export default function FirmaAyarları() {
     imza: "",
     taxtenTestMode: true,
     efaturaFaturaNoPrefix: "KT",
+    taxtenUsername: "",
+    taxtenPassword: "",
   });
 
   const handleChange = (e) => {
@@ -197,6 +199,33 @@ export default function FirmaAyarları() {
               />
               Taxten test modu (devrest)
             </label>
+          </div>
+          <div>
+            <label>Taxten kullanıcı adı (opsiyonel)</label>
+            <input
+              name="taxtenUsername"
+              value={form.taxtenUsername || ""}
+              onChange={handleChange}
+              className="border p-2 rounded w-full"
+              placeholder="Taxten kullanıcı adı veya ClientID tabanlı kullanıcı"
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Taxten size test hesabı için kullanıcı adı verdiyse buraya yazın. ClientId/ApiKey kullanıyorsanız boş bırakabilirsiniz.
+            </p>
+          </div>
+          <div>
+            <label>Taxten şifre (opsiyonel)</label>
+            <input
+              type="password"
+              name="taxtenPassword"
+              value={form.taxtenPassword || ""}
+              onChange={handleChange}
+              className="border p-2 rounded w-full"
+              placeholder="Taxten şifresi"
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Taxten şifreniz. E-Fatura gönderiminde basic auth için kullanılır.
+            </p>
           </div>
         </div>
       </div>

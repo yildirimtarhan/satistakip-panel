@@ -19,6 +19,7 @@ export default function DashboardTrendyolOrdersPage() {
   const [filteredOrders, setFilteredOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [errorStatus, setErrorStatus] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [dateRange, setDateRange] = useState({ start: "", end: "" });
   const [faturaOrderNumber, setFaturaOrderNumber] = useState(null);
@@ -26,6 +27,7 @@ export default function DashboardTrendyolOrdersPage() {
   const fetchOrders = useCallback(async () => {
     setLoading(true);
     setError("");
+    setErrorStatus(null);
     try {
       const res = await fetch("/api/trendyol/orders", { credentials: "include" });
       let data;
@@ -33,12 +35,14 @@ export default function DashboardTrendyolOrdersPage() {
         data = await res.json();
       } catch (_) {
         setError("Sunucu beklenmeyen yanıt döndü. (IP kısıtlaması veya API ayarlarını kontrol edin.)");
+        setErrorStatus(null);
         setOrders([]);
         setFilteredOrders([]);
         return;
       }
 
       if (!res.ok) {
+        setErrorStatus(res.status);
         setError(data?.message || "Trendyol API erişimi başarısız. Test ortamında IP yetkisi gerekebilir.");
         setOrders([]);
         setFilteredOrders([]);
@@ -151,6 +155,18 @@ export default function DashboardTrendyolOrdersPage() {
         Trendyol siparişleriniz API üzerinden listelenir. Bağlantı için API Ayarları → Trendyol bölümünü kontrol edin.
       </p>
 
+      {error && (
+        <div className={`mb-6 p-4 rounded-xl border ${errorStatus === 401 ? "bg-amber-50 border-amber-200" : "bg-orange-50 border-orange-200"}`}>
+          <p className="font-medium text-amber-800 mb-2">▲ {error}</p>
+          <Link
+            href="/dashboard/api-settings?tab=trendyol"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-medium"
+          >
+            API Ayarları → Trendyol&apos;a git
+          </Link>
+        </div>
+      )}
+
       <div className="bg-white border rounded-xl shadow-sm p-4 mb-6 flex flex-wrap gap-3 items-center">
         <input
           type="text"
@@ -185,7 +201,6 @@ export default function DashboardTrendyolOrdersPage() {
         >
           📊 Excel
         </button>
-        {error && <span className="text-amber-600 text-sm">⚠ {error}</span>}
       </div>
 
       <div className="bg-white border rounded-xl shadow-sm overflow-hidden">

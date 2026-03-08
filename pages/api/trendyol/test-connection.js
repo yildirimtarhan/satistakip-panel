@@ -41,11 +41,21 @@ export default async function handler(req, res) {
       });
     }
 
-    // Hata varsa
+    // 401: Yetki hatası — net yönlendirme
+    if (status === 401) {
+      return res.status(401).json({
+        success: false,
+        message: "Trendyol yetki hatası (401). Supplier ID, API Key ve API Secret aynı Trendyol hesabından (Hesap Bilgilerim) olmalı; başında/sonunda boşluk olmamalı. Test için Stage panel, canlı için canlı panel bilgilerini kullanın.",
+        error: text?.slice(0, 200),
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Diğer hatalar
     return res.status(status).json({
       success: false,
       message: `❌ Trendyol API bağlantısı başarısız. HTTP ${status}`,
-      error: text,
+      error: text?.slice(0, 200),
       timestamp: new Date().toISOString()
     });
 

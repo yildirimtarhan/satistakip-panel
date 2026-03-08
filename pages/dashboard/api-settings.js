@@ -1,8 +1,15 @@
 import { useState, useEffect } from "react";
+import { useRouter } from "next/router";
 import Cookies from "js-cookie";
 
 export default function ApiSettings() {
-  const [activeTab, setActiveTab] = useState("hepsiburada");
+  const router = useRouter();
+  const tabFromUrl = router.query?.tab;
+  const [activeTab, setActiveTab] = useState(tabFromUrl === "trendyol" ? "trendyol" : tabFromUrl === "n11" ? "n11" : "hepsiburada");
+
+  useEffect(() => {
+    if (tabFromUrl === "trendyol" || tabFromUrl === "n11") setActiveTab(tabFromUrl);
+  }, [tabFromUrl]);
 
   const [form, setForm] = useState({
     hbMerchantId: "",
@@ -186,7 +193,10 @@ export default function ApiSettings() {
       {activeTab === "trendyol" && (
         <div>
           <h2 className="text-lg font-semibold mb-1 text-gray-800">Trendyol API Ayarlari</h2>
-          <p className="text-xs text-gray-500 mb-4">Trendyol Satici Paneli &gt; Hesap Bilgilerim &gt; API bilgilerini girin.</p>
+          <p className="text-xs text-gray-500 mb-2">Trendyol Satici Paneli &gt; Hesap Bilgilerim &gt; API bilgilerini girin.</p>
+          <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-600">
+            <strong>401 alıyorsanız:</strong> Supplier ID, API Key ve API Secret <strong>aynı hesaba ait</strong> olmalı (Hesap Bilgilerim&apos;deki değerleri olduğu gibi kopyalayın, başında/sonunda boşluk bırakmayın). Test için <a href="https://stagepartner.trendyol.com/account/login" target="_blank" rel="noopener noreferrer" className="text-orange-600 underline">Stage panel</a>, canlı için canlı panel bilgilerini kullanın.
+          </div>
           <label className={lbl}>Supplier ID</label>
           <input className={inp} value={form.trendyolSupplierId} onChange={(e) => setForm((p) => ({ ...p, trendyolSupplierId: e.target.value }))} placeholder="örn. 2738 (test)" />
           <label className={lbl}>API Key</label>
