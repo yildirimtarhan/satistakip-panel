@@ -1,4 +1,5 @@
 import { connectToDatabase } from "@/lib/mongodb";
+import { getHepsiburadaOmsBaseUrl } from "@/lib/hepsiburadaEnv";
 
 export default async function handler(req, res) {
   const { id } = req.query; // id = orderNumber
@@ -8,11 +9,12 @@ export default async function handler(req, res) {
   }
 
   try {
-    const authString = Buffer.from(
-      `${process.env.HB_MERCHANT_ID}:${process.env.HB_SECRET_KEY}`
-    ).toString("base64");
+    const merchantId = process.env.HB_MERCHANT_ID || process.env.HEPSIBURADA_MERCHANT_ID;
+    const secret = process.env.HB_SECRET_KEY || process.env.HEPSIBURADA_SECRET_KEY;
+    const authString = Buffer.from(`${merchantId}:${secret}`).toString("base64");
 
-    const omsUrl = `https://oms-external-sit.hepsiburada.com/orders/merchantid/${process.env.HB_MERCHANT_ID}?limit=50&offset=0`;
+    const omsBase = getHepsiburadaOmsBaseUrl();
+    const omsUrl = `${omsBase}/orders/merchantid/${merchantId}?limit=50&offset=0`;
 
     console.log("📡 HB OMS Sipariş List URL:", omsUrl);
 
@@ -20,7 +22,7 @@ export default async function handler(req, res) {
       method: "GET",
       headers: {
         Authorization: `Basic ${authString}`,
-        "User-Agent": process.env.HB_USER_AGENT,
+        "User-Agent": process.env.HB_USER_AGENT || process.env.HEPSIBURADA_USER_AGENT || "satistakiponline_dev",
         Accept: "application/json",
       },
     });

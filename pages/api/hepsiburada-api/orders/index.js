@@ -1,4 +1,5 @@
 import { connectToDatabase } from "@/lib/mongodb";
+import { getHepsiburadaOmsBaseUrl } from "@/lib/hepsiburadaEnv";
 
 export default async function handler(req, res) {
   try {
@@ -25,12 +26,12 @@ export default async function handler(req, res) {
     }
 
     // ✅ Step 2: HB API’ye istek gönder (PROD için gerekli)
-    const authString = Buffer.from(
-      `${process.env.HB_MERCHANT_ID}:${process.env.HB_SECRET_KEY}`
-    ).toString("base64");
+    const merchantId = process.env.HB_MERCHANT_ID || process.env.HEPSIBURADA_MERCHANT_ID;
+    const secret = process.env.HB_SECRET_KEY || process.env.HEPSIBURADA_SECRET_KEY;
+    const authString = Buffer.from(`${merchantId}:${secret}`).toString("base64");
 
-    const baseUrl = process.env.HEPSIBURADA_BASE_URL || process.env.HB_BASE_URL || "https://mpop-sit.hepsiburada.com";
-    const apiUrl = `${baseUrl.replace(/\/$/, "")}/api/oms/v1/orders?offset=${offset}&limit=${limit}&beginDate=${encodeURIComponent(
+    const baseUrl = getHepsiburadaOmsBaseUrl();
+    const apiUrl = `${baseUrl}/api/oms/v1/orders?offset=${offset}&limit=${limit}&beginDate=${encodeURIComponent(
       beginDate
     )}&endDate=${encodeURIComponent(endDate)}`;
 
@@ -38,10 +39,10 @@ export default async function handler(req, res) {
       method: "GET",
       headers: {
         "Authorization": `Basic ${authString}`,
-        "User-Agent": process.env.HB_USER_AGENT,
+        "User-Agent": process.env.HB_USER_AGENT || process.env.HEPSIBURADA_USER_AGENT || "satistakiponline_dev",
         "Accept": "application/json",
         "Content-Type": "application/json",
-        "hb-client-id": process.env.HB_MERCHANT_ID,
+        "hb-client-id": merchantId,
       },
     });
 

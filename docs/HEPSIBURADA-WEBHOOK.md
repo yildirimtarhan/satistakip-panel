@@ -28,7 +28,7 @@ Testler tamamlandıktan sonra:
 | # | Yapılacak | Tamamlandı |
 |---|-----------|------------|
 | 1 | **Canlı webhook kaydı** | Hepsiburada **canlı** satıcı hesabında webhook’u kaydedin: aynı endpoint URL (`https://SIZIN_CANLI_DOMAIN/api/hepsiburada-api/orders/webhook`), canlı için kullanacağınız Basic Auth kullanıcı/şifre, Transaction Type: CreateOrderV2, CancelOrderLineV2, DeliveryShippedV2, DeliveryDeliveredV2, DeliveryUndeliveredV2. | ☐ |
-| 2 | **.env canlı değerleri** | Canlı Merchant ID, Secret (veya AUTH Base64), User-Agent; `HEPSIBURADA_BASE_URL=https://mpop.hepsiburada.com`. `HB_WEBHOOK_USERNAME` / `HB_WEBHOOK_PASSWORD` canlı webhook kaydındaki kimlikle aynı olsun. | ☐ |
+| 2 | **.env canlı değerleri** | Canlı Merchant ID, Secret (veya AUTH Base64), User-Agent; `HEPSIBURADA_OMS_BASE_URL=https://oms-external.hepsiburada.com` (siparişler için). `HB_WEBHOOK_USERNAME` / `HB_WEBHOOK_PASSWORD` canlı webhook kaydındaki kimlikle aynı olsun. | ☐ |
 | 3 | **Panel API Ayarları** | Hepsiburada için test modunu kapatın (Test modu: kapalı) ve canlı Merchant ID / kullanıcı adı / şifre girin (veya .env kullanıyorsanız paneli canlı bilgilerle uyumlu bırakın). | ☐ |
 | 4 | **Deploy / sunucu** | Uygulama canlı ortamda (satistakip.online veya kendi domain’iniz) çalışıyor olsun; webhook URL’i Hepsiburada’nın erişebileceği bir adres olsun. | ☐ |
 | 5 | **Canlı sipariş denemesi** | Canlı hesapta gerçek (veya test) bir sipariş oluşunca webhook’un düştüğünü ve siparişin panelde göründüğünü kontrol edin. | ☐ |
@@ -78,6 +78,18 @@ HB_WEBHOOK_PASSWORD=supersecret123
 
 Eski env isimleri de geçerli: HB_MERCHANT_ID, HB_SECRET_KEY veya HB_PASSWORD, HB_USER_AGENT.
 
+**Canlı ortam örneği:**
+
+```env
+HEPSIBURADA_MERCHANT_ID=b95f26b8-d9ba-49a6-b148-54ea2405c3bc
+HEPSIBURADA_SECRET_KEY=prjZRKtY3wP3
+HEPSIBURADA_AUTH=Yjk1ZjI2YjgtZDliYS00OWE2LWIxNDgtNTRlYTI0MDVjM2JjOnByalpSS3RZM3dQMw==
+HEPSIBURADA_USER_AGENT=satistakiponline_dev
+HEPSIBURADA_OMS_BASE_URL=https://oms-external.hepsiburada.com
+HB_WEBHOOK_USERNAME=<canlı webhook kullanıcı adı>
+HB_WEBHOOK_PASSWORD=<canlı webhook şifresi>
+```
+
 ## Canlıya geçiş — anlık veriler sisteminize akar
 
 Canlıya geçtiğinizde **aynı webhook ve aynı kod** kullanılır; Hepsiburada canlı siparişleri anlık olarak panelinize ve ERP'ye akar.
@@ -85,7 +97,7 @@ Canlıya geçtiğinizde **aynı webhook ve aynı kod** kullanılır; Hepsiburada
 | Ne yapılır? | Açıklama |
 |-------------|----------|
 | **Webhook URL** | Canlıda da aynı endpoint: `https://SIZIN_CANLI_DOMAIN/api/hepsiburada-api/orders/webhook` (örn. satistakip.online). |
-| **.env canlı değerler** | Canlı Merchant ID, Secret (veya AUTH Base64), User-Agent ve canlı base URL (örn. `HEPSIBURADA_BASE_URL=https://mpop.hepsiburada.com`). `HB_WEBHOOK_USERNAME` / `HB_WEBHOOK_PASSWORD` Hepsiburada canlı webhook kaydındaki kimlikle aynı olsun. |
+| **.env canlı değerler** | Canlı Merchant ID, Secret (veya AUTH Base64), User-Agent; sipariş API için `HEPSIBURADA_OMS_BASE_URL=https://oms-external.hepsiburada.com`. `HB_WEBHOOK_USERNAME` / `HB_WEBHOOK_PASSWORD` Hepsiburada canlı webhook kaydındaki kimlikle aynı olsun. |
 | **Hepsiburada canlı hesap** | Canlı satıcı hesabında webhook'u kaydedin: yukarıdaki URL + Basic Auth. Transaction Type: CreateOrderV2, CancelOrderLineV2, DeliveryShippedV2, DeliveryDeliveredV2, DeliveryUndeliveredV2 vb. |
 | **Akış** | Canlıda yeni sipariş gelince HB bu URL'e POST atar → sipariş `hb_orders`'a yazılır → panelde görünür. "ERP'ye aktar" ile Cari + Satış oluşur. İptal webhook'u gelince ERP'de satış iptali oluşturulur. |
 

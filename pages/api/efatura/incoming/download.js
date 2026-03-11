@@ -23,7 +23,8 @@ export default async function handler(req, res) {
 
     const { db } = await connectToDatabase();
     const col = db.collection("efatura_incoming");
-    const query = { _id: new ObjectId(id), $or: [{ userId }, { companyId: companyId || "" }] };
+    const tenantFilter = companyId ? { companyId } : { userId };
+    const query = { _id: new ObjectId(id), ...tenantFilter };
     const doc = await col.findOne(query);
     if (!doc) return res.status(404).json({ message: "Fatura bulunamadı" });
 

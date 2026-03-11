@@ -23,7 +23,7 @@ export default async function handler(req, res) {
     const userIdStr = String(decoded.userId || "");
     const companyIdStr = decoded.companyId ? String(decoded.companyId) : null;
     const query = companyIdStr
-      ? { $or: [{ companyId: companyIdStr }, { userId: userIdStr }] }
+      ? { companyId: companyIdStr }
       : { userId: userIdStr };
 
     // Tarih filtresi (Taxten tarzı: startDate, endDate)

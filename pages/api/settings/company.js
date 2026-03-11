@@ -50,6 +50,11 @@ export default async function handler(req, res) {
           imza: "",
           taxtenTestMode: true,
           efaturaFaturaNoPrefix: "KT",
+          // Yeni alanlar için varsayılan değerler
+          taxtenClientId: "",
+          taxtenApiKey: "",
+          taxtenUsername: "",
+          taxtenPassword: "",
         }
       );
     }
@@ -70,6 +75,9 @@ export default async function handler(req, res) {
         efaturaFaturaNoPrefix,
         taxtenUsername,
         taxtenPassword,
+        // ✅ YENİ: Taxten Client ID ve API Key desteği
+        taxtenClientId,
+        taxtenApiKey,
       } = req.body || {};
 
       const $set = {
@@ -87,6 +95,9 @@ export default async function handler(req, res) {
         ...(efaturaFaturaNoPrefix !== undefined && { efaturaFaturaNoPrefix: String(efaturaFaturaNoPrefix).trim() || "KT" }),
         ...(taxtenUsername !== undefined && { taxtenUsername: taxtenUsername || "" }),
         ...(taxtenPassword !== undefined && { taxtenPassword: taxtenPassword || "" }),
+        // ✅ YENİ: Client ID ve API Key kaydetme
+        ...(taxtenClientId !== undefined && { taxtenClientId: taxtenClientId || "" }),
+        ...(taxtenApiKey !== undefined && { taxtenApiKey: taxtenApiKey || "" }),
         updatedAt: new Date(),
         userId: userIdStr,
       };

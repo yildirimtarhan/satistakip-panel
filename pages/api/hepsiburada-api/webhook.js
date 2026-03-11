@@ -1,8 +1,9 @@
 // pages/api/hepsiburada-api/webhook.js
 import { connectToDatabase } from "@/lib/mongodb";
+import { getHepsiburadaOmsBaseUrl, isHepsiburadaTestMode } from "@/lib/hepsiburadaEnv";
 
 /**
- * Hepsiburada Webhook (SIT)
+ * Hepsiburada Webhook
  * - Optional Basic Auth (HB_WEBHOOK_USERNAME / HB_WEBHOOK_PASSWORD ayarlıysa zorunlu)
  * - Event'i webhookEvents koleksiyonuna loglar
  * - CreateOrderV2 / OrderCreated geldiğinde OMS -> STUB fallback ile siparişi çekip "orders" koleksiyonuna upsert eder
@@ -64,16 +65,17 @@ export default async function handler(req, res) {
     ].includes(String(eventType));
 
     if (isCreateEvent && orderNo) {
-      const merchantId = process.env.HB_MERCHANT_ID;
-      const secret = process.env.HB_SECRET_KEY;
-      const ua = process.env.HB_USER_AGENT || "satistakip_panel";
+      const merchantId = process.env.HB_MERCHANT_ID || process.env.HEPSIBURADA_MERCHANT_ID;
+      const secret = process.env.HB_SECRET_KEY || process.env.HEPSIBURADA_SECRET_KEY;
+      const ua = process.env.HB_USER_AGENT || process.env.HEPSIBURADA_USER_AGENT || "satistakiponline_dev";
       const auth = "Basic " + Buffer.from(`${merchantId}:${secret}`).toString("base64");
 
       let orderDetail = null;
 
-      // 1) OMS listeden dene
+      // 1) OMS listeden dene (canlı: oms-external, test: oms-external-sit)
+      const omsBase = getHepsiburadaOmsBaseUrl();
       try {
-        const omsUrl = `https://oms-external-sit.hepsiburada.com/orders/merchantid/${merchantId}?limit=50&offset=0`;
+        const omsUrl = `${omsBase}/orders/merchantid/${merchantId}?limit=50&offset=0`;
         const omsRes = await fetch(omsUrl, {
           headers: { Authorization: auth, "User-Agent": ua, Accept: "application/json" },
         });
@@ -89,7 +91,7 @@ export default async function handler(req, res) {
       }
 
       // 2) Bulunamazsa STUB fallback (dummy dönüyor ama SIT’te işe yarıyor)
-      if (!orderDetail) {
+      if (!orderDetail && isHepsiburadaTestMode()) {
         try {
           const stubUrl = `https://oms-stub-external-sit.hepsiburada.com/orders/merchantid/${merchantId}`;
           const stubRes = await fetch(stubUrl, {

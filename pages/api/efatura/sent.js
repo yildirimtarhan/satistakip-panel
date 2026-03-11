@@ -1,18 +1,44 @@
 // 📁 /pages/api/efatura/sent.js
 import { connectToDatabase } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
+import jwt from "jsonwebtoken";
 
 export default async function handler(req, res) {
-  const { db } = await connectToDatabase();
-  const sent = db.collection("efatura_sent");
-
   try {
+    const { db } = await connectToDatabase();
+    const sent = db.collection("efatura_sent");
+
+    // 🔐 Kullanıcı doğrulama
+    const authHeader = req.headers.authorization || "";
+    const token = authHeader.startsWith("Bearer ")
+      ? authHeader.split(" ")[1]
+      : null;
+
+    if (!token) {
+      return res.status(401).json({ message: "Token eksik" });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch {
+      return res.status(401).json({ message: "Token geçersiz" });
+    }
+
+    const userIdStr = String(decoded.userId || decoded._id || decoded.id || "");
+    const companyIdStr = decoded.companyId ? String(decoded.companyId) : null;
+    
+    // Multi-tenant sorgusu
+    const tenantFilter = companyIdStr 
+      ? { companyId: companyIdStr } 
+      : { userId: userIdStr };
+
     // ============================
     // 📌 GET → Gönderilmiş Faturaları Listele
     // ============================
     if (req.method === "GET") {
       const list = await sent
-        .find({})
+        .find(tenantFilter)
         .sort({ sentAt: -1 })
         .toArray();
 
@@ -30,7 +56,19 @@ export default async function handler(req, res) {
         return res.status(400).json({ message: "id eksik" });
       }
 
-      await sent.deleteOne({ _id: new ObjectId(id) });
+      let oid;
+      try {
+        oid = new ObjectId(id);
+      } catch {
+        return res.status(400).json({ message: "Geçersiz id" });
+      }
+
+      const delResult = await sent.deleteOne({ _id: oid, ...tenantFilter });
+      
+      if (delResult.deletedCount === 0) {
+        return res.status(404).json({ message: "Fatura bulunamadı veya silme yetkiniz yok" });
+      }
+      
       return res.status(200).json({ message: "Fatura silindi" });
     }
 

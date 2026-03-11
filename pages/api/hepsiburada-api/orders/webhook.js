@@ -15,6 +15,8 @@ import {
   getHepsiburadaMerchantId,
   getHepsiburadaAuth,
   getHepsiburadaUserAgent,
+  getHepsiburadaOmsBaseUrl,
+  isHepsiburadaTestMode,
 } from "@/lib/hepsiburadaEnv";
 
 const SUPPORTED_TYPES = [
@@ -218,8 +220,9 @@ export default async function handler(req, res) {
       const ua = getHepsiburadaUserAgent();
 
       if (merchantId && authHeader) {
+        const omsBase = getHepsiburadaOmsBaseUrl();
         try {
-          const omsUrl = `https://oms-external-sit.hepsiburada.com/orders/merchantid/${merchantId}?limit=50&offset=0`;
+          const omsUrl = `${omsBase}/orders/merchantid/${merchantId}?limit=50&offset=0`;
           const omsRes = await fetch(omsUrl, {
             headers: { Authorization: authHeader, "User-Agent": ua, Accept: "application/json" },
           });
@@ -232,7 +235,7 @@ export default async function handler(req, res) {
           console.warn("⚠️ OMS istek hatası:", e.message);
         }
 
-        if (!orderDetail) {
+        if (!orderDetail && isHepsiburadaTestMode()) {
           try {
             const stubUrl = `https://oms-stub-external-sit.hepsiburada.com/orders/merchantid/${merchantId}`;
             const stubRes = await fetch(stubUrl, {

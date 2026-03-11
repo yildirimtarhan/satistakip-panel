@@ -61,17 +61,26 @@ function parseTaxtenError(error) {
   if (error.response?.data) {
     const data = error.response.data;
     
+    let detailMessage = "";
+    if (data.errors && Array.isArray(data.errors)) {
+      detailMessage = " " + data.errors.map(e => e.message || e).join(" | ");
+    } else if (data.Errors && Array.isArray(data.Errors)) {
+      detailMessage = " " + data.Errors.map(e => e.Message || e.message || e).join(" | ");
+    } else if (typeof data.message === "string" && data.message.length > 50) {
+      detailMessage = " " + data.message;
+    }
+    
     if (data.errorCode || data.ErrorCode) {
       const code = parseInt(data.errorCode || data.ErrorCode);
       return { 
         code, 
-        message: TAXTEN_ERROR_CODES[code] || data.message || "Bilinmeyen hata",
+        message: (TAXTEN_ERROR_CODES[code] || data.message || "Bilinmeyen hata") + detailMessage,
         raw: data 
       };
     }
     
     if (data.message || data.Message) {
-      return { code: null, message: data.message || data.Message, raw: data };
+      return { code: null, message: (data.message || data.Message) + detailMessage, raw: data };
     }
   }
   
@@ -112,9 +121,13 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "invoiceId gerekli" });
     }
 
+    // Tenant Filter
+    const tenantFilter = companyId ? { companyId } : { userId };
+
     // Taslak Faturayı Getir
     const invoice = await db.collection("efatura_drafts").findOne({
       _id: new ObjectId(invoiceId),
+      ...tenantFilter
     });
     
     if (!invoice) {
@@ -143,7 +156,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // Fatura Numarası Oluştur
+    // Fatura Numarası Oluştur - YILLIK SAYAÇ (KT-2025-000001)
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10);
     let invoiceNumber = invoice.invoiceNumber ? String(invoice.invoiceNumber).trim() : "";
@@ -159,19 +172,20 @@ export default async function handler(req, res) {
       } else {
         await dbConnect();
         const year = now.getFullYear();
-        const month = now.getMonth() + 1;
+        // YILLIK SAYAÇ - month kaldırıldı
         const companyIdForCounter = companyId || userId;
         const companyIdObj = mongoose.Types.ObjectId.isValid(companyIdForCounter)
           ? new mongoose.Types.ObjectId(companyIdForCounter)
           : companyIdForCounter;
           
         const counter = await Counter.findOneAndUpdate(
-          { key: "efaturaNo", companyId: companyIdObj, year, month },
+          { key: "efaturaNo", companyId: companyIdObj, year }, // month kaldırıldı
           { $inc: { seq: 1 } },
           { new: true, upsert: true }
         );
         
-        invoiceNumber = `${prefix}${String(year).slice(-2)}${String(month).padStart(2, "0")}${String(counter.seq).padStart(8, "0")}`;
+        // Format: KT-2025-000001 (yıllık sıralı)
+        invoiceNumber = `${prefix}-${year}-${String(counter.seq).padStart(6, "0")}`;
       }
     }
 
@@ -328,7 +342,7 @@ export default async function handler(req, res) {
 
     // Taslağı Güncelle
     await db.collection("efatura_drafts").updateOne(
-      { _id: new ObjectId(invoiceId) },
+      { _id: new ObjectId(invoiceId), ...tenantFilter },
       { 
         $set: { 
           invoiceNumber: finalInvoiceNumber,

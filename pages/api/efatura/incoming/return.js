@@ -51,7 +51,8 @@ export default async function handler(req, res) {
     for (const id of idList) {
       let doc;
       try {
-        doc = await col.findOne({ _id: new ObjectId(id), $or: [{ userId }, { companyId: companyId || "" }] });
+        const tenantFilter = companyId ? { companyId } : { userId };
+        doc = await col.findOne({ _id: new ObjectId(id), ...tenantFilter });
       } catch {
         results.failed.push({ id, error: "Geçersiz ID" });
         continue;
