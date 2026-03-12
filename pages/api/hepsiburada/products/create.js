@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import axios from "axios";
+import FormData from "form-data";
 import { getHBSettings, getHBToken, hbApiHeaders } from "@/lib/marketplaces/hbService";
 
 export default async function handler(req, res) {
@@ -68,70 +69,56 @@ export default async function handler(req, res) {
         timeout: 20000,
       });
     } else {
-      const rawAttrs = product.hbAttributes || {};
-      let attributes = Array.isArray(rawAttrs)
-        ? rawAttrs
-        : Object.entries(rawAttrs).map(([k, v]) => ({ attributeId: Number(k) || 0, value: String(v ?? "") })).filter((a) => a.attributeId);
-      if (!attributes.length) attributes = [{ attributeId: 12345, value: "Standart" }];
+      // Canlı: /product/api/products/import (Ürün Bilgisi Gönderme) — /api/v1/listings canlıda 404
+      const url = `${cfg.baseUrl}/product/api/products/import`;
+      const vatRate = String(product.vatRate ?? 18).replace(".", ",");
+      const desi = Number(product.dimensionalWeight) || 1;
+      const guarantee = Number(product.guaranteePeriod ?? 24);
+      const brand = product.brandName || product.brand || "Bilinmeyen";
+      const description = (product.description || productName || "").substring(0, 5000);
 
-      if (variants) {
-        const url = `${cfg.baseUrl}/product/api/v1/listings`;
-        const results = [];
-        for (let i = 0; i < variants.length; i++) {
-          const v = variants[i];
-          const suffix = [v.color, v.size].filter(Boolean).join(" / ");
-          const name = suffix ? `${productName} - ${suffix}` : productName;
-          const sku = String(v.sku || product.sku || merchantSku).trim() || `${merchantSku}-V${i + 1}`;
-          const vBarcode = v.barcode || barcode;
-          const vStock = Number(v.stock ?? 0) || 0;
-          const vSale = Number(v.priceTl ?? salePrice) || 0;
-          const vList = Number(v.priceTl ?? listPrice) || vSale;
-          const vImgs = Array.isArray(v.images) && v.images.length > 0 ? v.images.filter((u) => u?.startsWith("http")) : images;
-          const body = {
-            name,
-            brand: product.brandName || product.brand || "",
-            barcode: vBarcode,
-            categoryId: Number(product.categoryId),
-            attributes,
-            listPrice: vList,
-            salePrice: vSale,
-            vatRate: Number(product.vatRate ?? 18),
-            stock: vStock,
-            cargoCompanyId: 1,
-            desi: Number(product.dimensionalWeight) || 1,
-            description: product.description || productName,
-            guaranteePeriod: product.guaranteePeriod != null ? String(product.guaranteePeriod) : "24",
-            merchantSku: sku,
-          };
-          if (vImgs.length) body.images = vImgs;
-          const r = await axios.post(url, body, { headers: hbApiHeaders(cfg, tokenObj), timeout: 20000 });
-          results.push(r.data);
-        }
-        response = { data: results };
-      } else {
-        const body = {
-          name: productName,
-          brand: product.brandName || product.brand || "",
-          barcode,
-          categoryId: Number(product.categoryId),
-          attributes,
-          listPrice,
-          salePrice,
-          vatRate: Number(product.vatRate ?? 18),
-          stock,
-          cargoCompanyId: 1,
-          desi: Number(product.dimensionalWeight) || 1,
-          description: product.description || productName,
-          guaranteePeriod: product.guaranteePeriod != null ? String(product.guaranteePeriod) : "24",
-          merchantSku,
+      const toImportItem = (v, idx) => {
+        const suffix = v ? [v.color, v.size].filter(Boolean).join(" / ") : "";
+        const name = suffix ? `${productName} - ${suffix}` : productName;
+        const sku = v ? (String(v.sku || product.sku || merchantSku).trim() || `${merchantSku}-V${idx + 1}`) : merchantSku;
+        const vBarcode = v?.barcode || barcode;
+        const vStock = v ? Number(v.stock ?? 0) || 0 : stock;
+        const vPrice = v ? Number(v.priceTl ?? salePrice) || 0 : (salePrice || listPrice);
+        const vImgs = v && Array.isArray(v.images) && v.images.length > 0 ? v.images.filter((u) => u?.startsWith("http")) : images;
+        const attrs = {
+          merchantSku: sku,
+          VaryantGroupID: product.variantGroupId || `HB-${merchantSku}`,
+          Barcode: String(vBarcode || ""),
+          UrunAdi: name,
+          UrunAciklamasi: description,
+          Marka: brand,
+          GarantiSuresi: guarantee,
+          kg: String(desi),
+          tax_vat_rate: vatRate,
+          price: String(vPrice).replace(".", ","),
+          stock: String(vStock),
         };
-        if (images.length) body.images = images;
-        const url = `${cfg.baseUrl}/product/api/v1/listings`;
-        response = await axios.post(url, body, {
-          headers: hbApiHeaders(cfg, tokenObj),
-          timeout: 20000,
+        if (v?.color) attrs.renk_variant_property = String(v.color);
+        if (v?.size) attrs.ebatlar_variant_property = String(v.size);
+        vImgs.slice(0, 5).forEach((img, i) => {
+          if (img) attrs[`Image${i + 1}`] = img;
         });
-      }
+        return { categoryId: Number(product.categoryId), merchant: cfg.merchantId, attributes: attrs };
+      };
+
+      const importItems = variants
+        ? variants.map((v, i) => toImportItem(v, i))
+        : [toImportItem(null, 0)];
+
+      const form = new FormData();
+      form.append("file", Buffer.from(JSON.stringify(importItems)), {
+        filename: "products.json",
+        contentType: "application/json",
+      });
+
+      const headers = { ...hbApiHeaders(cfg, tokenObj), ...form.getHeaders() };
+      const r = await axios.post(url, form, { headers, timeout: 30000, maxBodyLength: Infinity });
+      response = r;
     }
 
     const variantCount = variants ? variants.length : 0;
@@ -162,6 +149,9 @@ export default async function handler(req, res) {
       userMessage =
         "Hepsiburada kimlik doğrulama hatası (401). API Ayarlarından Kullanıcı adı (Merchant ID) ve Şifre (Secret Key) değerlerini kontrol edin. " +
         "Test hesabında Merchant ID’de genelde 4809 kullanılır (4800 yazılmış olabilir).";
+    }
+    if (status === 404) {
+      userMessage = "Hepsiburada API endpoint bulunamadı (404). Canlı ortamda Ürün Bilgisi Gönderme (import) kullanılıyor.";
     }
 
     return res.status(status === 401 ? 401 : 500).json({

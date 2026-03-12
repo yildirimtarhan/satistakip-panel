@@ -16,19 +16,19 @@ export default async function handler(req, res) {
     }
 
     const tokenObj = await getHBToken(cfg);
-    const { parentId, leaf = "false", page = 0, size, search } = req.query;
+    const { parentId, leaf: leafParam = "false", page = 0, size, search } = req.query;
+    const preferLeaf = leafParam === "true";
 
     let url, params;
     const singlePageSize = Number(size) || 200;
-    // Arama varken çok sayfa çek (telefon kılıfı vb. tüm katalogda aransın)
-    const fetchAllWhenSearching = search && search.length >= 2;
+    const fetchAllWhenSearching = search && search.trim().length >= 2;
 
     if (parentId) {
       url = `${cfg.baseUrl}/product/api/categories/${parentId}/sub-categories`;
       params = {};
     } else {
       url = `${cfg.baseUrl}/product/api/categories/get-all-categories`;
-      params = { leaf, status: "ACTIVE", available: true, page: fetchAllWhenSearching ? 0 : page, size: singlePageSize };
+      params = { leaf: preferLeaf ? "true" : "false", status: "ACTIVE", available: true, page: fetchAllWhenSearching ? 0 : page, size: singlePageSize };
       if (search && search.trim()) params.search = search.trim();
     }
 
@@ -60,14 +60,38 @@ export default async function handler(req, res) {
       totalFromApi = categories.length;
     }
 
-    // Arama: HB search desteklemiyorsa client-side filtrele (path/name)
-    if (search && search.length >= 2) {
-      const q = search.toLowerCase().trim();
-      categories = categories.filter((c) => {
+    // Arama: client-side filtrele (path/name)
+    const doClientFilter = (list, q) => {
+      if (!q || q.length < 2) return list;
+      const lower = q.toLowerCase().trim();
+      return list.filter((c) => {
         const name = (c.name || c.displayName || c.categoryName || "").toLowerCase();
         const pathStr = (c.paths && Array.isArray(c.paths) ? c.paths.join(" ") : (c.path || "")).toLowerCase();
-        return name.includes(q) || pathStr.includes(q);
+        return name.includes(lower) || pathStr.includes(lower);
       });
+    };
+
+    if (search && search.trim().length >= 2) {
+      categories = doClientFilter(categories, search);
+      // leaf=true ile 0 sonuç gelirse, leaf=false ile tekrar dene (HB bazı aramalarda leaf kısıtıyla sonuç döndürmeyebilir)
+      if (preferLeaf && categories.length === 0 && !parentId) {
+        const fallbackParams = { leaf: "false", status: "ACTIVE", available: true, page: 0, size: 500 };
+        if (search && search.trim()) fallbackParams.search = search.trim();
+        try {
+          const fallbackRes = await axios.get(url, {
+            params: fallbackParams,
+            headers: hbApiHeaders(cfg, tokenObj),
+            timeout: 25000,
+          });
+          const fallbackRaw = fallbackRes.data;
+          let fallbackList = fallbackRaw?.data || fallbackRaw?.categories || (Array.isArray(fallbackRaw) ? fallbackRaw : []);
+          fallbackList = doClientFilter(fallbackList, search);
+          // Sadece leaf kategorileri kullan (ürün açılabilir)
+          categories = fallbackList.filter((c) => c.leaf === true);
+        } catch {
+          // Fallback hatası – mevcut boş liste kalsın
+        }
+      }
     }
 
     // Normalise: id ve name alanlarini standartlastir (path: dizi veya string)

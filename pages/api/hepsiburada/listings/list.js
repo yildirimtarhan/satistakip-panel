@@ -6,7 +6,7 @@
  */
 import jwt from "jsonwebtoken";
 import axios from "axios";
-import { getHBSettings, getHBToken } from "@/lib/marketplaces/hbService";
+import { getHBSettings, getHBToken, hbApiHeaders } from "@/lib/marketplaces/hbService";
 
 function getListingBaseUrl(testMode) {
   const env = process.env.HEPSIBURADA_LISTING_BASE_URL || process.env.HB_LISTING_BASE_URL;
@@ -31,9 +31,10 @@ export default async function handler(req, res) {
 
     const tokenObj = await getHBToken(cfg);
     const page = Math.max(0, parseInt(req.query.page, 10) || 0);
-    const size = Math.min(100, Math.max(1, parseInt(req.query.size, 10) || 20));
+    const size = Math.min(200, Math.max(1, parseInt(req.query.size, 10) || 20));
     const offset = page * size;
     const limit = size;
+    const salableOnly = req.query.salable === "true" || req.query.salableListings === "true";
 
     // Listing API: URL'deki merchantId ile Basic Auth'taki userName AYNI olmalı (401 yoksa farklıydı)
     let listingMerchantId = cfg.merchantId;
@@ -47,9 +48,12 @@ export default async function handler(req, res) {
     const url = `${listingBase}/listings/merchantid/${encodeURIComponent(listingMerchantId)}`;
     const authHeader = `${tokenObj.type} ${tokenObj.value}`;
 
-    // Resmi API: offset ve limit zorunlu (page/size değil) – "Pagination Limit should be provided"
+    // Resmi API: offset, limit zorunlu. salable-listings=true → sadece aktif satıştaki ürünler
+    const params = { offset, limit };
+    if (salableOnly) params["salable-listings"] = true;
+
     const response = await axios.get(url, {
-      params: { offset, limit },
+      params,
       headers: {
         Authorization: authHeader,
         "Content-Type": "application/json",
@@ -60,11 +64,44 @@ export default async function handler(req, res) {
     });
 
     const raw = response.data;
-    const data = raw?.listings ?? raw?.content ?? raw?.data ?? (Array.isArray(raw) ? raw : []);
+    let data = raw?.listings ?? raw?.content ?? raw?.data ?? (Array.isArray(raw) ? raw : []);
+    if (!Array.isArray(data)) data = [data];
+
+    // Ürün adı: Listing API productName dönmez. Katalog (all-products) ile eşleştir.
+    const withNames = req.query.withNames === "true";
+    if (withNames && data.length > 0) {
+      try {
+        const mpopBase = (cfg.baseUrl || "https://mpop.hepsiburada.com").replace(/\/$/, "");
+        const catalogUrl = `${mpopBase}/product/api/products/all-products-of-merchant/${encodeURIComponent(cfg.merchantId)}`;
+        const catalogRes = await axios.get(catalogUrl, {
+          params: { page: 0, size: 1000 },
+          headers: hbApiHeaders(cfg, tokenObj),
+          timeout: 15000,
+        });
+        const catalogRaw = catalogRes.data;
+        const catalogItems = catalogRaw?.data ?? catalogRaw?.content ?? (Array.isArray(catalogRaw) ? catalogRaw : []);
+        const nameBySku = {};
+        (catalogItems || []).forEach((p) => {
+          const name = p.productName || p.name || p.title;
+          if (name) {
+            if (p.merchantSku) nameBySku[String(p.merchantSku).trim()] = name;
+            if (p.hbSku) nameBySku[String(p.hbSku).trim()] = name;
+          }
+        });
+        data = data.map((row) => ({
+          ...row,
+          productName:
+            nameBySku[String(row.merchantSku || "").trim()] ??
+            nameBySku[String(row.hepsiburadaSku || row.hbSku || "").trim()],
+        }));
+      } catch (e) {
+        console.warn("HB listings productName enrich:", e.message);
+      }
+    }
 
     return res.json({
       success: true,
-      data: Array.isArray(data) ? data : [data],
+      data,
       totalElements: raw?.totalCount ?? raw?.totalElements ?? raw?.total ?? 0,
       number: page,
       size: limit,

@@ -2,6 +2,51 @@
 import { useEffect, useState, useRef } from "react";
 import { N11_SHIPMENT_TEMPLATE_OPTIONS, N11_SHIPMENT_TEMPLATE_CUSTOM_KEY } from "@/constants/n11ShipmentTemplates";
 
+function TrendyolAttrField({ attr, categoryId, value, onChange, cache, setCache, headers }) {
+  const [loading, setLoading] = useState(false);
+  const values = cache[attr.id] || [];
+
+  useEffect(() => {
+    if (!categoryId || !attr.id || attr.allowCustom || Array.isArray(cache[attr.id])) return;
+    setLoading(true);
+    fetch(`/api/trendyol/categories/attribute-values?categoryId=${categoryId}&attributeId=${attr.id}`, {
+      headers: headers(), credentials: "include",
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        const list = d.values || [];
+        setCache((c) => ({ ...c, [attr.id]: list }));
+      })
+      .catch(() => setCache((c) => ({ ...c, [attr.id]: [] })))
+      .finally(() => setLoading(false));
+  }, [categoryId, attr.id, attr.allowCustom]);
+
+  if (attr.allowCustom) {
+    return (
+      <input
+        type="text"
+        className="w-full border rounded p-2 text-sm bg-white"
+        placeholder={attr.name}
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    );
+  }
+  return (
+    <select
+      className="w-full border rounded p-2 text-sm bg-white disabled:opacity-60"
+      value={value || ""}
+      onChange={(e) => onChange(e.target.value)}
+      disabled={loading}
+    >
+      <option value="">— Seçin —</option>
+      {values.map((v) => (
+        <option key={v.attributeValueId ?? v.id} value={v.attributeValueId ?? v.id}>{v.attributeValue ?? v.name}</option>
+      ))}
+    </select>
+  );
+}
+
 const MARKETPLACES = [
   { key: "n11",         label: "N11",          color: "bg-orange-500" },
   { key: "trendyol",    label: "Trendyol",     color: "bg-orange-600" },
@@ -65,11 +110,21 @@ export default function PazaryeriGonderPage() {
   const [n11Attrs, setN11Attrs]   = useState([]);   // mandatory + optional
   const [n11AttrVals, setN11AttrVals] = useState({}); // { attributeId: value }
 
-  // Trendyol form
+  // Trendyol form (v2: dimensionalWeight/desi zorunlu)
   const [tyForm, setTyForm] = useState({
     categoryId: "", brandId: "", cargoCompanyId: "10",
-    vatRate: "20", stockCode: "",
+    vatRate: "20", stockCode: "", dimensionalWeight: "1",
   });
+  const [tyCatSearch, setTyCatSearch] = useState("");
+  const [tyCats, setTyCats] = useState([]); // filtered leaf nodes
+  const [tyCatLoading, setTyCatLoading] = useState(false);
+  const [tyCatError, setTyCatError] = useState("");
+  const [tyAttrs, setTyAttrs] = useState([]);
+  const [tyAttrVals, setTyAttrVals] = useState({});
+  const [tyAttrValuesCache, setTyAttrValuesCache] = useState({}); // { attrId: [{attributeValueId, attributeValue}] }
+  const [tyBrands, setTyBrands] = useState([]);
+  const [tyBrandSearch, setTyBrandSearch] = useState("");
+  const [tyCatSelected, setTyCatSelected] = useState(null); // { id, name, path }
 
   // HB form
   const [hbForm, setHbForm] = useState({
@@ -81,6 +136,7 @@ export default function PazaryeriGonderPage() {
   const [hbAttrs, setHbAttrs] = useState([]);
   const [hbAttrVals, setHbAttrVals] = useState({});
   const [hbCatSearch, setHbCatSearch] = useState("");
+  const [hbCatBreadcrumb, setHbCatBreadcrumb] = useState([]); // [{id, name}] hiyerarşi
   const hbSearchTimer = useRef(null);
   const [hbCargoFirms, setHbCargoFirms] = useState([]); // API'den; boşsa statik liste kullanılır
 
@@ -137,6 +193,95 @@ export default function PazaryeriGonderPage() {
       })
       .catch(() => {});
   }, [selectedId, uploadMode]);
+
+  /* ── Trendyol kategori ağacı ── */
+  const tyCatFlatCache = useRef([]);
+  const flattenTyCategories = (nodes, path = "") => {
+    if (!nodes) return [];
+    const list = Array.isArray(nodes) ? nodes : [];
+    const out = [];
+    for (const n of list) {
+      const name = n.name || "";
+      const p = path ? `${path} > ${name}` : name;
+      const subs = n.subCategories ?? n.categories ?? n.children ?? [];
+      const subList = Array.isArray(subs) ? subs : [];
+      if (subList.length === 0) {
+        if (n.id != null) out.push({ id: n.id, name, path: p });
+      } else {
+        out.push(...flattenTyCategories(subList, p));
+      }
+    }
+    return out;
+  };
+  const extractTyTree = (d) => {
+    const raw = d?.categories ?? d?.data ?? d;
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    if (raw?.categories && Array.isArray(raw.categories)) return raw.categories;
+    if (raw?.id != null || raw?.subCategories) return [raw];
+    return [];
+  };
+  useEffect(() => {
+    if (tyCatSearch.trim().length < 2) {
+      setTyCats([]);
+      setTyCatError("");
+      return;
+    }
+    const term = tyCatSearch.trim().toLowerCase();
+    const filterFromCache = () => {
+      const filtered = tyCatFlatCache.current.filter((c) =>
+        (c.path || c.name || "").toLowerCase().includes(term)
+      );
+      setTyCats(filtered.slice(0, 100));
+      setTyCatError("");
+    };
+    if (tyCatFlatCache.current.length > 0) {
+      filterFromCache();
+      return;
+    }
+    setTyCatLoading(true);
+    setTyCatError("");
+    const url = "/api/trendyol/categories/tree?t=" + Date.now();
+    fetch(url, { headers: headers(), credentials: "include", cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d.success && d.message) {
+          setTyCatError(d.message);
+          setTyCats([]);
+          return;
+        }
+        const tree = extractTyTree(d);
+        if (tree.length === 0) {
+          setTyCatError("Kategori verisi boş veya tanınmayan format.");
+          setTyCats([]);
+          return;
+        }
+        tyCatFlatCache.current = flattenTyCategories(tree);
+        filterFromCache();
+      })
+      .catch((err) => {
+        setTyCatError("Kategori ağacı yüklenemedi. Bağlantıyı kontrol edin.");
+        setTyCats([]);
+      })
+      .finally(() => setTyCatLoading(false));
+  }, [tyCatSearch]);
+
+  /* ── Trendyol kategori seçilince özellikleri yükle ── */
+  useEffect(() => {
+    if (!tyForm.categoryId) {
+      setTyAttrs([]);
+      setTyAttrVals({});
+      return;
+    }
+    fetch(`/api/trendyol/categories/attributes?categoryId=${tyForm.categoryId}`, { headers: headers(), credentials: "include" })
+      .then((r) => r.json())
+      .then((d) => {
+        setTyAttrs(d.categoryAttributes || []);
+        setTyAttrVals({});
+        setTyAttrValuesCache({});
+      })
+      .catch(() => setTyAttrs([]));
+  }, [tyForm.categoryId]);
 
   /* ── N11 Level-1 kategoriler ── */
   useEffect(() => {
@@ -200,11 +345,11 @@ export default function PazaryeriGonderPage() {
       .catch(() => {});
   }, [activeTab]);
 
-  /* ── HB: arama debounce → kategori yükle ── */
+  /* ── HB: arama debounce → sadece yaprak (leaf) kategorileri yükle (ürün açılabilir) ── */
   const fetchHBCats = (q) => {
     setHbCatLoading(true);
-    const params = q ? `&search=${encodeURIComponent(q)}&size=100` : "&size=50";
-    fetch(`/api/hepsiburada/categories/list?leaf=false${params}`, { headers: headers() })
+    const params = q && q.trim().length >= 2 ? `&search=${encodeURIComponent(q.trim())}&size=100` : "&size=50";
+    fetch(`/api/hepsiburada/categories/list?leaf=true${params}`, { headers: headers() })
       .then((r) => r.json())
       .then((d) => { if (d.success) setHbCats(d.categories || []); })
       .catch(() => {})
@@ -213,12 +358,12 @@ export default function PazaryeriGonderPage() {
 
   useEffect(() => {
     if (activeTab !== "hepsiburada") return;
-    if (hbCatSearch.length < 2) {
-      if (hbCats.length === 0) fetchHBCats(""); // ilk yüklemede birkaç kategori getir
+    if (hbCatSearch.trim().length < 2) {
+      setHbCats([]);
       return;
     }
     clearTimeout(hbSearchTimer.current);
-    hbSearchTimer.current = setTimeout(() => fetchHBCats(hbCatSearch), 400);
+    hbSearchTimer.current = setTimeout(() => fetchHBCats(hbCatSearch), 350);
     return () => clearTimeout(hbSearchTimer.current);
   }, [hbCatSearch, activeTab]);
 
@@ -275,7 +420,7 @@ export default function PazaryeriGonderPage() {
     if (uploadMode === "erp" && !selectedId) { alert("Ürün seçin veya 'Link ve kategori ile yükle' modunu kullanın."); return; }
     if (uploadMode === "link" && !(linkProduct.title || effective?.title)) { alert("Ürün başlığı girin veya linkten bilgi getirin."); return; }
     if (activeTab === "hepsiburada" && !hbForm.categoryId) {
-      alert("Hepsiburada için önce kategori seçmelisiniz. 'Kategori Ara' alanına en az 2 harf yazın (örn. Hafıza Kartı), açılan listeden bir kategori seçin.");
+      alert("Hepsiburada için kategori seçin: \"1. Kategori Seçimi\" bölümünde en az 2 harf yazarak arayın ve listeden bir kategori seçin.");
       return;
     }
     if (activeTab === "n11" && !(n11Form.catL3 || n11Form.catL2 || n11Form.catL1)) {
@@ -350,6 +495,15 @@ export default function PazaryeriGonderPage() {
         }
       } else if (activeTab === "trendyol") {
         endpoint = "/api/trendyol/products/create";
+        const tyAttrPayload = tyAttrs
+          .filter((a) => tyAttrVals[a.id])
+          .map((attr) => {
+            const val = tyAttrVals[attr.id];
+            if (attr.allowCustom) {
+              return { attributeId: Number(attr.id), customAttributeValue: String(val).trim() };
+            }
+            return { attributeId: Number(attr.id), attributeValueId: Number(val) };
+          });
         body = {
           product: {
             barcode: effective?.barcode || effective?.barkod,
@@ -362,9 +516,9 @@ export default function PazaryeriGonderPage() {
             listPrice: effective?.listPrice || effective?.price,
             salePrice: effective?.price || effective?.salePrice,
             vatRate: tyForm.vatRate,
-            cargoCompanyId: tyForm.cargoCompanyId,
+            dimensionalWeight: Number(tyForm.dimensionalWeight) || 1,
             images: validImages,
-            attributes: [],
+            attributes: tyAttrPayload,
           },
         };
       } else {
@@ -430,8 +584,11 @@ export default function PazaryeriGonderPage() {
     : !!(linkProduct.title && (activeTab === "n11" ? (n11Form.catL3 || n11Form.catL2 || n11Form.catL1) : activeTab === "trendyol" ? tyForm.categoryId : hbForm.categoryId));
 
   return (
-    <div className="p-6 max-w-3xl">
-      <h1 className="text-2xl font-bold mb-6">Pazaryerine Ürün Gönder</h1>
+    <div className="p-6 max-w-4xl mx-auto">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-slate-800">Pazaryerine Ürün Gönder</h1>
+        <p className="text-sm text-slate-500 mt-1">ERP veya link ile ürün seçip N11, Trendyol veya Hepsiburada’ya gönderin.</p>
+      </div>
 
       {/* Mod: ERP veya Link + Kategori */}
       <div className="mb-4 flex gap-4 items-center border-b pb-4">
@@ -712,125 +869,218 @@ export default function PazaryeriGonderPage() {
           {/* TRENDYOL */}
           {activeTab === "trendyol" && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Kategori ID *</label>
-                  <input type="text" className="w-full border rounded p-2" placeholder="411"
-                    value={tyForm.categoryId} onChange={(e) => setTyForm((f) => ({ ...f, categoryId: e.target.value }))} />
+              {/* Kategori Seçici */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-orange-600 text-xs font-bold text-white">1</span>
+                  <h3 className="font-semibold text-slate-800">Trendyol Kategori Seçimi</h3>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Marka ID *</label>
-                  <input type="text" className="w-full border rounded p-2" placeholder="1791"
-                    value={tyForm.brandId} onChange={(e) => setTyForm((f) => ({ ...f, brandId: e.target.value }))} />
+                <p className="text-xs text-slate-500 mb-3">En az 2 harf yazarak arayın; sadece yaprak (ürün açılabilir) kategoriler listelenir.</p>
+                <div className="relative">
+                  <input
+                    type="text"
+                    className="w-full border border-slate-300 rounded-lg p-2.5 text-sm bg-white focus:ring-2 focus:ring-orange-300 focus:border-orange-500 transition"
+                    placeholder="Örn: Hafıza Kartı, Telefon Kılıfı, Cep Telefonu"
+                    value={tyCatSearch}
+                    onChange={(e) => setTyCatSearch(e.target.value)}
+                  />
+                  {tyCatLoading && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-orange-600 animate-pulse">Aranıyor…</span>
+                  )}
                 </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Stok Kodu</label>
-                  <input type="text" className="w-full border rounded p-2" placeholder="STK-001"
-                    value={tyForm.stockCode} onChange={(e) => setTyForm((f) => ({ ...f, stockCode: e.target.value }))} />
+                {tyCatSearch.trim().length >= 2 && !tyCatLoading && tyCats.length === 0 && (
+                  <p className="text-xs text-amber-600 mt-2">
+                    {tyCatError || "Sonuç bulunamadı. Farklı terim deneyin (örn: Kablo, Telefon, Kulaklık)."}
+                  </p>
+                )}
+                {tyCats.length > 0 && (
+                  <div className="mt-2 max-h-52 overflow-y-auto rounded-lg border border-slate-200 bg-white">
+                    {tyCats.map((c) => {
+                      const sel = String(tyForm.categoryId) === String(c.id);
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => {
+                            setTyForm((f) => ({ ...f, categoryId: String(c.id) }));
+                            setTyCatSelected({ id: c.id, name: c.name, path: c.path });
+                            setTyCatSearch("");
+                            setTyCats([]);
+                          }}
+                          className={`block w-full text-left px-3 py-2 text-sm border-b border-slate-100 last:border-0 hover:bg-orange-50 transition ${sel ? "bg-orange-100 text-orange-800 font-medium" : "text-slate-700"}`}
+                        >
+                          {c.path || c.name}
+                          {sel && <span className="ml-1 text-orange-600">✓</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {tyForm.categoryId && tyCatSelected && (
+                  <div className="mt-2 flex items-center justify-between rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">
+                    <span><span className="text-green-600">✓</span> Seçili: <strong>{tyCatSelected.path || tyCatSelected.name}</strong> (ID: {tyForm.categoryId})</span>
+                    <button type="button" onClick={() => { setTyForm((f) => ({ ...f, categoryId: "" })); setTyCatSelected(null); setTyAttrs([]); setTyAttrVals({}); }} className="text-red-600 hover:underline text-xs">Kaldır</button>
+                  </div>
+                )}
+              </div>
+
+              {/* Kategori Özellikleri (Attributes) */}
+              {tyAttrs.length > 0 && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
+                  <p className="text-sm font-semibold text-amber-800 mb-3">
+                    Kategori Özellikleri <span className="font-normal text-amber-600">({tyAttrs.filter((a) => a.required).length} zorunlu)</span>
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[...tyAttrs].sort((a, b) => (b.required ? 1 : 0) - (a.required ? 1 : 0)).map((attr) => (
+                      <div key={attr.id}>
+                        <label className="block text-xs font-medium mb-1">
+                          {attr.name}
+                          {attr.required && <span className="text-red-500 ml-1">*</span>}
+                          {attr.allowCustom && <span className="text-gray-400 ml-1">(serbest)</span>}
+                        </label>
+                        <TrendyolAttrField
+                          attr={attr}
+                          categoryId={tyForm.categoryId}
+                          value={tyAttrVals[attr.id]}
+                          onChange={(v) => setTyAttrVals((p) => ({ ...p, [attr.id]: v }))}
+                          cache={tyAttrValuesCache}
+                          setCache={setTyAttrValuesCache}
+                          headers={headers}
+                        />
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Kargo Firması ID</label>
-                  <input type="text" className="w-full border rounded p-2" placeholder="10"
-                    value={tyForm.cargoCompanyId} onChange={(e) => setTyForm((f) => ({ ...f, cargoCompanyId: e.target.value }))} />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">KDV %</label>
-                  <select className="w-full border rounded p-2" value={tyForm.vatRate}
-                    onChange={(e) => setTyForm((f) => ({ ...f, vatRate: e.target.value }))}>
-                    {["0","1","8","10","18","20"].map((v) => <option key={v} value={v}>%{v}</option>)}
-                  </select>
+              )}
+
+              {/* Temel Bilgiler */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+                <h3 className="font-semibold text-slate-800 mb-3">Temel Bilgiler</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Marka ID *</label>
+                    <input type="text" className="w-full border rounded p-2" placeholder="1791"
+                      value={tyForm.brandId} onChange={(e) => setTyForm((f) => ({ ...f, brandId: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Stok Kodu</label>
+                    <input type="text" className="w-full border rounded p-2" placeholder="STK-001"
+                      value={tyForm.stockCode} onChange={(e) => setTyForm((f) => ({ ...f, stockCode: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Desi (dimensionalWeight) *</label>
+                    <input type="number" min="0.1" step="0.1" className="w-full border rounded p-2" placeholder="1"
+                      value={tyForm.dimensionalWeight} onChange={(e) => setTyForm((f) => ({ ...f, dimensionalWeight: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Kargo Firması ID</label>
+                    <input type="text" className="w-full border rounded p-2" placeholder="10"
+                      value={tyForm.cargoCompanyId} onChange={(e) => setTyForm((f) => ({ ...f, cargoCompanyId: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">KDV % *</label>
+                    <select className="w-full border rounded p-2" value={tyForm.vatRate}
+                      onChange={(e) => setTyForm((f) => ({ ...f, vatRate: e.target.value }))}>
+                      {["0","1","10","20"].map((v) => <option key={v} value={v}>%{v}</option>)}
+                    </select>
+                    <p className="text-xs text-slate-500 mt-0.5">Trendyol: 0, 1, 10 veya 20</p>
+                  </div>
                 </div>
               </div>
               <div className="text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded p-2">
-                ℹ️ Trendyol: Kategori ve Marka ID Trendyol panelinden alınmalı. Görsel sayısı: {validImages.length}
+                ℹ️ Trendyol v2: Kategori seçince zorunlu özellikler otomatik yüklenir. Desi zorunlu. Görsel: HTTPS, 1200×1800 önerilir. Şu an: {validImages.length} görsel
               </div>
             </div>
           )}
 
           {/* HEPSİBURADA */}
           {activeTab === "hepsiburada" && (
-            <div className="space-y-4">
-              <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-3">
-                <p className="font-medium mb-1">Göndermeden önce:</p>
-                <ol className="list-decimal list-inside space-y-0.5">
-                  <li><strong>Kategori Ara</strong> alanına en az 2 harf yazın (örn. Hafıza Kartı, Telefon Kılıfı).</li>
-                  <li>Açılan listeden <strong>kategori seçin</strong>.</li>
-                  <li>Görünen <strong>Kategori Özellikleri</strong>ni (Kart Türü, Kapasite vb.) doldurun.</li>
-                  <li><a href="/dashboard/api-settings" className="underline">API Ayarları</a>ndan Hepsiburada kullanıcı adı, şifre ve Merchant ID girin.</li>
-                </ol>
-              </div>
-              {/* Kategori arama + seç */}
-              <div>
-                <label className="block text-sm font-medium mb-1">Kategori Ara *</label>
-                <input
-                  type="text"
-                  className="w-full border rounded-lg p-2 text-sm mb-1"
-                  placeholder="En az 2 harf yazın (örn: Hafıza Kartı, Telefon Kılıfı, Cep Telefonu...)"
-                  value={hbCatSearch}
-                  onChange={(e) => setHbCatSearch(e.target.value)}
-                />
-                {product && /hafıza|hafiza|memory|gb\s*hafıza/i.test(product.name || product.title || "") && hbCatSearch.length < 2 && (
-                  <p className="text-xs text-gray-500 mb-1">Bu ürün için &quot;Hafıza Kartı&quot; yazarak kategori arayabilirsiniz.</p>
-                )}
-                {hbCatLoading && <p className="text-xs text-blue-500">Kategoriler aranıyor...</p>}
-                {!hbCatLoading && hbCats.length === 0 && hbCatSearch.length >= 2 && (
-                  <p className="text-xs text-red-500">Sonuç bulunamadı. Farklı bir terim deneyin.</p>
+            <div className="space-y-5">
+              {/* Adım 1: Kategori */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-orange-500 text-xs font-bold text-white">1</span>
+                  <h3 className="font-semibold text-slate-800">Kategori Seçimi</h3>
+                </div>
+                <p className="text-xs text-slate-500 mb-3">En az 2 harf yazarak arayın; sadece ürün açılabilir (yaprak) kategoriler listelenir.</p>
+                <div className="relative">
+                  <input
+                    type="text"
+                    className="w-full border border-slate-300 rounded-lg p-2.5 text-sm bg-white focus:ring-2 focus:ring-orange-300 focus:border-orange-500 transition"
+                    placeholder="Örn: Hafıza Kartı, Telefon Kılıfı, Cep Telefonu"
+                    value={hbCatSearch}
+                    onChange={(e) => setHbCatSearch(e.target.value)}
+                  />
+                  {hbCatLoading && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-orange-600 animate-pulse">Aranıyor…</span>
+                  )}
+                </div>
+                {hbCatSearch.trim().length >= 2 && !hbCatLoading && hbCats.length === 0 && (
+                  <p className="text-xs text-amber-600 mt-2">
+                    Sonuç bulunamadı. Daha uzun veya farklı terim deneyin (örn: Kulaklık, Hafıza Kartı, Telefon Kılıfı).
+                  </p>
                 )}
                 {hbCats.length > 0 && (
-                  <select
-                    className="w-full border rounded-lg p-2 text-sm bg-white"
-                    value={hbForm.categoryId}
-                    onChange={(e) => {
-                      const cat = hbCats.find((c) => String(c.id) === e.target.value);
-                      setHbForm((f) => ({
-                        ...f,
-                        categoryId: e.target.value,
-                        catName: cat?.name || "",
-                        catPath: cat?.path || "",
-                      }));
-                    }}
-                  >
-                    <option value="">— Kategori Seçin —</option>
-                    {hbCats.map((c) => (
-                      <option key={c.id} value={String(c.id)}>
-                        {c.path ? `${c.path}` : c.name} ({c.id})
-                      </option>
-                    ))}
-                  </select>
+                  <div className="mt-2 max-h-52 overflow-y-auto rounded-lg border border-slate-200 bg-white">
+                    {hbCats.map((c) => {
+                      const sel = String(hbForm.categoryId) === String(c.id);
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => {
+                            setHbForm((f) => ({ ...f, categoryId: String(c.id), catName: c.name, catPath: c.path || "" }));
+                          }}
+                          className={`block w-full text-left px-3 py-2 text-sm border-b border-slate-100 last:border-0 hover:bg-orange-50 transition ${
+                            sel ? "bg-orange-100 text-orange-800 font-medium" : "text-slate-700"
+                          }`}
+                        >
+                          {c.path || c.name}
+                          {sel && <span className="ml-1 text-orange-600">✓</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
                 )}
                 {hbForm.categoryId && (
-                  <p className="text-xs text-green-600 mt-1">
-                    Seçili: <strong>{hbForm.catName}</strong> (ID: {hbForm.categoryId})
-                    {hbForm.catPath && <span className="text-gray-400 ml-1">— {hbForm.catPath}</span>}
-                  </p>
+                  <div className="mt-2 flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">
+                    <span className="text-green-600">✓</span>
+                    <span>Seçili: <strong>{hbForm.catName}</strong></span>
+                    <span className="text-green-600/70">ID: {hbForm.categoryId}</span>
+                  </div>
                 )}
               </div>
 
+              {/* Adım 2: Temel Bilgiler */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-orange-500 text-xs font-bold text-white">2</span>
+                  <h3 className="font-semibold text-slate-800">Temel Bilgiler</h3>
+                </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1">Marka Adı *</label>
-                  <input type="text" className="w-full border rounded-lg p-2 text-sm"
-                    placeholder="Otomatik doldurulur (ERP'den)"
+                  <label className="block text-sm font-medium mb-1 text-slate-700">Marka Adı *</label>
+                  <input type="text" className="w-full border rounded-lg p-2 text-sm bg-white"
+                    placeholder="ERP'den otomatik gelir"
                     value={hbForm.brandName}
                     onChange={(e) => setHbForm((f) => ({ ...f, brandName: e.target.value }))} />
-                  <p className="text-xs text-gray-400 mt-0.5">ERP ürünündeki marka otomatik gelir</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">KDV %</label>
-                  <select className="w-full border rounded-lg p-2 text-sm" value={hbForm.vatRate}
+                  <label className="block text-sm font-medium mb-1 text-slate-700">KDV % *</label>
+                  <select className="w-full border rounded-lg p-2 text-sm bg-white" value={hbForm.vatRate}
                     onChange={(e) => setHbForm((f) => ({ ...f, vatRate: e.target.value }))}>
                     {["0","1","8","10","18","20"].map((v) => <option key={v} value={v}>%{v}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">Garanti Süresi (Ay)</label>
-                  <input type="number" className="w-full border rounded-lg p-2 text-sm"
+                  <label className="block text-sm font-medium mb-1 text-slate-700">Garanti (Ay) *</label>
+                  <input type="number" className="w-full border rounded-lg p-2 text-sm bg-white" min="0"
                     value={hbForm.guaranteePeriod}
                     onChange={(e) => setHbForm((f) => ({ ...f, guaranteePeriod: e.target.value }))} />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">Kargo 1</label>
-                  <select className="w-full border rounded-lg p-2 text-sm" value={hbForm.cargoCompany1}
+                  <label className="block text-sm font-medium mb-1 text-slate-700">Kargo 1 *</label>
+                  <select className="w-full border rounded-lg p-2 text-sm bg-white" value={hbForm.cargoCompany1}
                     onChange={(e) => setHbForm((f) => ({ ...f, cargoCompany1: e.target.value }))}>
                     {(() => {
                       const fallback = [
@@ -848,8 +1098,8 @@ export default function PazaryeriGonderPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">Kargo 2</label>
-                  <select className="w-full border rounded-lg p-2 text-sm" value={hbForm.cargoCompany2}
+                  <label className="block text-sm font-medium mb-1 text-slate-700">Kargo 2</label>
+                  <select className="w-full border rounded-lg p-2 text-sm bg-white" value={hbForm.cargoCompany2}
                     onChange={(e) => setHbForm((f) => ({ ...f, cargoCompany2: e.target.value }))}>
                     <option value="">— Seçin —</option>
                     {(() => {
@@ -868,8 +1118,8 @@ export default function PazaryeriGonderPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">Kargo 3</label>
-                  <select className="w-full border rounded-lg p-2 text-sm" value={hbForm.cargoCompany3}
+                  <label className="block text-sm font-medium mb-1 text-slate-700">Kargo 3</label>
+                  <select className="w-full border rounded-lg p-2 text-sm bg-white" value={hbForm.cargoCompany3}
                     onChange={(e) => setHbForm((f) => ({ ...f, cargoCompany3: e.target.value }))}>
                     <option value="">— Seçin —</option>
                     {(() => {
@@ -888,16 +1138,17 @@ export default function PazaryeriGonderPage() {
                   </select>
                 </div>
               </div>
+              </div>
 
-              {/* Kategori attribute'ları */}
+              {/* Adım 3: Kategori Özellikleri */}
               {hbAttrs.length > 0 && (
-                <div className="border rounded-lg p-3 bg-blue-50 border-blue-200">
-                  <p className="text-xs font-semibold text-blue-800 mb-3">
-                    Kategori Özellikleri
-                    <span className="ml-2 text-blue-600 font-normal">
-                      ({hbAttrs.filter((a) => a.required || a.mandatory).length} zorunlu)
-                    </span>
-                  </p>
+                <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-orange-500 text-xs font-bold text-white">3</span>
+                    <h3 className="font-semibold text-slate-800">Kategori Özellikleri</h3>
+                    <span className="text-xs text-slate-500">({hbAttrs.filter((a) => a.required || a.mandatory).length} zorunlu)</span>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-white p-3">
                   <div className="grid grid-cols-2 gap-3">
                     {hbAttrs.map((attr) => {
                       const key = attr.id || attr.name;
@@ -927,13 +1178,13 @@ export default function PazaryeriGonderPage() {
                       );
                     })}
                   </div>
+                  </div>
                 </div>
               )}
 
-              <div className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded p-2">
-                Kategori seçince <strong>Kategori Özellikleri</strong> (Kart Türü, Kapasite vb.) kutusu açılır; zorunlu alanları doldurun. Bağlantı için{" "}
-                <a href="/dashboard/api-settings" className="underline font-medium">API Ayarları</a>
-                {" "}sayfasından Hepsiburada <strong>kullanıcı adı</strong>, <strong>şifre</strong> ve <strong>Merchant ID</strong> girin.
+              <div className="text-xs text-slate-600 bg-slate-100 border border-slate-200 rounded-lg p-3">
+                <a href="/dashboard/api-settings" className="text-orange-600 hover:underline font-medium">API Ayarları</a>
+                {" "}sayfasından Hepsiburada <strong>kullanıcı adı (Merchant ID)</strong>, <strong>şifre (Secret Key)</strong> ve <strong>Merchant ID</strong> girin.
               </div>
             </div>
           )}

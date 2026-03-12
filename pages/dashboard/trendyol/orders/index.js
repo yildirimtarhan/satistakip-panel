@@ -23,6 +23,28 @@ export default function DashboardTrendyolOrdersPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [dateRange, setDateRange] = useState({ start: "", end: "" });
   const [faturaOrderNumber, setFaturaOrderNumber] = useState(null);
+  const [testOrderLoading, setTestOrderLoading] = useState(false);
+  const [testOrderResult, setTestOrderResult] = useState(null);
+
+  const createTestOrder = async () => {
+    setTestOrderLoading(true);
+    setTestOrderResult(null);
+    try {
+      const res = await fetch("/api/trendyol/orders/create-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      setTestOrderResult(data);
+      if (data.success) setTimeout(() => fetchOrders(), 2000);
+    } catch (e) {
+      setTestOrderResult({ success: false, message: e.message });
+    } finally {
+      setTestOrderLoading(false);
+    }
+  };
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -155,6 +177,19 @@ export default function DashboardTrendyolOrdersPage() {
         Trendyol siparişleriniz API üzerinden listelenir. Bağlantı için API Ayarları → Trendyol bölümünü kontrol edin.
       </p>
 
+      {testOrderResult && (
+        <div className={`mb-4 p-4 rounded-xl border ${testOrderResult.success ? "bg-green-50 border-green-200 text-green-800" : "bg-red-50 border-red-200 text-red-800"}`}>
+          {testOrderResult.success ? (
+            <>
+              <p className="font-medium">✅ {testOrderResult.message}</p>
+              {testOrderResult.orderNumber && <p className="text-sm mt-1">Sipariş No: <strong>{testOrderResult.orderNumber}</strong></p>}
+            </>
+          ) : (
+            <p className="font-medium">❌ {testOrderResult.message}</p>
+          )}
+        </div>
+      )}
+
       {error && (
         <div className={`mb-6 p-4 rounded-xl border ${errorStatus === 401 ? "bg-amber-50 border-amber-200" : "bg-orange-50 border-orange-200"}`}>
           <p className="font-medium text-amber-800 mb-2">▲ {error}</p>
@@ -193,6 +228,15 @@ export default function DashboardTrendyolOrdersPage() {
           className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg"
         >
           🔄 Yenile
+        </button>
+        <button
+          type="button"
+          onClick={createTestOrder}
+          disabled={testOrderLoading}
+          className="bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white px-4 py-2 rounded-lg"
+          title="Stage ortamında test siparişi oluşturur. Onaylı ürün barkodunuz yoksa API'ye POST { lines: [{ barcode: 'BARKOD', quantity: 1 }] } gönderin."
+        >
+          {testOrderLoading ? "⏳ Oluşturuluyor…" : "🧪 Test Siparişi"}
         </button>
         <button
           type="button"

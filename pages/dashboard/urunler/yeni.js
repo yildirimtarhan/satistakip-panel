@@ -59,6 +59,7 @@ export default function NewProductPage() {
     trendyolCategoryId: "",
     trendyolBrandId: "",
     trendyolCargoCompanyId: "",
+    trendyolDesi: "1",
 
     hbCategoryId: "",
     hbMerchantSku: "",
@@ -286,6 +287,7 @@ const loadBrandsByCategory = async (categoryId) => {
             categoryId: form.trendyolCategoryId || "",
             brandId: form.trendyolBrandId || "",
             cargoCompanyId: form.trendyolCargoCompanyId || "",
+            dimensionalWeight: Number(form.trendyolDesi) || 1,
             attributes: {},
           },
           hepsiburada: {
@@ -519,9 +521,13 @@ const loadBrandsByCategory = async (categoryId) => {
                   Görsel yükleyin veya doğrudan URL girin (pazaryerleri genelde en az 1 görsel ister; ilk görsel kapak olur).
                 </p>
                 <CloudinaryUploader
-                  images={form.images}
-                  setImages={(imgs) =>
-                    setForm((prev) => ({ ...prev, images: imgs }))
+                  images={Array.isArray(form.images) ? form.images : []}
+                  setImages={(imgsOrFn) =>
+                    setForm((prev) => {
+                      const current = Array.isArray(prev.images) ? prev.images : [];
+                      const next = typeof imgsOrFn === "function" ? imgsOrFn(current) : imgsOrFn;
+                      return { ...prev, images: next };
+                    })
                   }
                 />
                 <Label className="text-sm text-gray-600">
@@ -529,7 +535,7 @@ const loadBrandsByCategory = async (categoryId) => {
                 </Label>
                 <Textarea
                   rows={3}
-                  value={form.images.join("\n")}
+                  value={(Array.isArray(form.images) ? form.images : []).filter((x) => typeof x === "string").join("\n")}
                   onChange={(e) => {
                     const lines = e.target.value
                       .split("\n")
@@ -943,6 +949,20 @@ const loadBrandsByCategory = async (categoryId) => {
                     value={form.trendyolBrandId}
                     onChange={(e) =>
                       handleChange("trendyolBrandId", e.target.value)
+                    }
+                  />
+                </div>
+
+                <div>
+                  <Label>Desi (v2 zorunlu)</Label>
+                  <Input
+                    type="number"
+                    min="0.1"
+                    step="0.1"
+                    placeholder="1"
+                    value={form.trendyolDesi}
+                    onChange={(e) =>
+                      handleChange("trendyolDesi", e.target.value)
                     }
                   />
                 </div>

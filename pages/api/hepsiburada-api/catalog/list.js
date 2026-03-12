@@ -7,6 +7,7 @@ import {
   getHepsiburadaMerchantId,
   getHepsiburadaAuth,
   getHepsiburadaUserAgent,
+  getHepsiburadaMpopBaseUrl,
 } from "@/lib/hepsiburadaEnv";
 
 export default async function handler(req, res) {
@@ -29,7 +30,7 @@ export default async function handler(req, res) {
   const page = Math.max(0, parseInt(req.query.page, 10) || 0);
   const size = Math.min(100, Math.max(1, parseInt(req.query.size, 10) || 20));
 
-  const baseUrl = process.env.HEPSIBURADA_BASE_URL || "https://mpop-sit.hepsiburada.com";
+  const baseUrl = getHepsiburadaMpopBaseUrl();
   const url = `${baseUrl}/product/api/products/products-by-merchant-and-status?merchantId=${encodeURIComponent(merchantId)}&productStatus=${encodeURIComponent(productStatus)}&page=${page}&size=${size}`;
 
   try {

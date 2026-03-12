@@ -56,6 +56,7 @@ export default function EditProductPage() {
     trendyolCategoryId: "",
     trendyolBrandId: "",
     trendyolCargoCompanyId: "",
+    trendyolDesi: "1",
 
     hbCategoryId: "",
     hbMerchantSku: "",
@@ -283,12 +284,13 @@ export default function EditProductPage() {
               <div className="md:col-span-2">
                 <Label>Görseller</Label>
                 <CloudinaryUploader
-                  images={form.images}
-                  setImages={(imgs) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      images: imgs,
-                    }))
+                  images={Array.isArray(form.images) ? form.images : (form.images ? [form.images] : [])}
+                  setImages={(imgsOrFn) =>
+                    setForm((prev) => {
+                      const current = Array.isArray(prev.images) ? prev.images : (prev.images ? [prev.images] : []);
+                      const next = typeof imgsOrFn === "function" ? imgsOrFn(current) : imgsOrFn;
+                      return { ...prev, images: next };
+                    })
                   }
                 />
               </div>

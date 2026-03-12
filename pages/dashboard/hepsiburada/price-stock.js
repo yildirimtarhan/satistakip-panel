@@ -9,24 +9,58 @@ const headers = () => {
 export default function HepsiburadaPriceStockPage() {
   const [listings, setListings] = useState([]);
   const [erpProducts, setErpProducts] = useState([]);
+  const [hbCatalogMap, setHbCatalogMap] = useState({}); // merchantSku/hbSku -> productName
+  const [mappings, setMappings] = useState({}); // merchantSku -> productId (manuel eşleştirmeler)
   const [loading, setLoading] = useState(false);
   const [updateLoading, setUpdateLoading] = useState(false);
   const [message, setMessage] = useState(null);
   const [editPrice, setEditPrice] = useState({}); // { merchantSku: value }
 
+  const buildCatalogMap = useCallback((catalogData, statusData) => {
+    const map = {};
+    const add = (sku, name) => {
+      if (sku && name) map[String(sku).trim()] = name;
+    };
+    (catalogData?.data ?? []).forEach((p) => {
+      const name = p.productName || p.name || p.title || p.UrunAdi;
+      if (name) {
+        add(p.merchantSku, name);
+        add(p.hbSku, name);
+      }
+    });
+    (statusData?.data ?? []).forEach((p) => {
+      const name = p.productName || p.name || p.title;
+      if (name) {
+        add(p.merchantSku, name);
+        add(p.hbSku, name);
+      }
+    });
+    return map;
+  }, []);
+
+  const [salableOnly, setSalableOnly] = useState(false);
+
   const fetchListings = useCallback(async () => {
     setLoading(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/hepsiburada/listings/list?page=0&size=200", { headers: headers() });
-      const data = await res.json();
-      if (data.success && Array.isArray(data.data)) setListings(data.data);
-      else setMessage(data.message || "Listing listesi alınamadı");
+      const salableParam = salableOnly ? "&salable=true" : "";
+      const [listRes, catalogRes, statusRes] = await Promise.all([
+        fetch(`/api/hepsiburada/listings/list?page=0&size=200&withNames=true${salableParam}`, { headers: headers() }),
+        fetch("/api/hepsiburada/catalog/all-products?page=0&size=500", { headers: headers() }),
+        fetch("/api/hepsiburada-api/catalog/list?productStatus=MATCHED&page=0&size=200"),
+      ]);
+      const listData = await listRes.json();
+      const catalogData = await catalogRes.json();
+      const statusData = await statusRes.json();
+      if (listData.success && Array.isArray(listData.data)) setListings(listData.data);
+      else       setMessage(listData.message || "Listing listesi alınamadı");
+      setHbCatalogMap(buildCatalogMap(catalogData, statusData));
     } catch (e) {
       setMessage(e.message || "Hata");
     }
     setLoading(false);
-  }, []);
+  }, [buildCatalogMap, salableOnly]);
 
   const fetchErpProducts = useCallback(async () => {
     setLoading(true);
@@ -46,23 +80,37 @@ export default function HepsiburadaPriceStockPage() {
     setLoading(true);
     setMessage(null);
     try {
-      const [listRes, prodRes] = await Promise.all([
-        fetch("/api/hepsiburada/listings/list?page=0&size=200", { headers: headers() }),
+      const salableParam = salableOnly ? "&salable=true" : "";
+      const [listRes, prodRes, catalogRes, statusRes, mapRes] = await Promise.all([
+        fetch(`/api/hepsiburada/listings/list?page=0&size=200&withNames=true${salableParam}`, { headers: headers() }),
         fetch("/api/products/list", { headers: headers() }),
+        fetch("/api/hepsiburada/catalog/all-products?page=0&size=500", { headers: headers() }),
+        fetch("/api/hepsiburada-api/catalog/list?productStatus=MATCHED&page=0&size=200"),
+        fetch("/api/hepsiburada/erp-mapping", { headers: headers() }),
       ]);
       const listData = await listRes.json();
       const prodData = await prodRes.json();
+      const catalogData = await catalogRes.json();
+      const statusData = await statusRes.json();
+      const mapData = await mapRes.json();
       if (listData.success && Array.isArray(listData.data)) setListings(listData.data);
       const prods = prodData?.products ?? prodData?.items ?? [];
       setErpProducts(Array.isArray(prods) ? prods : []);
+      setHbCatalogMap(buildCatalogMap(catalogData, statusData));
+      setMappings(mapData.mappings || {});
     } catch (e) {
       setMessage(e.message || "Hata");
     }
     setLoading(false);
-  }, []);
+  }, [buildCatalogMap, salableOnly]);
 
   const matchErp = (listing) => {
-    const sku = listing.merchantSku || listing.merchantSku?.trim?.() || "";
+    const sku = String(listing.merchantSku ?? "").trim();
+    const productId = mappings[sku];
+    if (productId) {
+      const p = erpProducts.find((e) => String(e._id) === productId);
+      if (p) return p;
+    }
     return erpProducts.find(
       (p) =>
         String(p.barcode || "").trim() === sku ||
@@ -162,6 +210,10 @@ export default function HepsiburadaPriceStockPage() {
         >
           {loading ? "Yükleniyor…" : "Listeyi ve ERP ürünlerini çek"}
         </button>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={salableOnly} onChange={(e) => setSalableOnly(e.target.checked)} className="rounded" />
+          Sadece aktif satıştaki
+        </label>
         <button type="button" onClick={fetchListings} disabled={loading} className="px-4 py-2 rounded-lg border border-gray-300 text-sm hover:bg-gray-50 disabled:opacity-50">
           Sadece HB listesi
         </button>
@@ -203,24 +255,28 @@ export default function HepsiburadaPriceStockPage() {
                 <tr>
                   <th className="text-left px-4 py-2">Merchant SKU</th>
                   <th className="text-left px-4 py-2">HB SKU</th>
+                  <th className="text-left px-4 py-2">Ürün adı</th>
                   <th className="text-right px-4 py-2">HB Fiyat</th>
                   <th className="text-right px-4 py-2">HB Stok</th>
-                  <th className="text-left px-4 py-2">ERP Ürün</th>
+                  <th className="text-left px-4 py-2">ERP Eşleşme</th>
                   <th className="text-right px-4 py-2">ERP Stok</th>
-                  <th className="text-right px-4 py-2">Yeni fiyat (isteğe bağlı)</th>
+                  <th className="text-right px-4 py-2">Yeni fiyat</th>
                 </tr>
               </thead>
               <tbody>
                 {listings.map((row, i) => {
                   const erp = matchErp(row);
                   const msku = row.merchantSku ?? "";
+                  const hbName = hbCatalogMap[String(row.merchantSku || "").trim()] ?? hbCatalogMap[String(row.hepsiburadaSku || row.hbSku || "").trim()];
+                  const displayName = erp ? (erp.name || erp.title) : hbName || null;
                   return (
                     <tr key={row.hepsiburadaSku || row.merchantSku || i} className="border-t border-gray-100 hover:bg-gray-50">
                       <td className="px-4 py-2 font-mono text-xs">{row.merchantSku ?? "—"}</td>
                       <td className="px-4 py-2 font-mono text-xs">{row.hepsiburadaSku ?? row.hbSku ?? "—"}</td>
+                      <td className="px-4 py-2 max-w-xs truncate" title={displayName || ""}>{displayName ?? "—"}</td>
                       <td className="px-4 py-2 text-right">{row.price != null ? Number(row.price).toLocaleString("tr-TR") : "—"}</td>
                       <td className="px-4 py-2 text-right">{row.availableStock ?? "—"}</td>
-                      <td className="px-4 py-2">{erp ? (erp.name || erp.title || "—") : <span className="text-gray-400">Eşleşme yok</span>}</td>
+                      <td className="px-4 py-2">{erp ? <span className="text-green-700">Eşleşti</span> : <span className="text-gray-400">Eşleşme yok</span>}</td>
                       <td className="px-4 py-2 text-right">{erp != null ? (erp.stock ?? erp.quantity ?? 0) : "—"}</td>
                       <td className="px-4 py-2">
                         <input

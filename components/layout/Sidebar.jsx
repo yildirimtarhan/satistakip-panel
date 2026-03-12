@@ -66,7 +66,23 @@ const SubmenuItem = ({ href, icon: Icon, label, description, onLinkClick }) => {
 const HB_MENU = [
   { href: "/dashboard/hepsiburada/orders", label: "HB Siparişleri", icon: "🛍️" },
   { href: "/dashboard/hepsiburada/products", label: "HB Ürünleri", icon: "📦" },
+  { href: "/dashboard/hepsiburada/erp-mapping", label: "HB–ERP Eşleştirme", icon: "🔗" },
   { href: "/dashboard/hepsiburada/price-stock", label: "HB Fiyat/Stok Güncelle", icon: "💰" },
+];
+
+// Trendyol entegrasyon rolleri (panel entegrasyon bilgileriyle uyumlu)
+const TRENDYOL_MENU = [
+  { href: "/dashboard/trendyol/orders", label: "Sipariş Entegrasyonu", icon: "🧾" },
+  { href: "/dashboard/trendyol/products", label: "Ürün Entegrasyonu", icon: "📦" },
+  { href: "/dashboard/trendyol/delivery", label: "Teslimat Entegrasyonu", icon: "🚚" },
+  { href: "/dashboard/trendyol/returns", label: "İade Entegrasyonu", icon: "🔄" },
+  { href: "/dashboard/trendyol/invoice", label: "Fatura Entegrasyonu", icon: "📄" },
+  { href: "/dashboard/trendyol/accounting", label: "Muhasebe & Finans", icon: "💰" },
+  { href: "/dashboard/trendyol/seller-info", label: "Satıcı Bilgileri", icon: "🏪" },
+  { href: "/dashboard/trendyol/qa", label: "Soru Cevap", icon: "❓" },
+  { href: "/dashboard/trendyol/webhook", label: "Webhook Entegrasyonu", icon: "🔗" },
+  { href: "/dashboard/pazaryeri-gonder", label: "Ürün Gönder", icon: "🚀" },
+  { href: "/dashboard/pazaryeri/buybox", label: "BuyBox", icon: "💱" },
 ];
 
 function HepsiburadaSubmenu({ onLinkClick }) {
@@ -90,6 +106,47 @@ function HepsiburadaSubmenu({ onLinkClick }) {
       {(open || isActive) && (
         <div className="mt-1 space-y-0.5">
           {HB_MENU.map((item) => {
+            const active = router.pathname === item.href || router.pathname.startsWith(item.href + "/");
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={onLinkClick}
+                className={`flex items-center gap-2 pl-8 pr-3 py-2.5 rounded-lg text-sm transition touch-manipulation
+                  ${active ? "bg-orange-50 text-orange-700" : "text-slate-600 hover:bg-slate-50"}`}
+              >
+                <span>{item.icon}</span>
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TrendyolSubmenu({ onLinkClick }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const isActive = TRENDYOL_MENU.some((m) => router.pathname === m.href || router.pathname.startsWith(m.href + "/"));
+  return (
+    <div className="mb-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`flex items-center justify-between w-full gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition touch-manipulation
+          ${open || isActive ? "bg-slate-100 text-slate-800" : "text-slate-700 hover:bg-slate-100"}`}
+      >
+        <span className="flex items-center gap-3">
+          <span className="text-lg">🛒</span>
+          <span>Trendyol</span>
+        </span>
+        {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+      </button>
+      {(open || isActive) && (
+        <div className="mt-1 space-y-0.5">
+          {TRENDYOL_MENU.map((item) => {
             const active = router.pathname === item.href || router.pathname.startsWith(item.href + "/");
             return (
               <Link
@@ -206,14 +263,12 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
 
         <SectionTitle>Pazaryerleri</SectionTitle>
         <HepsiburadaSubmenu onLinkClick={handleLinkClick} />
-        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/trendyol/orders" icon="🧾" label="Trendyol Siparişleri" />
-        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/trendyol/products" icon="📦" label="Trendyol Ürünleri" />
+        <TrendyolSubmenu onLinkClick={handleLinkClick} />
         <MenuItem onLinkClick={handleLinkClick} href="/dashboard/n11/orders" icon="🛒" label="N11 Siparişleri" />
         <MenuItem onLinkClick={handleLinkClick} href="/dashboard/n11/products" icon="📦" label="N11 Ürün Listesi" />
         <MenuItem onLinkClick={handleLinkClick} href="/dashboard/n11/add-product" icon="➕" label="N11 Ürün Gönder" />
         <MenuItem onLinkClick={handleLinkClick} href="/dashboard/n11/shipment-templates" icon="📋" label="N11 Kargo Şablonları" />
         <MenuItem onLinkClick={handleLinkClick} href="/dashboard/pazaryeri-gonder" icon="🚀" label="Pazaryerine Gönder" />
-        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/pazaryeri/buybox" icon="💱" label="Trendyol BuyBox" />
 
         <SectionTitle>E-Belge</SectionTitle>
         <MenuItem onLinkClick={handleLinkClick} href="/dashboard/efatura" icon="📄" label="E-Fatura Paneli" />

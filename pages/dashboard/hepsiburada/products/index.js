@@ -32,6 +32,7 @@ export default function HepsiburadaProductsPage() {
   const [brandsResult, setBrandsResult] = useState(null);
   const [listingsLoading, setListingsLoading] = useState(false);
   const [listingsResult, setListingsResult] = useState(null);
+  const [salableOnly, setSalableOnly] = useState(false);
 
   const pullFromHb = async () => {
     setPullLoading(true);
@@ -78,9 +79,19 @@ export default function HepsiburadaProductsPage() {
     setListingsLoading(true);
     setListingsResult(null);
     try {
-      const res = await fetch("/api/hepsiburada/listings/list?page=0&size=50", { headers: headers() });
-      const data = await res.json();
-      setListingsResult(data);
+      // Listing + tüm katalog + statü listesi paralel çek (ürün adı eşleştirmesi için)
+      const salableParam = salableOnly ? "&salable=true" : "";
+      const [listRes, catalogRes, statusRes] = await Promise.all([
+        fetch(`/api/hepsiburada/listings/list?page=0&size=200&withNames=true${salableParam}`, { headers: headers() }),
+        fetch("/api/hepsiburada/catalog/all-products?page=0&size=500", { headers: headers() }),
+        fetch("/api/hepsiburada-api/catalog/list?productStatus=MATCHED&page=0&size=200"),
+      ]);
+      const listData = await listRes.json();
+      const catalogData = await catalogRes.json();
+      const statusData = await statusRes.json();
+      setListingsResult(listData);
+      if (catalogData.success) setAllCatalogResult(catalogData);
+      if (statusData.success) setPullResult(statusData);
     } catch (err) {
       setListingsResult({ success: false, message: err.message });
     }
@@ -111,6 +122,10 @@ export default function HepsiburadaProductsPage() {
       <h1 className="text-2xl font-bold text-orange-600 mb-2">Hepsiburada Ürünleri</h1>
       <p className="text-gray-500 mb-6">
         Hepsiburada&apos;dan ürün listesi çekebilir veya kendi ürünlerinizi Hepsiburada&apos;ya toplu gönderebilirsiniz.
+        {" "}
+        <Link href="/dashboard/hepsiburada/price-stock" className="text-orange-600 hover:underline font-medium">
+          Fiyat ve stok güncelleme
+        </Link> için HB Fiyat/Stok Güncelle sayfasını kullanın.
       </p>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
@@ -239,6 +254,10 @@ export default function HepsiburadaProductsPage() {
           <p className="text-xs text-gray-500 mb-3">
             Hepsiburada Listeleme API&apos;den fiyat, stok, kargo bilgileri çekilir; aşağıda tabloda gösterilir (veritabanına kaydedilmez).
           </p>
+          <label className="flex items-center gap-2 mb-2">
+            <input type="checkbox" checked={salableOnly} onChange={(e) => setSalableOnly(e.target.checked)} className="rounded" />
+            <span className="text-sm">Sadece aktif satıştaki</span>
+          </label>
           <button
             type="button"
             onClick={fetchListings}
@@ -257,16 +276,47 @@ export default function HepsiburadaProductsPage() {
         </div>
       </div>
 
-      {/* Listing listesi tablosu */}
-      {listingsResult?.success && (listingsResult.data?.length > 0) && (
+      {/* Listing listesi tablosu - Ürün adı katalogdan eşleştirilir */}
+      {listingsResult?.success && (listingsResult.data?.length > 0) && (() => {
+        const catalogMap = {};
+        const addToMap = (sku, name) => {
+          if (sku && name) catalogMap[String(sku).trim()] = name;
+        };
+        // 1) Tüm katalog (all-products-of-merchant)
+        (allCatalogResult?.data ?? []).forEach((p) => {
+          const name = p.productName || p.name || p.title || p.UrunAdi;
+          if (name) {
+            addToMap(p.merchantSku, name);
+            addToMap(p.hbSku, name);
+            (p.variants || []).forEach((v) => addToMap(v.merchantSku, name));
+          }
+        });
+        // 2) Statü bazlı liste (products-by-merchant-and-status) - productName içerir
+        (pullResult?.data ?? []).forEach((p) => {
+          const name = p.productName || p.name || p.title;
+          if (name) {
+            addToMap(p.merchantSku, name);
+            addToMap(p.hbSku, name);
+          }
+        });
+        return (
         <div className="bg-white border rounded-xl shadow-sm overflow-hidden mb-6">
-          <h3 className="px-4 py-3 font-semibold border-b bg-amber-50">Listing listesi – fiyat, stok, kargo ({listingsResult.totalElements ?? listingsResult.data.length})</h3>
+          <h3 className="px-4 py-3 font-semibold border-b bg-amber-50">
+            Listing listesi – fiyat, stok, kargo ({listingsResult.totalElements ?? listingsResult.data.length})
+            <Link href="/dashboard/hepsiburada/price-stock" className="ml-3 text-sm text-orange-600 hover:underline font-normal">
+              → Fiyat/Stok güncelle
+            </Link>
+          </h3>
+          <p className="px-4 py-2 text-xs text-gray-500 bg-amber-50/50">
+            Ürün adları katalog ve statü listesinden eşleştirilir. HB kataloğundan açılan ürünlerde ad görünmeyebilir.
+          </p>
           <div className="overflow-x-auto max-h-96 overflow-y-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-100 sticky top-0">
                 <tr>
                   <th className="text-left px-4 py-2">Merchant SKU</th>
                   <th className="text-left px-4 py-2">HB SKU</th>
+                  <th className="text-left px-4 py-2">Ürün adı</th>
                   <th className="text-right px-4 py-2">Fiyat</th>
                   <th className="text-right px-4 py-2">Stok</th>
                   <th className="text-left px-4 py-2">Kargo süre</th>
@@ -278,6 +328,9 @@ export default function HepsiburadaProductsPage() {
                   <tr key={row.merchantSku || row.hepsiburadaSku || i} className="border-t border-gray-100 hover:bg-gray-50">
                     <td className="px-4 py-2 font-mono text-xs">{row.merchantSku ?? "—"}</td>
                     <td className="px-4 py-2 font-mono text-xs">{row.hepsiburadaSku ?? "—"}</td>
+                    <td className="px-4 py-2 max-w-xs truncate" title={row.productName || catalogMap[String(row.merchantSku||"").trim()] || catalogMap[String(row.hepsiburadaSku||"").trim()] || ""}>
+                      {row.productName ?? catalogMap[String(row.merchantSku||"").trim()] ?? catalogMap[String(row.hepsiburadaSku||"").trim()] ?? "—"}
+                    </td>
                     <td className="px-4 py-2 text-right">{row.price != null ? Number(row.price).toLocaleString("tr-TR") : "—"}</td>
                     <td className="px-4 py-2 text-right">{row.availableStock ?? "—"}</td>
                     <td className="px-4 py-2">{row.dispatchTime != null ? `${row.dispatchTime} gün` : "—"}</td>
@@ -288,7 +341,8 @@ export default function HepsiburadaProductsPage() {
             </table>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Tüm katalog tablosu */}
       {allCatalogResult?.success && (allCatalogResult.data?.length > 0) && (

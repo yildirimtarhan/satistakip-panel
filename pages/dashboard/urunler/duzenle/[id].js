@@ -57,6 +57,7 @@ export default function EditProductPage() {
     trendyolCategoryId: "",
     trendyolBrandId: "",
     trendyolCargoCompanyId: "",
+    trendyolDesi: "1",
 
     hbCategoryId: "",
     hbMerchantSku: "",
@@ -157,7 +158,7 @@ if (!res.ok || data?.success === false || !p?._id) {
       modelCode: p.modelCode || "",
       category: p.category || "",
       description: p.description || "",
-      images: Array.isArray(p.images) ? p.images : [],
+      images: Array.isArray(p.images) ? p.images : (p.images ? [].concat(p.images) : []),
 
       priceTl: p.priceTl ?? "",
       discountPriceTl: p.discountPriceTl ?? "",
@@ -177,6 +178,11 @@ if (!res.ok || data?.success === false || !p?._id) {
         typeof p.marketplaceSettings?.n11?.domestic === "boolean"
           ? p.marketplaceSettings.n11.domestic
           : true,
+
+      trendyolCategoryId: p.marketplaceSettings?.trendyol?.categoryId || "",
+      trendyolBrandId: p.marketplaceSettings?.trendyol?.brandId || "",
+      trendyolCargoCompanyId: p.marketplaceSettings?.trendyol?.cargoCompanyId || "",
+      trendyolDesi: String(p.marketplaceSettings?.trendyol?.dimensionalWeight ?? p.marketplaceSettings?.trendyol?.desi ?? 1),
 
       sendTo: p.sendTo || {},
     }));
@@ -320,7 +326,7 @@ const loadBrands = async (categoryId) => {
         brand: form.brand,
         category: form.category,
         description: form.description,
-        images: (form.images || []).filter((x) => x && x.trim() !== ""),
+        images: (Array.isArray(form.images) ? form.images : (form.images ? [form.images] : [])).filter((x) => typeof x === "string" && x.trim() !== ""),
 
         // STOK & FİYAT
        
@@ -349,6 +355,7 @@ const loadBrands = async (categoryId) => {
             categoryId: form.trendyolCategoryId || "",
             brandId: form.trendyolBrandId || "",
             cargoCompanyId: form.trendyolCargoCompanyId || "",
+            dimensionalWeight: Number(form.trendyolDesi) || 1,
             attributes: {},
           },
           hepsiburada: {
@@ -623,12 +630,13 @@ const updateRes = await fetch(`/api/products/update?id=${id}`, {
                 <Label>Ürün Görselleri</Label>
 
                 <CloudinaryUploader
-                  images={form.images}
-                  setImages={(imgs) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      images: imgs,
-                    }))
+                  images={(Array.isArray(form.images) ? form.images : (form.images ? [form.images] : [])).filter((x) => typeof x === "string")}
+                  setImages={(imgsOrFn) =>
+                    setForm((prev) => {
+                      const current = Array.isArray(prev.images) ? prev.images : (prev.images ? [prev.images] : []);
+                      const next = typeof imgsOrFn === "function" ? imgsOrFn(current) : imgsOrFn;
+                      return { ...prev, images: next };
+                    })
                   }
                 />
 
@@ -637,7 +645,9 @@ const updateRes = await fetch(`/api/products/update?id=${id}`, {
                 </Label>
                 <Textarea
                   rows={3}
-                  value={(form.images || []).join("\n")}
+                  value={(Array.isArray(form.images) ? form.images : (form.images ? [form.images] : []))
+                    .filter((x) => typeof x === "string")
+                    .join("\n")}
                   onChange={(e) => {
                     const lines = e.target.value
                       .split("\n")
@@ -930,6 +940,19 @@ const updateRes = await fetch(`/api/products/update?id=${id}`, {
                     value={form.trendyolBrandId}
                     onChange={(e) =>
                       handleChange("trendyolBrandId", e.target.value)
+                    }
+                  />
+                </div>
+                <div>
+                  <Label>Desi (v2 zorunlu)</Label>
+                  <Input
+                    type="number"
+                    min="0.1"
+                    step="0.1"
+                    placeholder="1"
+                    value={form.trendyolDesi}
+                    onChange={(e) =>
+                      handleChange("trendyolDesi", e.target.value)
                     }
                   />
                 </div>

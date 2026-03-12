@@ -2,7 +2,7 @@ import jwt from "jsonwebtoken";
 import axios from "axios";
 import dbConnect from "@/lib/dbConnect";
 import Settings from "@/models/Settings";
-import { productCreateUrl } from "@/lib/marketplaces/trendyolConfig";
+import { productCreateV2Url } from "@/lib/marketplaces/trendyolConfig";
 
 async function getTrendyolSettings({ companyId, userId }) {
   await dbConnect();
@@ -34,25 +34,33 @@ export default async function handler(req, res) {
     const { product } = req.body;
     if (!product) return res.status(400).json({ success: false, message: "product verisi zorunlu" });
 
-    const credentials = Buffer.from(`${cfg.apiKey}:${cfg.apiSecret}`).toString("base64");
-    const createUrl = productCreateUrl(cfg.supplierId);
+    const images = (product.images || []).slice(0, 8).map((url) => ({ url: String(url).trim() })).filter((img) => img.url && img.url.startsWith("https"));
+    if (images.length === 0) return res.status(400).json({ success: false, message: "En az 1 HTTPS görsel URL zorunlu (Trendyol v2)" });
+    if (!product.brandId || !product.categoryId) return res.status(400).json({ success: false, message: "brandId ve categoryId zorunlu" });
 
+    const credentials = Buffer.from(`${cfg.apiKey}:${cfg.apiSecret}`).toString("base64");
+    const createUrl = productCreateV2Url(cfg.supplierId);
+
+    // v2 API (developers.trendyol.com): vatRate 0,1,10,20; dimensionalWeight zorunlu
+    const validVatRates = [0, 1, 10, 20];
+    const vatRate = validVatRates.includes(Number(product.vatRate)) ? Number(product.vatRate) : 20;
+    const listPrice = Number(product.listPrice || product.salePrice || 0);
+    const salePrice = Number(product.salePrice || product.listPrice || 0);
     const item = {
-      barcode: product.barcode,
-      title: product.title,
-      productMainId: product.productMainId || product.barcode,
+      barcode: String(product.barcode || product.stockCode || "TRD-" + Date.now()).replace(/\s/g, "").slice(0, 40),
+      title: String(product.title || "").slice(0, 100),
+      productMainId: String(product.productMainId || product.barcode || product.stockCode || "TRD-" + Date.now()).slice(0, 40),
       brandId: Number(product.brandId),
       categoryId: Number(product.categoryId),
       quantity: Number(product.quantity ?? 0),
-      stockCode: product.stockCode || product.barcode,
-      description: product.description || product.title,
-      currencyType: "TRY",
-      listPrice: Number(product.listPrice),
-      salePrice: Number(product.salePrice),
-      vatRate: Number(product.vatRate ?? 20),
-      cargoCompanyId: Number(product.cargoCompanyId ?? 10),
-      images: (product.images || []).map((url) => ({ url })),
-      attributes: product.attributes || [],
+      stockCode: String(product.stockCode || product.barcode || "STK-" + Date.now()).slice(0, 100),
+      dimensionalWeight: Number(product.dimensionalWeight ?? product.desi ?? 1),
+      description: String(product.description || product.title || "").slice(0, 30000),
+      listPrice: Math.max(listPrice, salePrice),
+      salePrice,
+      vatRate,
+      images,
+      attributes: Array.isArray(product.attributes) ? product.attributes : [],
     };
 
     const response = await axios.post(
