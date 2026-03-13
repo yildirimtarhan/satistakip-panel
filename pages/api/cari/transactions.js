@@ -7,6 +7,7 @@ import Transaction from "@/models/Transaction";
 import Product from "@/models/Product";
 import Cari from "@/models/Cari";
 import StockLog from "@/models/StockLog";
+import { pushStockToMarketplaces } from "@/lib/pazaryeriStockSync";
 import Counter from "@/models/Counter"; // ✅ sende var (next-sale-no.js bunu kullanıyor)
 
 function pad(n, w = 6) {
@@ -145,7 +146,7 @@ export default async function handler(req, res) {
         // stok artır
         await Product.updateOne(
           { _id: pid, companyId },
-          { $inc: { stok: qty }, $set: { updatedAt: new Date() } }
+          { $inc: { stock: qty }, $set: { updatedAt: new Date() } }
         );
 
         await StockLog.create({
@@ -175,17 +176,46 @@ export default async function handler(req, res) {
         }
       );
 
-      // Ekstreye transaction yaz
+      // Ekstreye transaction yaz (note'da items saklanır — iptal için gerekli)
+      const ITEMS_MARKER = "__PURCHASE_ITEMS__:";
+      const purchaseItems = lines
+        .filter((r) => r.productId || r._id)
+        .map((r) => {
+          const pid = r.productId || r._id;
+          const qty = Number(r.adet ?? r.quantity ?? r.qty ?? 1);
+          const price = Number(r.fiyat ?? r.unitPrice ?? 0);
+          const cur = String(r.currency || "TRY");
+          const kdv = Number(r.kdv ?? 0);
+          const fx = effectiveRate(cur);
+          const base = qty * price;
+          const withKdv = base + (base * kdv) / 100;
+          const lineTRY = cur === "TRY" ? withKdv : Number((withKdv * fx).toFixed(2));
+          return {
+            productId: String(pid),
+            quantity: qty,
+            unitPrice: price,
+            currency: cur,
+            fxRate: fx,
+            total: lineTRY,
+          };
+        });
+      const humanNote = `Ürün Alış${purchaseNo ? " #" + purchaseNo : ""}${invoiceNo ? " | Fatura: " + invoiceNo : ""}${orderNo ? " | Sipariş: " + orderNo : ""}${note ? " | " + note : ""}`;
       await Transaction.create({
         accountId: accountIdForPurchase,
-        type: "purchase", // alış
+        type: "purchase",
         amount: Number(totalTRY.toFixed(2)),
+        totalTRY: Number(totalTRY.toFixed(2)),
         currency: "TRY",
         date: date ? new Date(date) : new Date(),
-        description: `Ürün Alış${purchaseNo ? " #" + purchaseNo : ""}${invoiceNo ? " | Fatura: " + invoiceNo : ""}${orderNo ? " | Sipariş: " + orderNo : ""}${note ? " | " + note : ""}`,
+        note: `${humanNote}\n${ITEMS_MARKER}${JSON.stringify(purchaseItems)}`,
         userId,
         companyId,
       });
+
+      const purchaseProductIds = lines.filter((r) => r.productId || r._id).map((r) => r.productId || r._id);
+      if (purchaseProductIds.length) {
+        pushStockToMarketplaces(purchaseProductIds, { companyId, userId: ownerUserId });
+      }
 
       return res.status(200).json({
         success: true,
@@ -325,6 +355,12 @@ export default async function handler(req, res) {
           { session }
         );
       });
+
+      // Ortak stok → pazaryerlerine anlık push
+      const affectedIds = normalizedItems.map((it) => it.productId).filter(Boolean);
+      if (affectedIds.length) {
+        pushStockToMarketplaces(affectedIds, { companyId, userId: ownerUserId });
+      }
 
       return res.status(201).json({
         success: true,

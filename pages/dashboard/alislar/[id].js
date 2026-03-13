@@ -10,6 +10,8 @@ export default function AlisDetayPage() {
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({ date: "", description: "" });
 
   useEffect(() => {
     if (id) load();
@@ -30,6 +32,10 @@ export default function AlisDetayPage() {
         return;
       }
       setData(json);
+      setEditForm({
+        date: json.date ? new Date(json.date).toISOString().slice(0, 10) : "",
+        description: json.description || "",
+      });
     } catch (err) {
       console.error("Alış detay hata:", err);
     } finally {
@@ -51,6 +57,28 @@ export default function AlisDetayPage() {
   };
 
   // ✅ ALIŞ İPTAL
+  const saveEdit = async () => {
+    try {
+      const token = localStorage.getItem("token") || "";
+      const res = await fetch(`/api/purchases/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ date: editForm.date || undefined, description: editForm.description }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok) {
+        alert(j.message || "Güncellendi");
+        setEditing(false);
+        load();
+      } else {
+        alert(j.message || "Güncelleme başarısız");
+      }
+    } catch (e) {
+      alert("Güncelleme sırasında hata");
+      console.error(e);
+    }
+  };
+
   const cancelPurchase = async () => {
     if (
       !confirm(
@@ -91,20 +119,51 @@ export default function AlisDetayPage() {
         <div className="flex justify-between mb-4">
           <h1 className="text-xl font-semibold">Alış Detayı</h1>
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            {!editing ? (
+              <button
+                onClick={() => setEditing(true)}
+                className="bg-amber-600 text-white px-4 py-2 rounded hover:bg-amber-700"
+              >
+                Düzenle
+              </button>
+            ) : (
+              <>
+                <input
+                  type="date"
+                  value={editForm.date}
+                  onChange={(e) => setEditForm((f) => ({ ...f, date: e.target.value }))}
+                  className="border rounded px-2 py-1"
+                />
+                <input
+                  type="text"
+                  value={editForm.description}
+                  onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
+                  placeholder="Açıklama"
+                  className="border rounded px-2 py-1 flex-1 min-w-[180px]"
+                />
+                <button onClick={saveEdit} className="bg-green-600 text-white px-4 py-2 rounded">
+                  Kaydet
+                </button>
+                <button onClick={() => setEditing(false)} className="border px-4 py-2 rounded">
+                  İptal
+                </button>
+              </>
+            )}
             <button
               onClick={downloadPdf}
               className="bg-blue-600 text-white px-4 py-2 rounded"
             >
               PDF İndir
             </button>
-
-            <button
-              onClick={cancelPurchase}
-              className="bg-red-600 text-white px-4 py-2 rounded"
-            >
-              Alış İptal Et
-            </button>
+            {!data?.cancelled && (
+              <button
+                onClick={cancelPurchase}
+                className="bg-red-600 text-white px-4 py-2 rounded"
+              >
+                Alış İptal Et
+              </button>
+            )}
           </div>
         </div>
 

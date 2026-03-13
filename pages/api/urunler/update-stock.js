@@ -2,6 +2,7 @@ import dbConnect from "@/lib/mongodb";
 import Product from "@/models/Product";
 import StockLog from "@/models/StockLog";
 import jwt from "jsonwebtoken";
+import { pushStockToMarketplaces } from "@/lib/pazaryeriStockSync";
 
 export default async function handler(req, res) {
   try {
@@ -57,6 +58,8 @@ export default async function handler(req, res) {
       note: note || "",
       createdAt: new Date(),
     });
+
+    pushStockToMarketplaces([productId], { companyId, userId });
 
     return res.status(200).json({
       message: "✅ Stok güncellendi",

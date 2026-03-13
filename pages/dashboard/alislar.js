@@ -30,8 +30,11 @@ export default function AlislarPage() {
     }
   };
 
-  const calcTotal = (items = []) =>
-    items.reduce((sum, i) => sum + Number(i.totalTRY ?? i.total ?? 0), 0);
+  const calcTotal = (p) => {
+    const items = p?.items || [];
+    const fromItems = items.reduce((sum, i) => sum + Number(i.total ?? i.totalTRY ?? 0), 0);
+    return fromItems > 0 ? fromItems : Number(p?.totalTRY ?? p?.amount ?? 0);
+  };
 
   // ✅ Yeni: alış satırlarından para birimi ve kur bul (ilk dövizli satırı yakalar)
   const getCurrencyAndFx = (items = []) => {
@@ -74,7 +77,7 @@ export default function AlislarPage() {
 
             <tbody>
               {list.map((p) => {
-                const total = calcTotal(p.items);
+                const total = calcTotal(p);
 
                 const { currency, fxRate } = getCurrencyAndFx(p.items);
 
@@ -108,11 +111,11 @@ export default function AlislarPage() {
                     </td>
 
                     <td className="border px-2 py-1 text-center">
-                      <Link
-                        href={`/dashboard/alislar/${p._id}`}
-                        className="text-blue-600 hover:underline"
-                      >
+                      <Link href={`/dashboard/alislar/${p._id}`} className="text-blue-600 hover:underline mr-2">
                         Gör
+                      </Link>
+                      <Link href={`/dashboard/alislar/${p._id}`} className="text-amber-600 hover:underline">
+                        Düzenle
                       </Link>
                     </td>
                   </tr>

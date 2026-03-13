@@ -9,6 +9,7 @@ import Product from "@/models/Product";
 import Transaction from "@/models/Transaction";
 import { createPazaryeriBorcAndUpdateBakiye } from "@/lib/pazaryeriCari";
 import { getN11OrderDetailByOrderNumber } from "@/lib/marketplaces/n11Service";
+import { pushStockToMarketplaces } from "@/lib/pazaryeriStockSync";
 
 function normalizePhoneTR(phone = "") {
   const digits = String(phone).replace(/\D/g, "");
@@ -274,10 +275,14 @@ export default async function handler(req, res) {
       }
       await orderDoc.save({ session });
 
-      return { already: false, saleNo, transactionId: tx._id };
+      return { already: false, saleNo, transactionId: tx._id, affectedProductIds: normalizedItems.filter((i) => i.productId).map((i) => i.productId) };
     });
 
     session.endSession();
+
+    if (result?.affectedProductIds?.length) {
+      pushStockToMarketplaces(result.affectedProductIds, { companyId: companyIdStr, userId: userIdStr });
+    }
     return res.status(200).json({ success: true, ...result });
   } catch (err) {
     console.error("CREATE ERP ERROR:", err);

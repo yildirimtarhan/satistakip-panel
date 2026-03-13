@@ -9,6 +9,7 @@ import dbConnect from "@/lib/dbConnect";
 import Transaction from "@/models/Transaction";
 import Product from "@/models/Product";
 import Cari from "@/models/Cari";
+import { pushStockToMarketplaces } from "@/lib/pazaryeriStockSync";
 import Counter from "@/models/Counter";
 
 /**
@@ -442,13 +443,18 @@ async function processErpTransactions(invoice, invoiceNumber, userId, companyId)
       amount: totalTRY,
     });
 
+    const affectedIds = [];
     for (const it of items) {
       if (it.productId && mongoose.Types.ObjectId.isValid(it.productId)) {
         const qty = Number(it.quantity ?? it.miktar ?? 0);
         if (qty > 0) {
           await Product.findByIdAndUpdate(it.productId, { $inc: { stock: -qty } });
+          affectedIds.push(it.productId);
         }
       }
+    }
+    if (affectedIds.length && companyId) {
+      pushStockToMarketplaces(affectedIds, { companyId: String(companyId), userId: String(userId) });
     }
   } catch (erpErr) {
     console.error("ERP işlemi hatası:", erpErr);

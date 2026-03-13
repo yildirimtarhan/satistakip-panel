@@ -18,6 +18,10 @@ import {
   getHepsiburadaOmsBaseUrl,
   isHepsiburadaTestMode,
 } from "@/lib/hepsiburadaEnv";
+import {
+  processHbOrderToErp,
+  getCompanyUserByHepsiburadaMerchantId,
+} from "@/lib/hepsiburadaPushErp";
 
 const SUPPORTED_TYPES = [
   "OrderCreate",
@@ -271,6 +275,29 @@ export default async function handler(req, res) {
         { upsert: true }
       );
       console.log("💾 Sipariş kaydedildi:", orderNumber);
+
+      // Otomatik ERP aktarımı (manuel işlem gerekmez)
+      setImmediate(async () => {
+        try {
+          const merchantId = getHepsiburadaMerchantId();
+          const ctx = await getCompanyUserByHepsiburadaMerchantId(merchantId);
+          if (ctx) {
+            const doc = await col.findOne({
+              $or: [{ orderNumber: String(orderNumber) }, { "data.orderNumber": String(orderNumber) }],
+            });
+            if (doc && !doc.erpPushed) {
+              const result = await processHbOrderToErp(doc, ctx);
+              if (result.ok) {
+                console.log("✅ [Webhook] Otomatik ERP aktarımı:", orderNumber, result.skipped ? "(zaten vardı)" : "");
+              } else {
+                console.warn("⚠️ [Webhook] ERP aktarımı:", result.error);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("⚠️ [Webhook] Otomatik ERP aktarımı hatası:", e?.message);
+        }
+      });
 
       // Yeni sipariş bildirimi: onaylı kullanıcılara mail (arka planda, webhook yanıtını geciktirmemek için)
       try {

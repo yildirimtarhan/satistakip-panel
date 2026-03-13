@@ -69,6 +69,11 @@ const HB_MENU = [
   { href: "/dashboard/hepsiburada/products", label: "HB Ürünleri", icon: "📦" },
   { href: "/dashboard/hepsiburada/erp-mapping", label: "HB–ERP Eşleştirme", icon: "🔗" },
   { href: "/dashboard/hepsiburada/price-stock", label: "HB Fiyat/Stok Güncelle", icon: "💰" },
+  { href: "/dashboard/hepsiburada/accounting", label: "HB Muhasebe & Finans", icon: "💰" },
+  { href: "/dashboard/hepsiburada/store-account", label: "HB Mağaza Hesabı", icon: "🏪" },
+  { href: "/dashboard/hepsiburada/delivery", label: "HB Teslimat Bildirimi", icon: "🚚" },
+  { href: "/dashboard/hepsiburada/claims", label: "HB Talepler", icon: "📋" },
+  { href: "/dashboard/hepsiburada/qa", label: "HB Soru Cevap", icon: "❓" },
 ];
 
 // Trendyol — Tüm rolleri kullanacak yapı (API Ayarları önce)
@@ -270,7 +275,6 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
         <MenuItem onLinkClick={handleLinkClick} href="/dashboard/n11/orders" icon="🛒" label="N11 Siparişleri" />
         <MenuItem onLinkClick={handleLinkClick} href="/dashboard/n11/products" icon="📦" label="N11 Ürün Listesi" />
         <MenuItem onLinkClick={handleLinkClick} href="/dashboard/n11/add-product" icon="➕" label="N11 Ürün Gönder" />
-        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/n11/shipment-templates" icon="📋" label="N11 Kargo Şablonları" />
         <MenuItem onLinkClick={handleLinkClick} href="/dashboard/pazaryeri-gonder" icon="🚀" label="Pazaryerine Gönder" />
 
         <SectionTitle>E-Belge</SectionTitle>

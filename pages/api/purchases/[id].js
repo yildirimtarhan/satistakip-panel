@@ -36,7 +36,7 @@ export default async function handler(req, res) {
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
 
-  if (req.method !== "GET" && req.method !== "DELETE") {
+  if (req.method !== "GET" && req.method !== "DELETE" && req.method !== "PUT") {
     return res.status(405).json({ message: "Method not allowed" });
   }
 
@@ -117,6 +117,30 @@ export default async function handler(req, res) {
         description: extractHumanNote(purchase.note) || "Alış",
         cancelled: isCancelled(purchase.note),
       });
+    }
+
+    // =========================
+    // ✅ PUT (DÜZENLEME — tarih + açıklama)
+    // =========================
+    if (req.method === "PUT") {
+      const purchase = await Transaction.findOne(baseFilter).lean();
+      if (!purchase) return res.status(404).json({ message: "Kayıt bulunamadı" });
+      if (isCancelled(purchase.note)) return res.status(409).json({ message: "İptal edilmiş alış düzenlenemez." });
+
+      const { date, description } = req.body || {};
+      const updates = {};
+      if (date) updates.date = new Date(date);
+      const humanNote = typeof description === "string" ? description.trim() : null;
+      if (humanNote !== null) {
+        const itemsJson = (() => {
+          const idx = (purchase.note || "").indexOf(ITEMS_MARKER);
+          return idx >= 0 ? (purchase.note || "").slice(idx) : "";
+        })();
+        updates.note = itemsJson ? `${humanNote}\n${itemsJson}` : humanNote;
+      }
+      if (Object.keys(updates).length === 0) return res.status(200).json({ message: "Değişiklik yok" });
+      await Transaction.updateOne({ _id: id }, { $set: updates });
+      return res.status(200).json({ message: "Alış güncellendi" });
     }
 
     // =========================

@@ -11,6 +11,7 @@ import Cari from "@/models/Cari";
 import Product from "@/models/Product";
 import Transaction from "@/models/Transaction";
 import { createPazaryeriBorcAndUpdateBakiye } from "@/lib/pazaryeriCari";
+import { pushStockToMarketplaces } from "@/lib/pazaryeriStockSync";
 
 function normalizePhoneTR(phone = "") {
   const digits = String(phone).replace(/\D/g, "");
@@ -232,6 +233,13 @@ export default async function handler(req, res) {
         });
         const totalTRY = subTotal;
 
+        // Stok düşümü (ortak stok)
+        for (const it of normalizedItems) {
+          if (it.productId) {
+            await Product.findByIdAndUpdate(it.productId, { $inc: { stock: -it.quantity } });
+          }
+        }
+
         await Transaction.create({
           userId: userIdStr,
           companyId: companyIdStr,
@@ -268,6 +276,12 @@ export default async function handler(req, res) {
           { $set: { erpPushed: true, erpSaleNo: saleNo, companyId: companyIdStr, userId: userIdStr } }
         );
         salesCreated++;
+
+        // Ortak stok → pazaryerlerine anlık push
+        const affectedIds = normalizedItems.filter((i) => i.productId).map((i) => i.productId);
+        if (affectedIds.length) {
+          pushStockToMarketplaces(affectedIds, { companyId: companyIdStr, userId: userIdStr });
+        }
       } catch (e) {
         failed.push({ orderNumber, error: e.message || String(e) });
       }

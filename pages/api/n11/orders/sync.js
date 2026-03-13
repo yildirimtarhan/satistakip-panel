@@ -261,6 +261,13 @@ async function createSaleFromN11Order({ decodedUserId, decodedCompanyId, cariId,
     }
   }
 
+  // Ortak stok → pazaryerlerine anlık push
+  const { pushStockToMarketplaces } = await import("@/lib/pazaryeriStockSync");
+  const affectedIds = normalizedItems.filter((i) => i.productId).map((i) => i.productId);
+  if (affectedIds.length && decodedCompanyId) {
+    pushStockToMarketplaces(affectedIds, { companyId: decodedCompanyId, userId: decodedUserId });
+  }
+
   return { already: false, saleNo, transactionId: tx._id, missingProducts: missing };
 }
 
