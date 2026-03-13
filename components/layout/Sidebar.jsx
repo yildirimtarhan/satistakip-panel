@@ -71,8 +71,10 @@ const HB_MENU = [
   { href: "/dashboard/hepsiburada/price-stock", label: "HB Fiyat/Stok Güncelle", icon: "💰" },
 ];
 
-// Trendyol entegrasyon rolleri (panel entegrasyon bilgileriyle uyumlu)
+// Trendyol — Tüm rolleri kullanacak yapı (API Ayarları önce)
 const TRENDYOL_MENU = [
+  { href: "/dashboard/api-settings?tab=trendyol", label: "Trendyol API Ayarları", icon: "⚙️" },
+  { href: "/dashboard/trendyol/test-all", label: "API Test Merkezi", icon: "🧪" },
   { href: "/dashboard/trendyol/orders", label: "Sipariş Entegrasyonu", icon: "🧾" },
   { href: "/dashboard/trendyol/products", label: "Ürün Entegrasyonu", icon: "📦" },
   { href: "/dashboard/trendyol/delivery", label: "Teslimat Entegrasyonu", icon: "🚚" },

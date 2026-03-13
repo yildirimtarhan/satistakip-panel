@@ -13,8 +13,12 @@ export default function TrendyolWebhookPage() {
   const fetchWebhooks = async () => {
     setLoading(true);
     setError("");
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     try {
-      const res = await fetch("/api/trendyol/webhooks", { credentials: "include" });
+      const res = await fetch("/api/trendyol/webhooks", {
+        credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.message || "Webhook listesi alınamadı");
       setWebhooks(data.webhooks || []);
@@ -34,11 +38,15 @@ export default function TrendyolWebhookPage() {
     setActionLoading(true);
     setMessage(null);
     setError("");
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     try {
       const res = await fetch("/api/trendyol/webhooks", {
         method: "POST",
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
       });
       const data = await res.json();
       if (!res.ok) {
@@ -59,10 +67,12 @@ export default function TrendyolWebhookPage() {
     setActionLoading(true);
     setMessage(null);
     setError("");
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     try {
       const res = await fetch(`/api/trendyol/webhooks?id=${id}`, {
         method: "DELETE",
         credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.message || "Webhook silinemedi");
