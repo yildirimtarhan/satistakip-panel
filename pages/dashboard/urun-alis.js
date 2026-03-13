@@ -37,6 +37,7 @@ export default function UrunAlis() {
     aciklama: "",
   });
 
+  const KDV_ORANLARI = [0, 1, 8, 10, 18, 20];
   const emptyRow = useMemo(
     () => ({
       productId: "",
@@ -44,6 +45,8 @@ export default function UrunAlis() {
       ad: "",
       adet: 1,
       fiyat: 0,
+      kdv: 20,
+      iskonto: 0,
       currency: "TRY",
       fxRate: 1,
     }),
@@ -156,8 +159,13 @@ const EUR = Number(
   const lineTotalTRY = (r) => {
     const qty = Number(r.adet || 0);
     const price = Number(r.fiyat || 0);
+    const kdv = Number(r.kdv ?? 20);
+    const iskonto = Number(r.iskonto ?? 0);
     const fx = Number(r.fxRate || getFx(r.currency || "TRY"));
-    return qty * price * fx;
+    const araToplam = qty * price;
+    const netToplam = araToplam * (1 - iskonto / 100);
+    const kdvliToplam = netToplam * (1 + kdv / 100);
+    return kdvliToplam * fx;
   };
 
   const onCurrencyChange = (i, currency) => {
@@ -239,6 +247,8 @@ const handleSave = async () => {
         ...r,
         adet: Number(r.adet || 0),
         fiyat: Number(r.fiyat || 0),
+        kdv: Number(r.kdv ?? 18),
+        iskonto: Number(r.iskonto ?? 0),
         barkod: String(r.barkod || "").trim(),
         ad: String(r.ad || "").trim(),
         currency: r.currency || "TRY",
@@ -302,27 +312,26 @@ const handleSave = async () => {
         }
 
         const fx = getFx(r.currency || "TRY");
+        const kdv = Number(r.kdv ?? 20);
+        const iskonto = Number(r.iskonto ?? 0);
+        const araToplam = Number(r.adet) * Number(r.fiyat);
+        const netToplam = araToplam * (1 - iskonto / 100);
+        const kdvliDoviz = netToplam * (1 + kdv / 100);
+        const totalFCY = kdvliDoviz;
+        const totalTRY = kdvliDoviz * fx;
 
-// ✅ Döviz toplamı (USD/EUR/TRY)
-const totalFCY = Number(r.adet) * Number(r.fiyat);
-
-// ✅ TL karşılığı
-const totalTRY = totalFCY * fx;
-
-items.push({
-  productId,
-  quantity: Number(r.adet),
-  unitPrice: Number(r.fiyat),
-
-  currency: r.currency || "TRY",
-  fxRate: fx,
-
-  totalFCY, // ✅ döviz borcu
-  totalTRY, // ✅ TL karşılığı
-
-  // ⚠️ eski sistemi bozmamak için total alanını da koruyoruz
-  total: totalTRY,
-});
+        items.push({
+          productId,
+          quantity: Number(r.adet),
+          unitPrice: Number(r.fiyat),
+          kdv,
+          iskonto,
+          currency: r.currency || "TRY",
+          fxRate: fx,
+          totalFCY,
+          totalTRY,
+          total: totalTRY,
+        });
 
       }
 
@@ -547,6 +556,8 @@ items.push({
                   <th className="border px-2 py-1">Barkod</th>
                   <th className="border px-2 py-1 text-right">Adet</th>
                   <th className="border px-2 py-1 text-right">Fiyat</th>
+                  <th className="border px-2 py-1 text-right">KDV %</th>
+                  <th className="border px-2 py-1 text-right">İsk. %</th>
                   <th className="border px-2 py-1">Para</th>
                   <th className="border px-2 py-1 text-right">Kur</th>
                   <th className="border px-2 py-1 text-right">Toplam ₺</th>
@@ -613,6 +624,31 @@ items.push({
                           onChange={(e) => updateRow(i, "fiyat", e.target.value)}
                           className="w-full border rounded px-2 py-1 text-right"
                           min="0"
+                        />
+                      </td>
+
+                      <td className="border px-2 py-1 text-right min-w-[70px]">
+                        <select
+                          value={r.kdv ?? 20}
+                          onChange={(e) => updateRow(i, "kdv", Number(e.target.value))}
+                          className="w-full border rounded px-2 py-1 text-right"
+                        >
+                          {KDV_ORANLARI.map((o) => (
+                            <option key={o} value={o}>%{o}</option>
+                          ))}
+                        </select>
+                      </td>
+
+                      <td className="border px-2 py-1 text-right min-w-[70px]">
+                        <input
+                          type="number"
+                          value={r.iskonto ?? 0}
+                          onChange={(e) => updateRow(i, "iskonto", Number(e.target.value) || 0)}
+                          className="w-full border rounded px-2 py-1 text-right"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          placeholder="0"
                         />
                       </td>
 

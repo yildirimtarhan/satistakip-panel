@@ -23,6 +23,7 @@ import { apiPut } from "@/utils/api";
 
 // ---------- helpers ----------
 const todayISO = () => new Date().toISOString().slice(0, 10);
+const KDV_ORANLARI = [0, 1, 8, 10, 18, 20];
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -334,6 +335,7 @@ export default function UrunSatisPage() {
             quantity: i.qty || 1,
             unitPrice: i.unitPrice || 0,
             vatRate: i.vatRate || 20,
+            iskonto: i.iskonto ?? 0,
           }))
         );
       } else {
@@ -375,9 +377,10 @@ export default function UrunSatisPage() {
     });
   }, [query, products]);
 
-  // derived: totals
+  // derived: totals (iskonto + KDV)
   const totals = useMemo(() => {
     let ara = 0;
+    let iskontoToplam = 0;
     let kdv = 0;
     let genel = 0;
 
@@ -385,21 +388,25 @@ export default function UrunSatisPage() {
       const qty = safeNum(it.quantity, 1);
       const price = safeNum(it.unitPrice, 0);
       const vatRate = safeNum(it.vatRate, 20);
+      const iskonto = safeNum(it.iskonto, 0);
 
       const sub = price * qty;
-      const vat = (sub * vatRate) / 100;
-      const tot = sub + vat;
+      const iskontoTutar = sub * (iskonto / 100);
+      const net = sub - iskontoTutar;
+      const vat = (net * vatRate) / 100;
+      const tot = net + vat;
 
       ara += sub;
+      iskontoToplam += iskontoTutar;
       kdv += vat;
       genel += tot;
 
-      return { ...it, lineSub: sub, lineVat: vat, lineTotal: tot };
+      return { ...it, lineSub: sub, lineIskonto: iskontoTutar, lineNet: net, lineVat: vat, lineTotal: tot };
     });
 
     const genelTRY = currency === "TRY" ? genel : genel * safeNum(fxRate, 1);
 
-    return { ara, kdv, genel, genelTRY, lines };
+    return { ara, iskontoToplam, kdv, genel, genelTRY, lines };
   }, [cart, currency, fxRate]);
 
   const afterBalanceTRY = useMemo(() => {
@@ -429,6 +436,7 @@ export default function UrunSatisPage() {
           quantity: 1,
           unitPrice: safeNum(p.satisFiyati, 0),
           vatRate: safeNum(p.vatRate, 20),
+          iskonto: 0,
         },
       ];
     });
@@ -488,7 +496,11 @@ export default function UrunSatisPage() {
   items: cart.map((x) => {
     const qty = safeNum(x.quantity, 1);
     const price = safeNum(x.unitPrice, 0);
-    const lineTotal = qty * price;
+    const iskonto = safeNum(x.iskonto, 0);
+    const vatRate = safeNum(x.vatRate, 20);
+    const sub = qty * price;
+    const net = sub * (1 - iskonto / 100);
+    const lineTotal = net * (1 + vatRate / 100);
 
     return {
       productId: x.productId,
@@ -497,9 +509,10 @@ export default function UrunSatisPage() {
       sku: x.sku,
       quantity: qty,
       unitPrice: price,
+      iskonto,
+      vatRate,
       currency,
       fxRate: safeNum(fxRate, 1),
-      vatRate: safeNum(x.vatRate, 20),
       total: lineTotal,
     };
   }),
@@ -868,6 +881,7 @@ if (isEdit) {
                 <th className="px-3 py-2 text-left">Barkod</th>
                 <th className="px-3 py-2 text-right">Adet</th>
                 <th className="px-3 py-2 text-right">Birim</th>
+                <th className="px-3 py-2 text-right">İsk. %</th>
                 <th className="px-3 py-2 text-right">KDV %</th>
                 <th className="px-3 py-2 text-right">Toplam</th>
                 <th className="px-3 py-2 text-center">Sil</th>
@@ -877,7 +891,7 @@ if (isEdit) {
             <tbody>
               {cart.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-6 text-center text-gray-500">
+                  <td colSpan={8} className="px-3 py-6 text-center text-gray-500">
                     Sepet boş
                   </td>
                 </tr>
@@ -916,11 +930,25 @@ if (isEdit) {
                       <input
                         type="number"
                         min="0"
-                        step="1"
-                        className="h-9 w-20 rounded-md border px-2 text-right outline-none focus:ring-2 focus:ring-blue-200"
-                        value={safeNum(r.vatRate, 20)}
-                        onChange={(e) => updateCartLine(r.productId, { vatRate: safeNum(e.target.value, 20) })}
+                        max="100"
+                        step="0.01"
+                        className="h-9 w-16 rounded-md border px-2 text-right outline-none focus:ring-2 focus:ring-blue-200"
+                        value={safeNum(r.iskonto, 0)}
+                        onChange={(e) => updateCartLine(r.productId, { iskonto: safeNum(e.target.value, 0) })}
+                        placeholder="0"
                       />
+                    </td>
+
+                    <td className="px-3 py-2 text-right">
+                      <select
+                        className="h-9 w-16 rounded-md border px-2 text-right outline-none focus:ring-2 focus:ring-blue-200"
+                        value={KDV_ORANLARI.includes(safeNum(r.vatRate, 20)) ? safeNum(r.vatRate, 20) : 20}
+                        onChange={(e) => updateCartLine(r.productId, { vatRate: safeNum(e.target.value, 20) })}
+                      >
+                        {KDV_ORANLARI.map((o) => (
+                          <option key={o} value={o}>%{o}</option>
+                        ))}
+                      </select>
                     </td>
 
                     <td className="px-3 py-2 text-right font-semibold">
@@ -943,11 +971,17 @@ if (isEdit) {
           </table>
         </div>
 
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-5">
           <div className="rounded-md border bg-gray-50 p-3">
             <div className="text-xs text-gray-500">Ara Toplam</div>
             <div className="text-sm font-semibold">
               {fmt(totals.ara)} {currency}
+            </div>
+          </div>
+          <div className="rounded-md border bg-gray-50 p-3">
+            <div className="text-xs text-gray-500">İskonto</div>
+            <div className="text-sm font-semibold text-amber-700">
+              -{fmt(totals.iskontoToplam)} {currency}
             </div>
           </div>
           <div className="rounded-md border bg-gray-50 p-3">
@@ -957,7 +991,7 @@ if (isEdit) {
             </div>
           </div>
           <div className="rounded-md border bg-gray-50 p-3">
-            <div className="text-xs text-gray-500">Genel Toplam</div>
+            <div className="text-xs text-gray-500">Genel Toplam (KDV Dahil)</div>
             <div className="text-sm font-semibold">
               {fmt(totals.genel)} {currency}
             </div>

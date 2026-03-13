@@ -61,12 +61,17 @@ export default async function handler(req, res) {
       if (!productId) continue;
       if (!quantity || quantity <= 0) continue;
 
+      const kdv = Number(it?.kdv ?? 20);
+      const iskonto = Number(it?.iskonto ?? 0);
+      const araToplam = quantity * unitPrice;
+      const netToplam = araToplam * (1 - iskonto / 100);
+      const kdvliDoviz = netToplam * (1 + kdv / 100);
+      const fx = currency === "TRY" ? 1 : fxRate || 1;
       const lineTotalTRY =
         Number(it?.total) && Number(it?.total) > 0
           ? Number(it?.total)
-          : quantity * unitPrice * (currency === "TRY" ? 1 : fxRate || 1);
-      // Dövizli satırda döviz tutarı (quantity * unitPrice para biriminde)
-      const lineTotalFCY = currency === "TRY" ? 0 : quantity * unitPrice;
+          : Number((kdvliDoviz * fx).toFixed(2));
+      const lineTotalFCY = currency === "TRY" ? 0 : Number(kdvliDoviz.toFixed(2));
 
       grandTotalTRY += Number(lineTotalTRY || 0);
 
@@ -74,10 +79,12 @@ export default async function handler(req, res) {
         productId,
         quantity,
         unitPrice,
+        kdv,
+        iskonto,
         currency,
         fxRate: currency === "TRY" ? 1 : fxRate || 1,
         total: Number(lineTotalTRY || 0),
-        totalFCY: currency === "TRY" ? 0 : Number(Number(lineTotalFCY).toFixed(2)),
+        totalFCY: currency === "TRY" ? 0 : lineTotalFCY,
       });
     }
 

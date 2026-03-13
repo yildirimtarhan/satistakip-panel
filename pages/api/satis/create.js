@@ -64,12 +64,15 @@ export default async function handler(req, res) {
     const normalizedItems = items.map((i) => {
       const qty = Number(i.quantity || 1);
       const price = Number(i.unitPrice || 0);
-      const vatRate = Number(i.vatRate || 0);
+      const vatRate = Number(i.vatRate ?? 20);
+      const iskonto = Number(i.iskonto ?? 0);
 
       const lineSub = qty * price;
-      const lineVat = lineSub * (vatRate / 100);
+      const lineNet = lineSub * (1 - iskonto / 100);
+      const lineVat = lineNet * (vatRate / 100);
+      const lineTotal = lineNet + lineVat;
 
-      subTotal += lineSub;
+      subTotal += lineNet;
       vatTotal += lineVat;
 
       const itemCurrency = i.currency || currency;
@@ -82,10 +85,11 @@ export default async function handler(req, res) {
         sku: i.sku,
         quantity: qty,
         unitPrice: price,
+        iskonto,
+        vatRate,
         currency: itemCurrency,
         fxRate: itemFxRate,
-        vatRate,
-        total: lineSub + lineVat,
+        total: Number(i.total) && Number(i.total) > 0 ? Number(i.total) : lineTotal,
       };
     });
 
