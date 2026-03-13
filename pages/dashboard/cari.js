@@ -370,6 +370,8 @@ export default function Cariler() {
                 <th className="px-2 py-1">PTT</th>
                 <th className="px-2 py-1">İdefix</th>
                 <th className="px-2 py-1">ÇiçekSepeti</th>
+                <th className="px-2 py-1">Cari Alacak</th>
+                <th className="px-2 py-1">Cari Borç</th>
                 <th className="px-2 py-1">Bakiye</th>
                 <th className="px-2 py-1">İşlem</th>
               </tr>
@@ -423,11 +425,19 @@ export default function Cariler() {
                     <td className="px-2 py-1">
                       {c.ciceksepetiCustomerId || "-"}
                     </td>
+                    <td className="px-2 py-1 text-green-600">
+                      ₺{(c.cariAlacak || 0).toLocaleString("tr-TR")}
+                    </td>
+                    <td className="px-2 py-1 text-red-600">
+                      ₺{(c.cariBorc || 0).toLocaleString("tr-TR")}
+                    </td>
                     <td
                       className={`px-2 py-1 font-bold ${
                         (c.bakiye || 0) > 0
                           ? "text-green-600"
-                          : "text-red-600"
+                          : (c.bakiye || 0) < 0
+                          ? "text-red-600"
+                          : ""
                       }`}
                     >
                       ₺{(c.bakiye || 0).toLocaleString("tr-TR")}
@@ -565,15 +575,29 @@ export default function Cariler() {
               </p>
             </div>
 
-            {/* Bakiye */}
-            <div className="mt-3 border-t pt-3">
-              <p className="text-sm font-semibold">
-                Bakiye:{" "}
+            {/* Cari Alacak, Borç, Bakiye */}
+            <div className="mt-3 border-t pt-3 space-y-1 text-sm">
+              <p>
+                <strong>Cari Alacak:</strong>{" "}
+                <span className="text-green-600 font-semibold">
+                  ₺{(detail.cariAlacak || 0).toLocaleString("tr-TR")}
+                </span>
+              </p>
+              <p>
+                <strong>Cari Borç:</strong>{" "}
+                <span className="text-red-600 font-semibold">
+                  ₺{(detail.cariBorc || 0).toLocaleString("tr-TR")}
+                </span>
+              </p>
+              <p>
+                <strong>Bakiye:</strong>{" "}
                 <span
                   className={`font-bold ${
                     (detail.bakiye || 0) > 0
                       ? "text-green-600"
-                      : "text-red-600"
+                      : (detail.bakiye || 0) < 0
+                      ? "text-red-600"
+                      : ""
                   }`}
                 >
                   ₺{(detail.bakiye || 0).toLocaleString("tr-TR")}

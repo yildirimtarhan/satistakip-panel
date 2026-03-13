@@ -63,43 +63,64 @@ if (req.method === "GET") {
   // 2) Transaction’dan bakiye hesapla
   const cariIds = cariler.map((c) => c._id);
 
+  // Transaction.companyId String olarak saklanıyor
+  const trxMatch = {
+    accountId: { $in: cariIds },
+    isDeleted: { $ne: true },
+    direction: { $in: ["borc", "alacak"] },
+  };
+  if (companyId) {
+    trxMatch.$or = [
+      { companyId: String(companyId) },
+      { companyId: new Types.ObjectId(companyId) },
+    ];
+  }
+
   const txs = await Transaction.aggregate([
-    {
-      $match: {
-        accountId: { $in: cariIds },
-        ...(companyId
-          ? { companyId: new Types.ObjectId(companyId) }
-          : {}),
-      },
-    },
+    { $match: trxMatch },
     {
       $group: {
         _id: "$accountId",
         borc: {
           $sum: {
-            $cond: [{ $eq: ["$direction", "borc"] }, "$amount", 0],
+            $cond: [
+              { $eq: ["$direction", "borc"] },
+              { $ifNull: ["$amount", "$totalTRY"] },
+              0,
+            ],
           },
         },
         alacak: {
           $sum: {
-            $cond: [{ $eq: ["$direction", "alacak"] }, "$amount", 0],
+            $cond: [
+              { $eq: ["$direction", "alacak"] },
+              { $ifNull: ["$amount", "$totalTRY"] },
+              0,
+            ],
           },
         },
       },
     },
   ]);
 
-  // 3) Map oluştur
+  // 3) Map oluştur (cariBorc, cariAlacak, bakiye)
   const balanceMap = {};
   txs.forEach((t) => {
-    balanceMap[t._id.toString()] = t.borc - t.alacak;
+    const id = t._id.toString();
+    const borc = t.borc || 0;
+    const alacak = t.alacak || 0;
+    balanceMap[id] = { cariBorc: borc, cariAlacak: alacak, bakiye: borc - alacak };
   });
 
-  // 4) Carilere doğru bakiye bas
-  const fixed = cariler.map((c) => ({
-    ...c,
-    bakiye: balanceMap[c._id.toString()] || 0,
-  }));
+  // 4) Carilere cariBorc, cariAlacak, bakiye ekle
+  const fixed = cariler.map((c) => {
+    const data = balanceMap[c._id.toString()] || {
+      cariBorc: 0,
+      cariAlacak: 0,
+      bakiye: 0,
+    };
+    return { ...c, ...data };
+  });
 
   return res.status(200).json(fixed);
 }
