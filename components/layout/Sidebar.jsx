@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { jwtDecode } from "jwt-decode";
 import { useEffect, useState } from "react";
-import { BarChart3, TrendingUp, Globe, ChevronDown, ChevronRight, Package, DollarSign, Box, Users, LayoutDashboard, X } from "lucide-react";
+import { BarChart3, TrendingUp, Globe, ChevronDown, ChevronRight, Package, DollarSign, Box, Users, LayoutDashboard, FileText, X } from "lucide-react";
 
 const raporMenuItems = [
   {
@@ -15,6 +15,7 @@ const raporMenuItems = [
       { title: "Satış Analizi", href: "/dashboard/raporlar/satis-analizi", icon: TrendingUp, description: "Detaylı satış ve gelir raporları" },
       { title: "Stok Analizi", href: "/dashboard/raporlar/stok-analizi", icon: Package, description: "Stok hareketleri ve değerleme" },
       { title: "Kar / Zarar", href: "/dashboard/raporlar/kar-zarar", icon: DollarSign, description: "Gelir-gider ve karlılık analizi" },
+      { title: "Sipariş Kâr/Zarar", href: "/dashboard/raporlar/siparis-kar-zarar", icon: FileText, description: "Sipariş bazlı net kâr ve zarar" },
       { title: "Pazaryeri Raporu", href: "/dashboard/raporlar/pazaryeri-satis", icon: Globe, description: "Platform bazlı satış analizi" },
       { title: "Ürün Performansı", href: "/dashboard/raporlar/urun-performansi", icon: Box, description: "En çok satan ve karlı ürünler" },
       { title: "Cari Özet", href: "/dashboard/raporlar/cari-ozet", icon: Users, description: "Cari bazlı ciro ve bakiye" },

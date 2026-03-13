@@ -7,9 +7,20 @@ export default async function handler(req, res) {
     await dbConnect();
 
     const token = req.headers.authorization?.split(" ")[1];
-    if (!token) return res.status(401).json({ message: "Token gerekli" });
+    if (!token) return res.status(401).json({ message: "Token gerekli", code: "TOKEN_REQUIRED" });
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (jwtErr) {
+      if (jwtErr.name === "TokenExpiredError") {
+        return res.status(401).json({ message: "Oturum süresi doldu. Tekrar giriş yapın.", code: "TOKEN_EXPIRED" });
+      }
+      if (jwtErr.name === "JsonWebTokenError") {
+        return res.status(401).json({ message: "Geçersiz token", code: "TOKEN_INVALID" });
+      }
+      throw jwtErr;
+    }
     const companyId = decoded.companyId;
     const userId = decoded.userId || decoded.id;
     const isAdmin = decoded.role === "admin";

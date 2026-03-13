@@ -55,9 +55,9 @@ export default async function handler(req, res) {
     // Son döviz kurunu al
     const lastFx = await db.collection("fx_rates").find().sort({ createdAt: -1 }).limit(1).toArray();
     const fx = lastFx[0]?.rates || {};
-    const usdtry = Number(fx.TRY || fx.USDTRY || 0); // exchangerate.host 'USD base' için TRY oranı
-    const eurInUsd = Number(fx.EUR || 0);            // USD -> EUR oranı (base=USD ise)
-    const eurtry = usdtry * (eurInUsd || 0);         // EUR/TRY yaklaşık
+    const usdtry = Number(fx.TRY || fx.USDTRY || 0); // 1 USD = X TRY
+    const eurPerUsd = Number(fx.EUR || 0);           // base=USD: 1 USD = X EUR (örn. 0.92)
+    const eurtry = eurPerUsd ? usdtry / eurPerUsd : 0; // 1 EUR = usdtry/eurPerUsd TRY
 
     if (!usdtry) {
       return res.status(412).json({ ok: false, message: "Kur bilgisi yok. Önce /api/currency/update çağırın." });
@@ -82,6 +82,7 @@ export default async function handler(req, res) {
         suggested = Math.max(minSell, roundPriceTL(bbAim));
       }
 
+      const marginPct = costTL > 0 ? (((suggested - costTL) / costTL) * 100) : 0;
       return {
         barcode: it.barcode,
         stock: Number(it.stock ?? 0),
@@ -93,7 +94,7 @@ export default async function handler(req, res) {
         minSell,
         targetSell,
         suggestedSalePrice: suggested,
-        // istersen listPrice'ı suggested + %8 koyabilirsin
+        marginPct: Number(marginPct.toFixed(2)),
         listPrice: Math.max(suggested + 10, suggested + suggested * 0.08),
       };
     });

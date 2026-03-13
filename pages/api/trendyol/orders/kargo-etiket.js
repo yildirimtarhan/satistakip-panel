@@ -4,7 +4,7 @@
  */
 import jwt from "jsonwebtoken";
 import { connectToDatabase } from "@/lib/mongodb";
-import { ordersListUrl } from "@/lib/marketplaces/trendyolConfig";
+import { orderDetailUrl } from "@/lib/marketplaces/trendyolConfig";
 import { getTrendyolCredentials } from "@/lib/getTrendyolCredentials";
 import { getPazaryeriKargoEtiketHtml } from "@/lib/pazaryeriKargoEtiketSablonu";
 
@@ -51,28 +51,25 @@ export default async function handler(req, res) {
 
     const { supplierId, apiKey, apiSecret } = creds;
     const userAgent = process.env.TRENDYOL_USER_AGENT || "satistakip_online";
-    const now = Date.now();
-    const startDate = now - 1000 * 60 * 60 * 24 * 90;
-    const endDate = now;
-    const url = `${ordersListUrl(supplierId)}?startDate=${startDate}&endDate=${endDate}&size=100&orderByField=PackageLastModifiedDate&orderByDirection=DESC`;
+    const url = orderDetailUrl(supplierId, orderNumber);
     const authToken = Buffer.from(`${apiKey}:${apiSecret}`).toString("base64");
     const headers = { "User-Agent": userAgent, "Authorization": `Basic ${authToken}`, "Accept": "application/json", "Content-Type": "application/json" };
     if (process.env.TRENDYOL_STORE_FRONT_CODE) headers["storeFrontCode"] = process.env.TRENDYOL_STORE_FRONT_CODE;
 
     const response = await fetch(url, { method: "GET", headers });
     if (!response.ok) {
-      return res.status(502).setHeader("Content-Type", "text/html; charset=utf-8").send("<p>Trendyol sipariş listesi alınamadı.</p>");
+      return res.status(502).setHeader("Content-Type", "text/html; charset=utf-8").send("<p>Trendyol sipariş detayı alınamadı.</p>");
     }
     const data = await response.json();
     const content = data.content ?? data.orders ?? (Array.isArray(data) ? data : []);
-    const pkg = content.find((p) => String(p.orderNumber || p.id || "") === String(orderNumber));
+    const pkg = Array.isArray(content) && content.length ? content[0] : (data.orderNumber ? data : null);
     if (!pkg) {
       return res.status(404).setHeader("Content-Type", "text/html; charset=utf-8").send("<p>Sipariş bulunamadı: " + orderNumber + "</p>");
     }
 
     const customerName = [pkg.customerFirstName, pkg.customerLastName].filter(Boolean).join(" ") || pkg.customerEmail || "Alıcı";
     const addr = pkg.shipmentAddress || pkg.address || {};
-    const address = addr.addressLine1 || addr.address || addr.line1 || "";
+    const address = addr.fullAddress || addr.address1 || addr.addressLine1 || addr.address || addr.line1 || "";
     const district = addr.district || addr.town || "";
     const city = addr.city || addr.province || "";
     const phone = pkg.customerPhone || addr.phone || "";
