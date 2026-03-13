@@ -6,16 +6,20 @@ import RequireAuth from "@/components/RequireAuth";
 
 export default function AlisDetayPage() {
   const router = useRouter();
-  const { id } = router.query;
+  const { id, edit } = router.query;
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(edit === "1");
   const [editForm, setEditForm] = useState({ date: "", description: "" });
 
   useEffect(() => {
     if (id) load();
   }, [id]);
+
+  useEffect(() => {
+    if (edit === "1") setEditing(true);
+  }, [edit]);
 
   const load = async () => {
     try {

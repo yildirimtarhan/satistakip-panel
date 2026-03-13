@@ -103,7 +103,11 @@ export default function AlislarPage() {
                     </td>
 
                     <td className="border px-2 py-1">
-                      {p.description || "Alış"}
+                      {p.cancelled ? (
+                        <span className="text-red-600 font-medium">{p.description || "İptal Edildi"}</span>
+                      ) : (
+                        p.description || "Alış"
+                      )}
                     </td>
 
                     <td className="border px-2 py-1 text-right">
@@ -114,9 +118,11 @@ export default function AlislarPage() {
                       <Link href={`/dashboard/alislar/${p._id}`} className="text-blue-600 hover:underline mr-2">
                         Gör
                       </Link>
-                      <Link href={`/dashboard/alislar/${p._id}`} className="text-amber-600 hover:underline">
-                        Düzenle
-                      </Link>
+                      {!p.cancelled && (
+                        <Link href={`/dashboard/urun-alis?edit=${p._id}`} className="text-amber-600 hover:underline">
+                          Düzenle
+                        </Link>
+                      )}
                     </td>
                   </tr>
                 );

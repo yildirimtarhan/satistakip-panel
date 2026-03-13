@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/router";
 import Cookies from "js-cookie";
 import RequireAuth from "@/components/RequireAuth";
 
@@ -14,6 +15,10 @@ function safeDecode(token) {
 }
 
 export default function UrunAlis() {
+  const router = useRouter();
+  const editId = router.query?.edit || null;
+  const isEdit = Boolean(editId);
+
   const [token, setToken] = useState("");
 
   const [role, setRole] = useState(null);
@@ -116,6 +121,53 @@ const EUR = Number(
     loadUrunler(token);
     loadRates();
   }, [token]);
+
+  // Düzenleme modu: alış verisini yükle
+  useEffect(() => {
+    if (!editId || !token) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/purchases/${editId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (!res.ok || !data) return;
+        if (data.cancelled) {
+          alert("İptal edilmiş alış düzenlenemez.");
+          router.replace("/dashboard/alislar");
+          return;
+        }
+        setCariId(String(data.accountId?._id || data.accountId || ""));
+        setHeader({
+          tarih: data.date ? new Date(data.date).toISOString().slice(0, 10) : "",
+          belgeNo: "",
+          siparisNo: "",
+          aciklama: data.description || "",
+        });
+        const items = Array.isArray(data.items) ? data.items : [];
+        if (items.length > 0) {
+          const mapped = items.map((i) => {
+            const pid = i.productId?._id || i.productId;
+            const prod = { name: i.productId?.name, barcode: i.productId?.barcode };
+            return {
+              productId: pid,
+              barkod: prod?.barcode || "",
+              ad: prod?.name || "",
+              adet: Number(i.quantity || 1),
+              fiyat: Number(i.unitPrice || 0),
+              kdv: Number(i.kdv ?? 20),
+              iskonto: Number(i.iskonto ?? 0),
+              currency: i.currency || "TRY",
+              fxRate: Number(i.fxRate || 1),
+            };
+          });
+          setRows(mapped);
+        }
+      } catch (e) {
+        console.error("Alış yüklenemedi:", e);
+      }
+    })();
+  }, [editId, token, router]);
 
   // ✅✅✅ FIX: Cari seçilince bakiye getir (ekstre API'den hesaplanmış)
   useEffect(() => {
@@ -340,22 +392,46 @@ const handleSave = async () => {
         return;
       }
 
-      // 🔥 TEK MERKEZ API – FINAL PAYLOAD
-      const res = await fetch("/api/purchases/create", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          accountId: cariId,
-          invoiceDate: header.tarih ? new Date(header.tarih).toISOString() : null,
-          invoiceNo: header.belgeNo || "",
-          orderNo: header.siparisNo || "",
-          note: header.aciklama || "",
-          items,
-        }),
-      });
+      const payload = {
+        accountId: cariId,
+        invoiceDate: header.tarih ? new Date(header.tarih).toISOString() : null,
+        invoiceNo: header.belgeNo || "",
+        orderNo: header.siparisNo || "",
+        note: header.aciklama || "",
+        items,
+      };
+
+      let res;
+      if (isEdit) {
+        const humanDesc =
+          header.aciklama?.trim() ||
+          `Ürün Alış${header.belgeNo ? " | Fatura: " + header.belgeNo : ""}${header.siparisNo ? " | Sipariş: " + header.siparisNo : ""}`.trim() ||
+          "Ürün Alış";
+        res = await fetch(`/api/purchases/${editId}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            accountId: cariId,
+            date: header.tarih || undefined,
+            description: humanDesc,
+            invoiceNo: header.belgeNo || "",
+            orderNo: header.siparisNo || "",
+            items,
+          }),
+        });
+      } else {
+        res = await fetch("/api/purchases/create", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(payload),
+        });
+      }
 
       const data = await res.json();
 
@@ -364,7 +440,11 @@ const handleSave = async () => {
         return;
       }
 
-      alert("✅ Ürün alışı başarıyla kaydedildi!");
+      alert(isEdit ? "✅ Alış güncellendi!" : "✅ Ürün alışı başarıyla kaydedildi!");
+      if (isEdit) {
+        router.push("/dashboard/alislar");
+        return;
+      }
       setRows([{ ...emptyRow }]);
       setHeader({ tarih: "", belgeNo: "", siparisNo: "", aciklama: "" });
       setCariId("");
@@ -380,14 +460,25 @@ const handleSave = async () => {
     <RequireAuth>
       <div className="p-6 space-y-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold">Ürün Alış</h1>
-          <div className="text-sm text-gray-600">
+          <h1 className="text-xl font-semibold">{isEdit ? "Alış Düzenle" : "Ürün Alış"}</h1>
+          <div className="flex items-center gap-3">
+            {isEdit && (
+              <button
+                type="button"
+                onClick={() => router.push("/dashboard/alislar")}
+                className="text-sm text-amber-600 hover:underline"
+              >
+                ← Listeye Dön
+              </button>
+            )}
+            <div className="text-sm text-gray-600">
             Toplam (₺):{" "}
             <b>
               {Number(toplamTRY || 0).toLocaleString("tr-TR", {
                 minimumFractionDigits: 2,
               })}
             </b>
+            </div>
           </div>
         </div>
 

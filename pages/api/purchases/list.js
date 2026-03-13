@@ -6,6 +6,11 @@ import Transaction from "@/models/Transaction";
 import Cari from "@/models/Cari";
 
 const ITEMS_MARKER = "__PURCHASE_ITEMS__:";
+const CANCEL_MARKER = "__PURCHASE_CANCELLED__:";
+
+function isCancelled(note) {
+  return typeof note === "string" && note.includes(CANCEL_MARKER);
+}
 
 function parseItemsFromNote(note = "") {
   try {
@@ -60,12 +65,16 @@ export default async function handler(req, res) {
     const list = txs.map((t) => {
       const items = parseItemsFromNote(t.note);
       const account = cariMap.get(String(t.accountId)) || null;
+      const cancelled = isCancelled(t.note || "");
+      const firstLine = t.note?.split("\n")?.[0] || "";
+      const desc = cancelled ? "İptal Edildi" : (firstLine.startsWith(CANCEL_MARKER) ? "İptal Edildi" : firstLine || "Alış");
 
       return {
         _id: t._id,
         date: t.date || t.createdAt,
-        accountId: account, // ✅ alislar.js buradan unvan okuyor
-        description: t.note?.split("\n")?.[0] || "Alış",
+        accountId: account,
+        cancelled,
+        description: desc,
         amount: Number(t.amount || 0),
         totalTRY: Number(t.totalTRY || 0),
 

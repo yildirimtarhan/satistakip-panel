@@ -120,14 +120,91 @@ export default async function handler(req, res) {
     }
 
     // =========================
-    // ✅ PUT (DÜZENLEME — tarih + açıklama)
+    // ✅ PUT (DÜZENLEME — sadece tarih+açıklama VEYA tam güncelleme items ile)
     // =========================
     if (req.method === "PUT") {
       const purchase = await Transaction.findOne(baseFilter).lean();
       if (!purchase) return res.status(404).json({ message: "Kayıt bulunamadı" });
       if (isCancelled(purchase.note)) return res.status(409).json({ message: "İptal edilmiş alış düzenlenemez." });
 
-      const { date, description } = req.body || {};
+      const { date, description, accountId: newAccountId, items: newItems } = req.body || {};
+
+      // 🔥 TAM GÜNCELLEME (items gönderilmişse)
+      if (Array.isArray(newItems) && newItems.length > 0) {
+        const cari = await Cari.findById(newAccountId || purchase.accountId);
+        if (!cari) return res.status(404).json({ message: "Cari bulunamadı" });
+
+        const cleanItems = [];
+        let grandTotalTRY = 0;
+        for (const it of newItems) {
+          const productId = it?.productId;
+          const quantity = Number(it?.quantity || 0);
+          const unitPrice = Number(it?.unitPrice || 0);
+          const currency = it?.currency || "TRY";
+          const fxRate = Number(it?.fxRate || 1);
+          const kdv = Number(it?.kdv ?? 20);
+          const iskonto = Number(it?.iskonto ?? 0);
+          if (!productId || quantity <= 0) continue;
+          const araToplam = quantity * unitPrice;
+          const netToplam = araToplam * (1 - iskonto / 100);
+          const kdvliDoviz = netToplam * (1 + kdv / 100);
+          const fx = currency === "TRY" ? 1 : fxRate || 1;
+          const lineTotalTRY = Number(it?.total) > 0 ? Number(it?.total) : Number((kdvliDoviz * fx).toFixed(2));
+          grandTotalTRY += lineTotalTRY;
+          cleanItems.push({
+            productId,
+            quantity,
+            unitPrice,
+            kdv,
+            iskonto,
+            currency,
+            fxRate: currency === "TRY" ? 1 : fxRate || 1,
+            total: lineTotalTRY,
+            totalFCY: currency === "TRY" ? 0 : Number(kdvliDoviz.toFixed(2)),
+          });
+        }
+        if (cleanItems.length === 0) return res.status(400).json({ message: "Geçerli kalem yok" });
+
+        const oldItems = extractItemsFromNote(purchase.note) || [];
+        for (const it of oldItems) {
+          const pid = it.productId && (it.productId._id || it.productId);
+          const qty = Number(it.quantity || 0);
+          if (pid && qty > 0) await Product.findByIdAndUpdate(pid, { $inc: { stock: -qty } });
+        }
+        for (const it of cleanItems) {
+          await Product.findByIdAndUpdate(it.productId, { $inc: { stock: it.quantity } });
+        }
+
+        const humanNote = (typeof description === "string" ? description.trim() : "") || "Ürün Alış";
+        const fxItem = cleanItems.find((x) => (x.currency || "TRY") !== "TRY") || cleanItems[0];
+        const currency = fxItem?.currency || "TRY";
+        const fxRate = Number(fxItem?.fxRate || 1);
+        const invoiceNo = req.body?.invoiceNo || "";
+        const orderNo = req.body?.orderNo || "";
+        const noteStr =
+          humanNote +
+          (invoiceNo ? ` | Fatura: ${invoiceNo}` : "") +
+          (orderNo ? ` | Sipariş: ${orderNo}` : "") +
+          `\n${ITEMS_MARKER}${JSON.stringify(cleanItems)}`;
+
+        await Transaction.updateOne(
+          { _id: id },
+          {
+            $set: {
+              date: date ? new Date(date) : purchase.date,
+              accountId: newAccountId || purchase.accountId,
+              amount: Number(grandTotalTRY.toFixed(2)),
+              totalTRY: Number(grandTotalTRY.toFixed(2)),
+              currency,
+              fxRate,
+              note: noteStr,
+            },
+          }
+        );
+        return res.status(200).json({ message: "Alış güncellendi" });
+      }
+
+      // Sadece tarih + açıklama
       const updates = {};
       if (date) updates.date = new Date(date);
       const humanNote = typeof description === "string" ? description.trim() : null;
@@ -181,9 +258,14 @@ export default async function handler(req, res) {
 
     const amount = Number(purchaseDoc.totalTRY || purchaseDoc.amount || 0);
 
-    // 2) Cari için ters kayıt oluştur (listeye düşmesin diye type: purchase_cancel)
+    // 2) Cari için ters kayıt oluştur (companyId zorunlu)
+    const cancelCompanyId =
+      (purchaseDoc.companyId && String(purchaseDoc.companyId)) ||
+      (companyId && String(companyId)) ||
+      String(userId || "unknown");
     const cancelTx = await Transaction.create({
       userId: purchaseDoc.userId,
+      companyId: cancelCompanyId,
       accountId: purchaseDoc.accountId,
       type: "purchase_cancel",
       direction: "alacak",
