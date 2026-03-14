@@ -30,6 +30,11 @@ export default async function handler(req, res) {
       n11AppSecret,
       n11Environment,
       n11StoreName,
+
+      pazaramaSellerId,
+      pazaramaApiKey,
+      pazaramaApiSecret,
+      pazaramaStoreName,
     } = req.body || {};
 
     const { db } = await connectToDatabase();
@@ -60,6 +65,13 @@ export default async function handler(req, res) {
         appSecret: n11AppSecret || "",
         environment: n11Environment || "production",
         storeName: n11StoreName || "",
+      },
+
+      pazarama: {
+        sellerId: pazaramaSellerId || "",
+        apiKey: pazaramaApiKey || "",
+        apiSecret: pazaramaApiSecret || "",
+        storeName: pazaramaStoreName || "",
       },
 
       updatedAt: new Date(),

@@ -42,6 +42,7 @@ const CariSchema = new mongoose.Schema(
     hbCustomerId: String,
     amazonCustomerId: String,
     n11CustomerId: String,
+    pazaramaCustomerId: String,
 
     bakiye: { type: Number, default: 0 },
     totalSales: { type: Number, default: 0 },

@@ -255,7 +255,7 @@ export default async function handler(req, res) {
     // ---------------- PAZARAMA ----------------
     if (sendTo.pazarama) {
       try {
-        const result = await pazaramaCreateProduct(newProduct);
+        const result = await pazaramaCreateProduct(newProduct, req);
         marketplaceResults.pazarama = {
           status: result.success ? "Success" : "Error",
           productId: result.productId || null,

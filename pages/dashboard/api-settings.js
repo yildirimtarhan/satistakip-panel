@@ -5,10 +5,12 @@ import Cookies from "js-cookie";
 export default function ApiSettings() {
   const router = useRouter();
   const tabFromUrl = router.query?.tab;
-  const [activeTab, setActiveTab] = useState(tabFromUrl === "trendyol" ? "trendyol" : tabFromUrl === "n11" ? "n11" : "hepsiburada");
+  const [activeTab, setActiveTab] = useState(
+    tabFromUrl === "trendyol" ? "trendyol" : tabFromUrl === "n11" ? "n11" : tabFromUrl === "pazarama" ? "pazarama" : "hepsiburada"
+  );
 
   useEffect(() => {
-    if (tabFromUrl === "trendyol" || tabFromUrl === "n11") setActiveTab(tabFromUrl);
+    if (["trendyol", "n11", "pazarama"].includes(tabFromUrl)) setActiveTab(tabFromUrl);
   }, [tabFromUrl]);
 
   const [form, setForm] = useState({
@@ -27,6 +29,11 @@ export default function ApiSettings() {
     n11AppSecret: "",
     n11Environment: "production",
     n11StoreName: "",
+
+    pazaramaSellerId: "",
+    pazaramaApiKey: "",
+    pazaramaApiSecret: "",
+    pazaramaStoreName: "",
   });
 
   const [message, setMessage] = useState("");
@@ -35,6 +42,8 @@ export default function ApiSettings() {
   const [testResult, setTestResult] = useState(null);
   const [testingTrendyol, setTestingTrendyol] = useState(false);
   const [testResultTrendyol, setTestResultTrendyol] = useState(null);
+  const [testingPazarama, setTestingPazarama] = useState(false);
+  const [testResultPazarama, setTestResultPazarama] = useState(null);
 
   useEffect(() => {
     const t = Cookies.get("token") || localStorage.getItem("token") || "";
@@ -104,6 +113,23 @@ export default function ApiSettings() {
     setTestingTrendyol(false);
   };
 
+  const testPazaramaConnection = async () => {
+    setTestingPazarama(true);
+    setTestResultPazarama(null);
+    try {
+      const res = await fetch("/api/pazarama/test-connection", {
+        method: "GET",
+        credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const data = await res.json();
+      setTestResultPazarama({ success: data.success, message: data.message || data.error });
+    } catch (e) {
+      setTestResultPazarama({ success: false, message: e.message });
+    }
+    setTestingPazarama(false);
+  };
+
   const inp = "border border-gray-300 rounded-lg p-2.5 w-full text-sm focus:outline-none focus:ring-2 focus:ring-orange-400";
   const lbl = "block text-sm font-medium text-gray-700 mb-1 mt-3";
 
@@ -116,6 +142,7 @@ export default function ApiSettings() {
           { id: "hepsiburada", label: "Hepsiburada" },
           { id: "n11", label: "N11" },
           { id: "trendyol", label: "Trendyol" },
+          { id: "pazarama", label: "Pazarama" },
         ].map((tab) => (
           <button key={tab.id}
             className={`px-4 py-2 rounded-t-lg font-medium text-sm transition-colors ${activeTab === tab.id ? "bg-orange-500 text-white shadow" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
@@ -218,6 +245,40 @@ export default function ApiSettings() {
           {testResultTrendyol && (
             <div className={`mt-3 p-3 rounded-lg text-sm ${testResultTrendyol.success ? "bg-green-50 border border-green-200 text-green-700" : "bg-red-50 border border-red-200 text-red-700"}`}>
               {testResultTrendyol.success ? "✅ " : "❌ "}{testResultTrendyol.message}
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === "pazarama" && (
+        <div>
+          <h2 className="text-lg font-semibold mb-1 text-gray-800">Pazarama API Ayarları</h2>
+          <p className="text-xs text-gray-500 mb-4">
+            İş Ortağım Paneli → Hesabım &gt; Hesap Bilgileri &gt; Entegrasyon Bilgileri&apos;nden API Key ve API Secret alın.
+          </p>
+          <label className={lbl}>Satıcı ID (Opsiyonel)</label>
+          <input className={inp} value={form.pazaramaSellerId} onChange={(e) => setForm((p) => ({ ...p, pazaramaSellerId: e.target.value }))}
+            placeholder="95fe61cf-111b-48ac-8896-08de7b94dfe0" />
+          <label className={lbl}>API Key</label>
+          <input className={inp} value={form.pazaramaApiKey} onChange={(e) => setForm((p) => ({ ...p, pazaramaApiKey: e.target.value }))}
+            placeholder="Entegrasyon Bilgileri'nden" />
+          <label className={lbl}>API Secret</label>
+          <input className={inp} type="password" value={form.pazaramaApiSecret} onChange={(e) => setForm((p) => ({ ...p, pazaramaApiSecret: e.target.value }))}
+            placeholder="Entegrasyon Bilgileri'nden" />
+          <label className={lbl}>Satıcı / Mağaza adı</label>
+          <input className={inp} placeholder="Kargo çıktılarında görünecek mağaza adı" value={form.pazaramaStoreName}
+            onChange={(e) => setForm((p) => ({ ...p, pazaramaStoreName: e.target.value }))} />
+          <button
+            type="button"
+            onClick={testPazaramaConnection}
+            disabled={testingPazarama || !form.pazaramaApiKey || !form.pazaramaApiSecret}
+            className="mt-4 px-4 py-2 bg-orange-100 text-orange-700 border border-orange-300 rounded-lg text-sm font-medium hover:bg-orange-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {testingPazarama ? "Test ediliyor..." : "Bağlantı Test Et"}
+          </button>
+          {testResultPazarama && (
+            <div className={`mt-3 p-3 rounded-lg text-sm ${testResultPazarama.success ? "bg-green-50 border border-green-200 text-green-700" : "bg-red-50 border border-red-200 text-red-700"}`}>
+              {testResultPazarama.success ? "✅ " : "❌ "}{testResultPazarama.message}
             </div>
           )}
         </div>

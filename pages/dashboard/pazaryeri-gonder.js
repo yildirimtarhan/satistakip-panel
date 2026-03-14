@@ -51,6 +51,7 @@ const MARKETPLACES = [
   { key: "n11",         label: "N11",          color: "bg-orange-500" },
   { key: "trendyol",    label: "Trendyol",     color: "bg-orange-600" },
   { key: "hepsiburada", label: "Hepsiburada",  color: "bg-blue-600"   },
+  { key: "pazarama",    label: "Pazarama",     color: "bg-red-600"    },
 ];
 
 const fmt = (n) =>
@@ -139,6 +140,23 @@ export default function PazaryeriGonderPage() {
   const [hbCatBreadcrumb, setHbCatBreadcrumb] = useState([]); // [{id, name}] hiyerarşi
   const hbSearchTimer = useRef(null);
   const [hbCargoFirms, setHbCargoFirms] = useState([]); // API'den; boşsa statik liste kullanılır
+
+  // Pazarama form
+  const [pzForm, setPzForm] = useState({
+    categoryId: "", brandId: "", brandName: "", vatRate: "20", desi: "1",
+  });
+  const [pzCatSearch, setPzCatSearch] = useState("");
+  const [pzCats, setPzCats] = useState([]);
+  const [pzCatLoading, setPzCatLoading] = useState(false);
+  const [pzCatError, setPzCatError] = useState("");
+  const [pzCatRefresh, setPzCatRefresh] = useState(0);
+  const [pzCatSelected, setPzCatSelected] = useState(null);
+  const [pzBrands, setPzBrands] = useState([]);
+  const [pzBrandSearch, setPzBrandSearch] = useState("");
+  const [pzAttrs, setPzAttrs] = useState([]);
+  const [pzAttrVals, setPzAttrVals] = useState({});
+  const pzCatFlatCache = useRef([]);
+  const pzBrandSearchTimer = useRef(null);
 
   // Görsel URL'leri
   const [imageUrls, setImageUrls]   = useState([""]);
@@ -374,6 +392,106 @@ export default function PazaryeriGonderPage() {
     if (brand) setHbForm((f) => ({ ...f, brandName: brand }));
   }, [product, activeTab]);
 
+  /* ── Pazarama: kategori listesi (doküman: id, parentId, parentCategories, name, displayName, leaf) ── */
+  const flattenPzCategories = (items) => {
+    if (!Array.isArray(items)) return [];
+    return items
+      .filter((c) => c.leaf === true)
+      .map((c) => ({
+        id: c.id ?? c.guid,
+        name: c.name ?? c.displayName ?? "",
+        path: Array.isArray(c.parentCategories) ? c.parentCategories.join(" > ") : (c.name ?? c.displayName ?? ""),
+      }))
+      .filter((c) => c.id);
+  };
+  useEffect(() => {
+    if (activeTab !== "pazarama") return;
+    if (pzCatSearch.trim().length < 2) {
+      setPzCats([]);
+      setPzCatError("");
+      return;
+    }
+    const filterFromCache = () => {
+      const term = pzCatSearch.trim().toLowerCase();
+      const filtered = pzCatFlatCache.current.filter((c) =>
+        (c.path || c.name || "").toLowerCase().includes(term)
+      );
+      setPzCats(filtered.slice(0, 80));
+      setPzCatError(filtered.length === 0 && pzCatFlatCache.current.length > 0 ? "Bu aramayla eşleşen kategori bulunamadı." : "");
+    };
+    if (pzCatFlatCache.current.length > 0) {
+      filterFromCache();
+      return;
+    }
+    setPzCatLoading(true);
+    setPzCatError("");
+    fetch("/api/pazarama/categories", { headers: headers() })
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d.success && d.error) {
+          setPzCatError(d.error || "Kategoriler yüklenemedi.");
+          pzCatFlatCache.current = [];
+          setPzCats([]);
+          return;
+        }
+        const raw = d?.data ?? d?.categories ?? [];
+        const list = Array.isArray(raw) ? raw : [];
+        pzCatFlatCache.current = flattenPzCategories(list);
+        filterFromCache();
+        if (pzCatFlatCache.current.length === 0) {
+          setPzCatError("Kategori listesi boş veya tanınmayan format.");
+        }
+      })
+      .catch((e) => {
+        setPzCatError("Kategoriler yüklenirken hata. API Ayarları → Pazarama kontrol edin.");
+        setPzCats([]);
+        pzCatFlatCache.current = [];
+      })
+      .finally(() => setPzCatLoading(false));
+  }, [pzCatSearch, activeTab, pzCatRefresh]);
+
+  /* ── Pazarama: kategori seçilince attribute yükle ── */
+  useEffect(() => {
+    if (!pzForm.categoryId || activeTab !== "pazarama") {
+      setPzAttrs([]);
+      setPzAttrVals({});
+      return;
+    }
+    fetch(`/api/pazarama/categories/attributes?categoryId=${pzForm.categoryId}`, { headers: headers() })
+      .then((r) => r.json())
+      .then((d) => {
+        const attrs = d?.attributes ?? d?.data ?? [];
+        setPzAttrs(Array.isArray(attrs) ? attrs : []);
+        setPzAttrVals({});
+      })
+      .catch(() => setPzAttrs([]));
+  }, [pzForm.categoryId, activeTab]);
+
+  /* ── Pazarama: marka arama ── */
+  useEffect(() => {
+    if (activeTab !== "pazarama") return;
+    clearTimeout(pzBrandSearchTimer.current);
+    const q = pzBrandSearch.trim();
+    if (q.length < 2) {
+      setPzBrands([]);
+      return;
+    }
+    pzBrandSearchTimer.current = setTimeout(() => {
+      fetch(`/api/pazarama/brands?name=${encodeURIComponent(q)}&size=50`, { headers: headers() })
+        .then((r) => r.json())
+        .then((d) => setPzBrands(d?.data ?? []))
+        .catch(() => setPzBrands([]));
+    }, 300);
+    return () => clearTimeout(pzBrandSearchTimer.current);
+  }, [pzBrandSearch, activeTab]);
+
+  /* ── Pazarama: ürün seçilince marka doldur ── */
+  useEffect(() => {
+    if (!product || activeTab !== "pazarama") return;
+    const brand = product.brand || product.marka || product.brandName || "";
+    if (brand) setPzForm((f) => ({ ...f, brandName: brand }));
+  }, [product, activeTab]);
+
   /* ── HB kategori seçilince attribute yükle ── */
   useEffect(() => {
     if (!hbForm.categoryId) { setHbAttrs([]); setHbAttrVals({}); return; }
@@ -429,6 +547,10 @@ export default function PazaryeriGonderPage() {
     }
     if (activeTab === "trendyol" && !tyForm.categoryId) {
       alert("Trendyol için kategori seçin.");
+      return;
+    }
+    if (activeTab === "pazarama" && !(pzForm.categoryId && pzForm.brandId)) {
+      alert("Pazarama için kategori ve marka seçin.");
       return;
     }
     setSending(true);
@@ -521,6 +643,50 @@ export default function PazaryeriGonderPage() {
             attributes: tyAttrPayload,
           },
         };
+      } else if (activeTab === "pazarama") {
+        endpoint = "/api/pazarama/products/create";
+        const pzAttrPayload = pzAttrs
+          .filter((a) => pzAttrVals[a.id ?? a.attributeId])
+          .map((attr) => {
+            const aid = attr.id ?? attr.attributeId;
+            const val = pzAttrVals[aid];
+            if (!aid || !val) return null;
+            return { attributeId: String(aid), attributeValueId: String(val) };
+          })
+          .filter(Boolean);
+        if (uploadMode === "link") {
+          body = {
+            product: {
+              name: effective.title,
+              title: effective.title,
+              description: effective.description,
+              barcode: effective.barcode,
+              sku: effective.barcode,
+              price: effective.price,
+              listPrice: effective.listPrice,
+              stock: effective.stock,
+              images: validImages,
+            },
+            pazaramaOverride: {
+              categoryId: pzForm.categoryId,
+              brandId: pzForm.brandId,
+              attributes: pzAttrPayload,
+              vatRate: pzForm.vatRate,
+              desi: pzForm.desi ?? 1,
+            },
+          };
+        } else {
+          body = {
+            productId: selectedId,
+            pazaramaOverride: {
+              categoryId: pzForm.categoryId,
+              brandId: pzForm.brandId,
+              attributes: pzAttrPayload,
+              vatRate: pzForm.vatRate,
+              desi: pzForm.desi ?? 1,
+            },
+          };
+        }
       } else {
         endpoint = "/api/hepsiburada/products/create";
         const hbAttrList = hbAttrs
@@ -579,9 +745,17 @@ export default function PazaryeriGonderPage() {
         : "border-transparent text-gray-500 hover:text-gray-700 bg-gray-50"
     }`;
 
-  const canSend = uploadMode === "erp"
-    ? !!selectedId
-    : !!(linkProduct.title && (activeTab === "n11" ? (n11Form.catL3 || n11Form.catL2 || n11Form.catL1) : activeTab === "trendyol" ? tyForm.categoryId : hbForm.categoryId));
+  const canSend = (() => {
+    if (activeTab === "pazarama") {
+      return (uploadMode === "erp" ? !!selectedId : !!(linkProduct.title)) && !!pzForm.categoryId && !!pzForm.brandId;
+    }
+    if (uploadMode === "erp") return !!selectedId;
+    return !!(linkProduct.title && (
+      activeTab === "n11" ? (n11Form.catL3 || n11Form.catL2 || n11Form.catL1)
+      : activeTab === "trendyol" ? tyForm.categoryId
+      : hbForm.categoryId
+    ));
+  })();
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -630,7 +804,7 @@ export default function PazaryeriGonderPage() {
 
       {uploadMode === "link" && (
         <div className="mb-6 p-4 bg-slate-50 border rounded-lg space-y-4">
-          <p className="text-sm font-medium text-slate-700">Link ve kategori ile ürün yükle (N11, Trendyol, Hepsiburada)</p>
+          <p className="text-sm font-medium text-slate-700">Link ve kategori ile ürün yükle (N11, Trendyol, Hepsiburada, Pazarama)</p>
           <div className="flex gap-2">
             <input
               type="url"
@@ -1185,6 +1359,176 @@ export default function PazaryeriGonderPage() {
               <div className="text-xs text-slate-600 bg-slate-100 border border-slate-200 rounded-lg p-3">
                 <a href="/dashboard/api-settings" className="text-orange-600 hover:underline font-medium">API Ayarları</a>
                 {" "}sayfasından Hepsiburada <strong>kullanıcı adı (Merchant ID)</strong>, <strong>şifre (Secret Key)</strong> ve <strong>Merchant ID</strong> girin.
+              </div>
+            </div>
+          )}
+
+          {/* PAZARAMA */}
+          {activeTab === "pazarama" && (
+            <div className="space-y-5">
+              <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-red-600 text-xs font-bold text-white">1</span>
+                  <h3 className="font-semibold text-slate-800">Kategori Seçimi</h3>
+                </div>
+                <p className="text-xs text-slate-500 mb-3">En az 2 harf yazarak arayın.</p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    className="flex-1 border border-slate-300 rounded-lg p-2.5 text-sm bg-white"
+                    placeholder="Örn: Telefon, Elektronik, Giyim"
+                    value={pzCatSearch}
+                    onChange={(e) => setPzCatSearch(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => { pzCatFlatCache.current = []; setPzCatRefresh((r) => r + 1); }}
+                    disabled={pzCatLoading}
+                    className="px-3 py-2 text-sm border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-50"
+                  >
+                    Yenile
+                  </button>
+                </div>
+                {pzCatLoading && <p className="text-xs text-red-600 mt-2">Kategoriler yükleniyor…</p>}
+                {pzCatError && <p className="text-xs text-red-600 mt-2">{pzCatError}</p>}
+                {pzCats.length > 0 && (
+                  <div className="mt-2 max-h-52 overflow-y-auto rounded-lg border border-slate-200 bg-white">
+                    {pzCats.map((c) => {
+                      const sel = String(pzForm.categoryId) === String(c.id);
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => {
+                            setPzForm((f) => ({ ...f, categoryId: String(c.id) }));
+                            setPzCatSelected({ id: c.id, name: c.name, path: c.path });
+                            setPzCatSearch("");
+                            setPzCats([]);
+                          }}
+                          className={`block w-full text-left px-3 py-2 text-sm border-b border-slate-100 last:border-0 hover:bg-red-50 ${sel ? "bg-red-100 text-red-800 font-medium" : "text-slate-700"}`}
+                        >
+                          {c.path || c.name}
+                          {sel && <span className="ml-1 text-red-600">✓</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {pzForm.categoryId && pzCatSelected && (
+                  <div className="mt-2 flex items-center justify-between rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">
+                    <span><span className="text-green-600">✓</span> Seçili: <strong>{pzCatSelected.path || pzCatSelected.name}</strong></span>
+                    <button type="button" onClick={() => { setPzForm((f) => ({ ...f, categoryId: "" })); setPzCatSelected(null); setPzAttrs([]); setPzAttrVals({}); }} className="text-red-600 hover:underline text-xs">Kaldır</button>
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-red-600 text-xs font-bold text-white">2</span>
+                  <h3 className="font-semibold text-slate-800">Marka Seçimi *</h3>
+                </div>
+                <p className="text-xs text-slate-500 mb-2">En az 2 harf yazarak marka arayın.</p>
+                <input
+                  type="text"
+                  className="w-full border border-slate-300 rounded-lg p-2.5 text-sm bg-white"
+                  placeholder="Marka adı..."
+                  value={pzBrandSearch}
+                  onChange={(e) => setPzBrandSearch(e.target.value)}
+                />
+                {pzBrands.length > 0 && (
+                  <div className="mt-2 max-h-40 overflow-y-auto rounded-lg border border-slate-200 bg-white">
+                    {pzBrands.map((b) => {
+                      const bid = b.id ?? b.guid;
+                      const sel = String(pzForm.brandId) === String(bid);
+                      return (
+                        <button
+                          key={bid}
+                          type="button"
+                          onClick={() => {
+                            setPzForm((f) => ({ ...f, brandId: String(bid), brandName: b.name }));
+                            setPzBrandSearch("");
+                            setPzBrands([]);
+                          }}
+                          className={`block w-full text-left px-3 py-2 text-sm border-b border-slate-100 last:border-0 hover:bg-red-50 ${sel ? "bg-red-100 text-red-800" : "text-slate-700"}`}
+                        >
+                          {b.name}
+                          {sel && <span className="ml-1 text-red-600">✓</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {pzForm.brandId && (
+                  <div className="mt-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">
+                    <span className="text-green-600">✓</span> Seçili: <strong>{pzForm.brandName}</strong>
+                  </div>
+                )}
+              </div>
+
+              {pzAttrs.length > 0 && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
+                  <h3 className="font-semibold text-amber-800 mb-3">Kategori Özellikleri</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    {pzAttrs.map((attr) => {
+                      const aid = attr.id ?? attr.attributeId;
+                      const vals = attr.attributeValues ?? attr.values ?? [];
+                      const isReq = attr.isRequired ?? attr.required ?? attr.mandatory;
+                      return (
+                        <div key={aid}>
+                          <label className="block text-xs font-medium mb-1">
+                            {attr.name ?? attr.displayName ?? attr.attributeName}
+                            {isReq && <span className="text-red-500 ml-1">*</span>}
+                          </label>
+                          {vals.length > 0 ? (
+                            <select
+                              className="w-full border rounded p-2 text-sm bg-white"
+                              value={pzAttrVals[aid] ?? ""}
+                              onChange={(e) => setPzAttrVals((p) => ({ ...p, [aid]: e.target.value }))}
+                            >
+                              <option value="">— Seçin —</option>
+                              {vals.map((v) => (
+                                <option key={v.id ?? v.attributeValueId} value={v.id ?? v.attributeValueId}>
+                                  {v.value ?? v.name ?? v.attributeValue}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              className="w-full border rounded p-2 text-sm"
+                              placeholder={attr.name ?? attr.displayName ?? attr.attributeName}
+                              value={pzAttrVals[aid] ?? ""}
+                              onChange={(e) => setPzAttrVals((p) => ({ ...p, [aid]: e.target.value }))}
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+                <h3 className="font-semibold text-slate-800 mb-3">Diğer</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">KDV %</label>
+                    <select className="w-full border rounded p-2" value={pzForm.vatRate}
+                      onChange={(e) => setPzForm((f) => ({ ...f, vatRate: e.target.value }))}>
+                      {["0","1","10","18","20"].map((v) => <option key={v} value={v}>%{v}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Desi</label>
+                    <input type="number" min="0.1" step="0.1" className="w-full border rounded p-2" placeholder="1"
+                      value={pzForm.desi} onChange={(e) => setPzForm((f) => ({ ...f, desi: e.target.value }))} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-xs text-slate-600 bg-slate-100 border border-slate-200 rounded-lg p-3">
+                <a href="/dashboard/api-settings" className="text-red-600 hover:underline font-medium">API Ayarları</a>
+                {" "}→ Pazarama sekmesinden API Key ve API Secret girin. En az 1 görsel URL zorunlu.
               </div>
             </div>
           )}

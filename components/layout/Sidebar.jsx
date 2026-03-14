@@ -65,6 +65,7 @@ const SubmenuItem = ({ href, icon: Icon, label, description, onLinkClick }) => {
 };
 
 const HB_MENU = [
+  { href: "/dashboard/api-settings?tab=hepsiburada", label: "HB API Ayarları", icon: "⚙️" },
   { href: "/dashboard/hepsiburada/orders", label: "HB Siparişleri", icon: "🛍️" },
   { href: "/dashboard/hepsiburada/products", label: "HB Ürünleri", icon: "📦" },
   { href: "/dashboard/hepsiburada/erp-mapping", label: "HB–ERP Eşleştirme", icon: "🔗" },
@@ -76,7 +77,23 @@ const HB_MENU = [
   { href: "/dashboard/hepsiburada/qa", label: "HB Soru Cevap", icon: "❓" },
 ];
 
+const N11_MENU = [
+  { href: "/dashboard/api-settings?tab=n11", label: "N11 API Ayarları", icon: "⚙️" },
+  { href: "/dashboard/n11/orders", label: "N11 Siparişleri", icon: "🛍️" },
+  { href: "/dashboard/n11/products", label: "N11 Ürün Listesi", icon: "📦" },
+  { href: "/dashboard/n11/add-product", label: "N11 Ürün Gönder", icon: "➕" },
+];
+
 // Trendyol — Tüm rolleri kullanacak yapı (API Ayarları önce)
+const PAZARAMA_MENU = [
+  { href: "/dashboard/api-settings?tab=pazarama", label: "Pazarama API Ayarları", icon: "⚙️" },
+  { href: "/dashboard/pazarama/orders", label: "Siparişler", icon: "🧾" },
+  { href: "/dashboard/pazarama/returns", label: "İadeler", icon: "🔄" },
+  { href: "/dashboard/pazarama/accounting", label: "Muhasebe & Finans", icon: "💰" },
+  { href: "/dashboard/pazarama/products", label: "Ürünler", icon: "📦" },
+  { href: "/dashboard/pazaryeri-gonder", label: "Ürün Gönder", icon: "🚀" },
+];
+
 const TRENDYOL_MENU = [
   { href: "/dashboard/api-settings?tab=trendyol", label: "Trendyol API Ayarları", icon: "⚙️" },
   { href: "/dashboard/trendyol/test-all", label: "API Test Merkezi", icon: "🧪" },
@@ -114,6 +131,88 @@ function HepsiburadaSubmenu({ onLinkClick }) {
       {(open || isActive) && (
         <div className="mt-1 space-y-0.5">
           {HB_MENU.map((item) => {
+            const active = router.pathname === item.href || router.pathname.startsWith(item.href + "/");
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={onLinkClick}
+                className={`flex items-center gap-2 pl-8 pr-3 py-2.5 rounded-lg text-sm transition touch-manipulation
+                  ${active ? "bg-orange-50 text-orange-700" : "text-slate-600 hover:bg-slate-50"}`}
+              >
+                <span>{item.icon}</span>
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function N11Submenu({ onLinkClick }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const isActive = N11_MENU.some((m) => router.pathname === m.href || router.pathname.startsWith(m.href + "/"));
+  return (
+    <div className="mb-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`flex items-center justify-between w-full gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition touch-manipulation
+          ${open || isActive ? "bg-slate-100 text-slate-800" : "text-slate-700 hover:bg-slate-100"}`}
+      >
+        <span className="flex items-center gap-3">
+          <span className="text-lg">🛒</span>
+          <span>N11</span>
+        </span>
+        {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+      </button>
+      {(open || isActive) && (
+        <div className="mt-1 space-y-0.5">
+          {N11_MENU.map((item) => {
+            const active = router.pathname === item.href || router.pathname.startsWith(item.href + "/");
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={onLinkClick}
+                className={`flex items-center gap-2 pl-8 pr-3 py-2.5 rounded-lg text-sm transition touch-manipulation
+                  ${active ? "bg-orange-50 text-orange-700" : "text-slate-600 hover:bg-slate-50"}`}
+              >
+                <span>{item.icon}</span>
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PazaramaSubmenu({ onLinkClick }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const isActive = PAZARAMA_MENU.some((m) => router.pathname === m.href || router.pathname.startsWith(m.href + "/"));
+  return (
+    <div className="mb-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`flex items-center justify-between w-full gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition touch-manipulation
+          ${open || isActive ? "bg-slate-100 text-slate-800" : "text-slate-700 hover:bg-slate-100"}`}
+      >
+        <span className="flex items-center gap-3">
+          <span className="text-lg">🛒</span>
+          <span>Pazarama</span>
+        </span>
+        {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+      </button>
+      {(open || isActive) && (
+        <div className="mt-1 space-y-0.5">
+          {PAZARAMA_MENU.map((item) => {
             const active = router.pathname === item.href || router.pathname.startsWith(item.href + "/");
             return (
               <Link
@@ -272,9 +371,8 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
         <SectionTitle>Pazaryerleri</SectionTitle>
         <HepsiburadaSubmenu onLinkClick={handleLinkClick} />
         <TrendyolSubmenu onLinkClick={handleLinkClick} />
-        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/n11/orders" icon="🛒" label="N11 Siparişleri" />
-        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/n11/products" icon="📦" label="N11 Ürün Listesi" />
-        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/n11/add-product" icon="➕" label="N11 Ürün Gönder" />
+        <PazaramaSubmenu onLinkClick={handleLinkClick} />
+        <N11Submenu onLinkClick={handleLinkClick} />
         <MenuItem onLinkClick={handleLinkClick} href="/dashboard/pazaryeri-gonder" icon="🚀" label="Pazaryerine Gönder" />
 
         <SectionTitle>E-Belge</SectionTitle>

@@ -36,6 +36,11 @@ export default async function handler(req, res) {
       n11AppSecret:   settingsDoc.n11?.appSecret   || "",
       n11Environment: settingsDoc.n11?.environment || "production",
       n11StoreName:   settingsDoc.n11?.storeName   || "",
+
+      pazaramaSellerId:   settingsDoc.pazarama?.sellerId   || "",
+      pazaramaApiKey:     settingsDoc.pazarama?.apiKey     || "",
+      pazaramaApiSecret:  settingsDoc.pazarama?.apiSecret  || "",
+      pazaramaStoreName:  settingsDoc.pazarama?.storeName  || "",
     };
 
     return res.status(200).json({ settings: safeSettings });
