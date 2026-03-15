@@ -40,12 +40,16 @@ export default async function handler(req, res) {
         accountId,
         items = [],
         notes = "",
+        aciklama,
+        notlar,
         invoiceType = "EARSIV",
         scenario = "TICARI",
+        paraBirimi = "TRY",
         totals = {},
         vadeTarihi,
-        genelIskontoOrani,
-        genelIskontoTutar,
+        siparisNo,
+        platform,
+        odemeYontemi,
       } = body;
 
       if (!customer || !customer.title) {
@@ -64,14 +68,17 @@ export default async function handler(req, res) {
         uuid,
         invoiceType,
         scenario: scenario === "TEMEL" ? "TEMEL" : "TICARI",
+        paraBirimi: paraBirimi || "TRY",
         customer,
         ...(accountId && { accountId: String(accountId) }),
         items,
-        notes,
+        notes: notes || [aciklama, notlar].filter(Boolean).join("\n\n"),
+        ...(aciklama != null && { aciklama }),
+        ...(notlar != null && { notlar }),
         totals,
         ...(vadeTarihi && { vadeTarihi }),
-        ...(genelIskontoOrani != null && { genelIskontoOrani: Number(genelIskontoOrani) }),
-        ...(genelIskontoTutar != null && { genelIskontoTutar: Number(genelIskontoTutar) }),
+        ...(siparisNo != null && { siparisNo: String(siparisNo).trim() || null }),
+        ...(platform != null && { platform: String(platform).trim() || null }),
         createdAt: new Date(),
       };
 
@@ -99,12 +106,16 @@ export default async function handler(req, res) {
         accountId,
         items = [],
         notes = "",
+        aciklama,
+        notlar,
         invoiceType = "EARSIV",
         scenario = "TICARI",
+        paraBirimi = "TRY",
         totals = {},
         vadeTarihi,
-        genelIskontoOrani,
-        genelIskontoTutar,
+        siparisNo,
+        platform,
+        odemeYontemi,
       } = body;
       
       if (!customer || !customer.title) {
@@ -117,17 +128,21 @@ export default async function handler(req, res) {
       const update = {
         invoiceType,
         scenario: scenario === "TEMEL" ? "TEMEL" : "TICARI",
+        paraBirimi: paraBirimi || "TRY",
         customer,
         ...(accountId !== undefined && { accountId: accountId ? String(accountId) : null }),
         items,
-        notes,
+        notes: notes || [aciklama, notlar].filter(Boolean).join("\n\n"),
+        ...(aciklama != null && { aciklama }),
+        ...(notlar != null && { notlar }),
         totals,
         ...(vadeTarihi && { vadeTarihi }),
-        ...(genelIskontoOrani != null && { genelIskontoOrani: Number(genelIskontoOrani) }),
-        ...(genelIskontoTutar != null && { genelIskontoTutar: Number(genelIskontoTutar) }),
+        ...(siparisNo !== undefined && { siparisNo: siparisNo ? String(siparisNo).trim() : null }),
+        ...(platform !== undefined && { platform: platform ? String(platform).trim() : null }),
+        ...(odemeYontemi !== undefined && { odemeYontemi: odemeYontemi ? String(odemeYontemi).trim() : null }),
         updatedAt: new Date(),
       };
-      
+
       const result = await col.findOneAndUpdate(
         { _id: oid, companyId: String(companyId) },
         { $set: update },

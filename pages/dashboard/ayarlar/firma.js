@@ -15,9 +15,21 @@ export default function FirmaAyarları() {
     imza: "",
     taxtenTestMode: true,
     efaturaFaturaNoPrefix: "KT",
+    efaturaKontorLimit: "",
+    senderIdentifier: "",
+    taxtenClientId: "",
+    taxtenApiKey: "",
     taxtenUsername: "",
     taxtenPassword: "",
+    iban: "",
+    bankaAdi: "",
+    hesapNo: "",
+    krediKartiBilgisi: "",
+    hizmetlerimiz: "",
   });
+
+  const [taxtenTesting, setTaxtenTesting] = useState(false);
+  const [taxtenTestResult, setTaxtenTestResult] = useState(null);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -53,6 +65,26 @@ export default function FirmaAyarları() {
       }
     })();
   }, []);
+
+  const testTaxtenConnection = async () => {
+    setTaxtenTesting(true);
+    setTaxtenTestResult(null);
+    try {
+      const token = localStorage.getItem("token");
+      const r = await fetch("/api/efatura/taxten/test-connection", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const d = await r.json().catch(() => ({}));
+      setTaxtenTestResult(d);
+      if (d.ok) alert("✅ " + (d.message || "Taxten bağlantısı başarılı"));
+      else alert("❌ " + (d.message || "Bağlantı başarısız"));
+    } catch (e) {
+      setTaxtenTestResult({ ok: false, message: e.message });
+      alert("❌ " + (e.message || "Test hatası"));
+    } finally {
+      setTaxtenTesting(false);
+    }
+  };
 
   // ✅ Firma bilgilerini token ile kaydet
   const save = async () => {
@@ -161,6 +193,32 @@ export default function FirmaAyarları() {
           />
         </div>
 
+        <div className="col-span-2 mt-2 pt-2 border-t">
+          <h3 className="font-medium text-slate-600 mb-2">Banka Hesap Bilgileri (E-Fatura altında gösterilir)</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label>Banka Adı</label>
+              <input name="bankaAdi" value={form.bankaAdi || ""} onChange={handleChange} className="border p-2 rounded w-full" placeholder="Örn: Ziraat Bankası" />
+            </div>
+            <div>
+              <label>Hesap No</label>
+              <input name="hesapNo" value={form.hesapNo || ""} onChange={handleChange} className="border p-2 rounded w-full" placeholder="Hesap numarası" />
+            </div>
+            <div>
+              <label>IBAN</label>
+              <input name="iban" value={form.iban || ""} onChange={handleChange} className="border p-2 rounded w-full" placeholder="TR00 0000 0000 0000 0000 0000 00" />
+            </div>
+            <div className="md:col-span-3">
+              <label>Kredi Kartı Ödeme Bilgisi (E-Fatura altında gösterilir)</label>
+              <input name="krediKartiBilgisi" value={form.krediKartiBilgisi || ""} onChange={handleChange} className="border p-2 rounded w-full" placeholder="Örn: Vade farkı uygulanmaz, taksit imkanı" />
+            </div>
+            <div className="md:col-span-3">
+              <label>Hizmetlerimiz (E-Fatura altında gösterilir, satır veya virgülle ayırın)</label>
+              <textarea name="hizmetlerimiz" value={form.hizmetlerimiz || ""} onChange={handleChange} className="border p-2 rounded w-full min-h-[80px]" placeholder="Pazar Yeri Entegrasyonu, Yazılım, E-İmza-Mali Mühür-KEP Adresi, ERP-E-Fatura Entegrasyonu" />
+            </div>
+          </div>
+        </div>
+
         <div className="col-span-2">
           <label>Logo</label>
           <br />
@@ -176,10 +234,10 @@ export default function FirmaAyarları() {
       </div>
 
       <div className="bg-white p-4 rounded-xl shadow space-y-3">
-        <h2 className="font-semibold text-slate-700">E-Fatura / Taxten (ERP entegrasyonu)</h2>
+        <h2 className="font-semibold text-slate-700">📄 Taxten E-Fatura</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
-            <label>E-Fatura fatura no öneki</label>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Fatura no öneki</label>
             <input
               name="efaturaFaturaNoPrefix"
               value={form.efaturaFaturaNoPrefix ?? "KT"}
@@ -188,46 +246,99 @@ export default function FirmaAyarları() {
               placeholder="KT"
               maxLength={10}
             />
-            <p className="text-xs text-slate-500 mt-1">Panelde üretilen numara bu önekle başlar (örn. KT260200000001). Taxten’e bu numara gönderilir.</p>
+            {/*’*/}
           </div>
-          <div className="flex items-end">
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Kontör limiti</label>
+            <input
+              type="number"
+              min="0"
+              name="efaturaKontorLimit"
+              value={form.efaturaKontorLimit ?? ""}
+              onChange={handleChange}
+              className="border p-2 rounded w-full"
+              placeholder="Boş = sınırsız"
+            />
+          </div>
+          <div className="flex items-end pb-1">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
                 checked={form.taxtenTestMode !== false}
                 onChange={(e) => setForm({ ...form, taxtenTestMode: e.target.checked })}
               />
-              Taxten test modu (devrest)
+              <span>Test modu (işaretsiz = canlı)</span>
             </label>
           </div>
           <div>
-            <label>Taxten kullanıcı adı (opsiyonel)</label>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Client ID</label>
+            <input
+              name="taxtenClientId"
+              value={form.taxtenClientId || ""}
+              onChange={handleChange}
+              className="border p-2 rounded w-full"
+              placeholder="Client ID"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">API Key</label>
+            <input
+              type="password"
+              name="taxtenApiKey"
+              value={form.taxtenApiKey || ""}
+              onChange={handleChange}
+              className="border p-2 rounded w-full"
+              placeholder="API Key"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Gönderici etiket (opsiyonel)</label>
+            <input
+              name="senderIdentifier"
+              value={form.senderIdentifier || ""}
+              onChange={handleChange}
+              className="border p-2 rounded w-full"
+              placeholder="urn:mail:defaultgb@taxten.com"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Kullanıcı adı (Client ID yoksa)</label>
             <input
               name="taxtenUsername"
               value={form.taxtenUsername || ""}
               onChange={handleChange}
               className="border p-2 rounded w-full"
-              placeholder="Taxten kullanıcı adı veya ClientID tabanlı kullanıcı"
+              placeholder="Kullanıcı adı"
             />
-            <p className="text-xs text-slate-500 mt-1">
-              Taxten size test hesabı için kullanıcı adı verdiyse buraya yazın. ClientId/ApiKey kullanıyorsanız boş bırakabilirsiniz.
-            </p>
           </div>
           <div>
-            <label>Taxten şifre (opsiyonel)</label>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Şifre (Client ID yoksa)</label>
             <input
               type="password"
               name="taxtenPassword"
               value={form.taxtenPassword || ""}
               onChange={handleChange}
               className="border p-2 rounded w-full"
-              placeholder="Taxten şifresi"
+              placeholder="Şifre"
             />
-            <p className="text-xs text-slate-500 mt-1">
-              Taxten şifreniz. E-Fatura gönderiminde basic auth için kullanılır.
-            </p>
           </div>
         </div>
+
+        <div className="flex flex-wrap items-center gap-3 pt-2 border-t">
+          <button
+            type="button"
+            onClick={testTaxtenConnection}
+            disabled={taxtenTesting}
+            className="bg-slate-600 hover:bg-slate-700 text-white px-4 py-2 rounded disabled:opacity-70"
+          >
+            {taxtenTesting ? "Test ediliyor…" : "🔗 Bağlantıyı Test Et"}
+          </button>
+          <p className="text-sm text-slate-500">Kaydettikten sonra test edin. Test/Canlı ortamı seçiminize göre doğrular.</p>
+        </div>
+
+        <p className="text-sm text-slate-500">
+          Kontör: Sadece admin panelinden eklenir. <a href="/dashboard/e-donusum/efatura-kontor" className="text-orange-600 underline">E-Fatura Kontör</a> sayfasından görüntüleyebilirsiniz.
+        </p>
       </div>
 
       <button

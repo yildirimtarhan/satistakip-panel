@@ -2,6 +2,9 @@
 
 Bu dokümanda E-Fatura / E-Arşiv test ortamında deneme yapmak için izlenecek adımlar özetlenir.
 
+> **Detaylı test planı:** Bkz. [EFATURA-EARSIV-EIRSALIYE-TEST-PLANI.md](./EFATURA-EARSIV-EIRSALIYE-TEST-PLANI.md)  
+> **GİB/Taxten kontrol listesi:** Bkz. [GIB-TAXTEN-KONTROL-LISTESI.md](./GIB-TAXTEN-KONTROL-LISTESI.md)
+
 ---
 
 ## Ön koşullar

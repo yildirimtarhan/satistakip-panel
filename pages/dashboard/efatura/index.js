@@ -96,11 +96,11 @@ export default function EFaturaPanel() {
 
       {/* Başlık */}
       <h1 className="text-2xl font-bold text-orange-600 text-center">
-        📄 E-Fatura & E-Arşiv Yönetimi
+        📄 E-Fatura, E-Arşiv & E-İrsaliye
       </h1>
 
       {/* Üst Hızlı Menü */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
 
         <Link href="/dashboard/efatura/olustur"
           className="p-5 bg-white shadow rounded-xl hover:shadow-md transition text-center border border-orange-200">
@@ -130,6 +130,12 @@ export default function EFaturaPanel() {
           className="p-5 bg-white shadow rounded-xl hover:shadow-md transition text-center border">
           <div className="text-3xl">🔍</div>
           <div className="mt-2 font-bold">Mükellef Sorgulama</div>
+        </Link>
+
+        <Link href="/dashboard/irsaliye"
+          className="p-5 bg-white shadow rounded-xl hover:shadow-md transition text-center border border-orange-200">
+          <div className="text-3xl">📋</div>
+          <div className="mt-2 font-bold">E-İrsaliye</div>
         </Link>
 
       </div>

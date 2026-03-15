@@ -50,11 +50,17 @@ export default async function handler(req, res) {
           imza: "",
           taxtenTestMode: true,
           efaturaFaturaNoPrefix: "KT",
+          efaturaKontorLimit: null,
           // Yeni alanlar için varsayılan değerler
           taxtenClientId: "",
           taxtenApiKey: "",
           taxtenUsername: "",
           taxtenPassword: "",
+          iban: "",
+          bankaAdi: "",
+          hesapNo: "",
+          krediKartiBilgisi: "",
+          hizmetlerimiz: "",
         }
       );
     }
@@ -73,11 +79,17 @@ export default async function handler(req, res) {
         imza = "",
         taxtenTestMode,
         efaturaFaturaNoPrefix,
+        efaturaKontorLimit,
         taxtenUsername,
         taxtenPassword,
         // ✅ YENİ: Taxten Client ID ve API Key desteği
         taxtenClientId,
         taxtenApiKey,
+        iban = "",
+        bankaAdi = "",
+        hesapNo = "",
+        krediKartiBilgisi = "",
+        hizmetlerimiz = "",
       } = req.body || {};
 
       const $set = {
@@ -93,11 +105,24 @@ export default async function handler(req, res) {
         imza,
         ...(typeof taxtenTestMode === "boolean" && { taxtenTestMode }),
         ...(efaturaFaturaNoPrefix !== undefined && { efaturaFaturaNoPrefix: String(efaturaFaturaNoPrefix).trim() || "KT" }),
+        ...(efaturaKontorLimit !== undefined && {
+          efaturaKontorLimit:
+            efaturaKontorLimit === null ||
+            efaturaKontorLimit === "" ||
+            efaturaKontorLimit === undefined
+              ? null
+              : parseInt(efaturaKontorLimit, 10) || null,
+        }),
         ...(taxtenUsername !== undefined && { taxtenUsername: taxtenUsername || "" }),
         ...(taxtenPassword !== undefined && { taxtenPassword: taxtenPassword || "" }),
         // ✅ YENİ: Client ID ve API Key kaydetme
         ...(taxtenClientId !== undefined && { taxtenClientId: taxtenClientId || "" }),
         ...(taxtenApiKey !== undefined && { taxtenApiKey: taxtenApiKey || "" }),
+        ...(iban !== undefined && { iban: iban || "" }),
+        ...(bankaAdi !== undefined && { bankaAdi: bankaAdi || "" }),
+        ...(hesapNo !== undefined && { hesapNo: hesapNo || "" }),
+        ...(krediKartiBilgisi !== undefined && { krediKartiBilgisi: krediKartiBilgisi || "" }),
+        ...(hizmetlerimiz !== undefined && { hizmetlerimiz: hizmetlerimiz || "" }),
         updatedAt: new Date(),
         userId: userIdStr,
       };

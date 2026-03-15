@@ -1,4 +1,5 @@
 // 📄 /pages/dashboard/efatura/onizleme.js
+// Taslak fatura önizleme – PDF tabanlı (XSLT hatası yok, her zaman çalışır)
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/router";
 
@@ -9,106 +10,58 @@ export default function EFaturaOnizleme() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [emailSending, setEmailSending] = useState(false);
+  const [pdfDownloading, setPdfDownloading] = useState(false);
   const [error, setError] = useState("");
-  const [htmlContent, setHtmlContent] = useState("");
+  const [pdfBlobUrl, setPdfBlobUrl] = useState(null);
   const iframeRef = useRef(null);
 
-  // XML'i çekip HTML'e çeviren fonksiyon
-  const fetchAndRenderXml = async () => {
+  // PDF ile önizleme (PdfEngine + efaturaDraft şablonu – XSLT bağımlılığı yok)
+  const fetchPdfPreview = async () => {
     if (!id) return;
     setLoading(true);
     setError("");
+    setPdfBlobUrl(null);
 
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`/api/efatura/draft-xml?id=${id}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+      if (!token) throw new Error("Oturum bulunamadı. Lütfen tekrar giriş yapın.");
+
+      const res = await fetch(`/api/efatura/draft-pdf?id=${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (!res.ok) {
         const t = await res.json().catch(() => ({}));
-        throw new Error(t.message || "Fatura XML'i alınamadı");
+        throw new Error(t.message || "PDF alınamadı");
       }
 
-      const xmlText = await res.text();
-      
-      // XSLT Base64 verisini bul
-      const parser = new DOMParser();
-      const xmlDoc = parser.parseFromString(xmlText, "application/xml");
-      
-      const parserError = xmlDoc.getElementsByTagName("parsererror");
-      if (parserError.length > 0) {
-        throw new Error("XML parse hatası: " + parserError[0].textContent);
-      }
+      const blob = await res.blob();
+      if (blob.size < 100) throw new Error("PDF oluşturulamadı (boş veya hatalı)");
 
-      // cbc:EmbeddedDocumentBinaryObject içeriğini (Base64) al
-      const embeddedNode = xmlDoc.getElementsByTagName("cbc:EmbeddedDocumentBinaryObject")[0] || 
-                           xmlDoc.getElementsByTagNameNS("*", "EmbeddedDocumentBinaryObject")[0];
-                           
-      if (!embeddedNode || !embeddedNode.textContent) {
-        throw new Error("XSLT şablonu bulunamadı. Fatura UBL verisinde XSLT eklentisi eksik.");
-      }
-
-      const base64Xslt = embeddedNode.textContent.trim();
-      
-      // atob hatası (InvalidCharacterError) almamak için tüm boşluk ve geçersiz karakterleri temizle
-      let cleanBase64 = base64Xslt.replace(/[^A-Za-z0-9+/=]/g, "");
-      
-      // Uzunluğu 4'ün katı değilse padding (=) ekle
-      while (cleanBase64.length % 4 !== 0) {
-        cleanBase64 += "=";
-      }
-      
-      // Base64 to Text (Unicode handle error)
-      let xsltText = "";
-      try {
-        // btoa / atob türkçe karakterleri bozar, uri decode ile çözelim
-        const binaryString = window.atob(cleanBase64);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-        }
-        xsltText = new TextDecoder("utf-8").decode(bytes);
-      } catch(e) {
-        xsltText = window.atob(cleanBase64);
-      }
-      
-      // XSLTDoc oluştur
-      const xsltDoc = parser.parseFromString(xsltText, "application/xml");
-      const xsltParserError = xsltDoc.getElementsByTagName("parsererror");
-      if (xsltParserError.length > 0) {
-        throw new Error("XSLT parse hatası");
-      }
-
-      // XSLTProcessor ile XML'i HTML'e çevir
-      const xsltProcessor = new XSLTProcessor();
-      xsltProcessor.importStylesheet(xsltDoc);
-      const resultDocument = xsltProcessor.transformToFragment(xmlDoc, document);
-      
-      if (!resultDocument) {
-        throw new Error("XSLT dönüşümü başarısız oldu.");
-      }
-
-      // Fragmentı string'e çevir
-      const div = document.createElement('div');
-      div.appendChild(resultDocument);
-      setHtmlContent(div.innerHTML);
-
+      const url = window.URL.createObjectURL(blob);
+      setPdfBlobUrl((prev) => {
+        if (prev) window.URL.revokeObjectURL(prev);
+        return url;
+      });
     } catch (err) {
-      console.error("XSLT Dönüşüm Hatası:", err);
-      setError(err.message || "Görsel oluşturulurken hata meydana geldi.");
+      console.error("PDF Önizleme Hatası:", err);
+      setError(err.message || "Önizleme yüklenemedi.");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (id) {
-      fetchAndRenderXml();
+    if (router.isReady && id) {
+      fetchPdfPreview();
     }
-  }, [id]);
+    return () => {
+      setPdfBlobUrl((prev) => {
+        if (prev) window.URL.revokeObjectURL(prev);
+        return null;
+      });
+    };
+  }, [router.isReady, id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSend = async () => {
     if (!id) return;
@@ -176,6 +129,35 @@ export default function EFaturaOnizleme() {
     }
   };
 
+  const handlePdfDownload = async () => {
+    if (!id) return;
+    setPdfDownloading(true);
+    setError("");
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`/api/efatura/draft-pdf?id=${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || "PDF indirilemedi");
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `E-Fatura-Onizleme-${id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.message || "PDF indirilemedi");
+    } finally {
+      setPdfDownloading(false);
+    }
+  };
+
   if (!id) {
     return (
       <div className="p-6">
@@ -188,11 +170,11 @@ export default function EFaturaOnizleme() {
     <div className="p-6 space-y-4 max-w-5xl mx-auto">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-orange-600">
-          🧾 Orijinal GİB e-Fatura Önizlemesi
+          🧾 E-Fatura Önizleme
         </h1>
         <button
           className="btn-gray"
-          onClick={() => router.push("/dashboard/efatura/taslaklar")}
+          onClick={() => router.push("/dashboard/efatura/taslak")}
         >
           ⬅ Taslaklara Dön
         </button>
@@ -217,18 +199,26 @@ export default function EFaturaOnizleme() {
           </button>
           <button
             type="button"
+            className="btn-primary bg-green-600 hover:bg-green-700 flex items-center gap-1"
+            onClick={handlePdfDownload}
+            disabled={loading || pdfDownloading}
+          >
+            {pdfDownloading ? "İndiriliyor…" : "📥 PDF İndir"}
+          </button>
+          <button
+            type="button"
             className="btn-gray flex items-center gap-1"
             onClick={handlePrint}
-            disabled={loading || !htmlContent}
+            disabled={loading || !pdfBlobUrl}
           >
-            🖨️ Yazdır / PDF Kaydet
+            🖨️ Yazdır
           </button>
         </div>
         <div className="flex gap-2">
           <button
             type="button"
             className="btn-primary bg-blue-600 hover:bg-blue-700"
-            onClick={() => handleMailToCustomer(false)}
+            onClick={() => handleMailToCustomer(true)}
             disabled={emailSending}
           >
             {emailSending ? "Gönderiliyor..." : "📧 Müşteriye E-posta"}
@@ -243,20 +233,20 @@ export default function EFaturaOnizleme() {
         </div>
       </div>
 
-      {/* Önizleme Alanı */}
+      {/* Önizleme Alanı – PDF */}
       <div className="bg-white p-1 rounded-xl shadow w-full" style={{ height: "800px" }}>
         {loading ? (
-          <div className="flex items-center justify-center h-full">Yükleniyor ve XSLT derleniyor...</div>
-        ) : htmlContent ? (
-          <iframe 
+          <div className="flex items-center justify-center h-full">PDF yükleniyor...</div>
+        ) : pdfBlobUrl ? (
+          <iframe
             ref={iframeRef}
-            srcDoc={htmlContent} 
-            title="E-Fatura Önizleme" 
+            src={pdfBlobUrl}
+            title="E-Fatura Önizleme"
             className="w-full h-full border-none"
           />
         ) : (
           <div className="flex items-center justify-center h-full text-slate-500">
-            Önizleme oluşturulamadı.
+            {error || "Önizleme oluşturulamadı."}
           </div>
         )}
       </div>

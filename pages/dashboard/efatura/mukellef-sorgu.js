@@ -1,11 +1,35 @@
-// 📄 /pages/dashboard/efatura/mukellef-sorgu.js – Mükellef (VKN/TCKN) Sorgulama
+// 📄 /pages/dashboard/efatura/mukellef-sorgu.js – Mükellef (VKN/TCKN) Sorgulama (Taxten/GİB)
 import { useState } from "react";
 
 export default function MukellefSorgu() {
   const [vknTckn, setVknTckn] = useState("");
   const [loading, setLoading] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
   const [sonuc, setSonuc] = useState(null);
   const [hata, setHata] = useState("");
+
+  const syncCache = async () => {
+    setSyncLoading(true);
+    setHata("");
+    try {
+      const res = await fetch("/api/efatura/sync-mukellef-cache", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: JSON.stringify({ daysBack: 90 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Senkronizasyon başarısız.");
+      setSonuc(null);
+      alert(`Başarılı: ${data.message}`);
+    } catch (err) {
+      setHata(err.message || "Senkronizasyon hatası.");
+    } finally {
+      setSyncLoading(false);
+    }
+  };
 
   const sorgula = async (e) => {
     e.preventDefault();
@@ -46,7 +70,7 @@ export default function MukellefSorgu() {
         🔍 Mükellef Sorgulama
       </h1>
       <p className="text-slate-600 text-center text-sm">
-        VKN veya TCKN girerek GİB üzerinden mükellef bilgisi sorgulayabilirsiniz.
+        VKN veya TCKN ile Taxten (GİB entegratörü) üzerinden E-Fatura, E-Arşiv ve E-İrsaliye mükelleflik bilgisi sorgulanır.
       </p>
 
       <form onSubmit={sorgula} className="bg-white p-6 rounded-xl shadow space-y-4">
@@ -61,13 +85,24 @@ export default function MukellefSorgu() {
             maxLength={11}
           />
         </div>
-        <button
-          type="submit"
-          disabled={loading}
-          className="btn-primary w-full py-2"
-        >
-          {loading ? "Sorgulanıyor..." : "Sorgula"}
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            disabled={loading}
+            className="btn-primary flex-1 py-2"
+          >
+            {loading ? "Sorgulanıyor..." : "Sorgula"}
+          </button>
+          <button
+            type="button"
+            onClick={syncCache}
+            disabled={syncLoading}
+            className="px-4 py-2 rounded-lg border border-orange-300 text-orange-600 hover:bg-orange-50 disabled:opacity-50 text-sm"
+            title="Taxten/GİB mükellef listesini güncelle (son 90 gün)"
+          >
+            {syncLoading ? "..." : "Liste Güncelle"}
+          </button>
+        </div>
       </form>
 
       {hata && (
@@ -77,8 +112,35 @@ export default function MukellefSorgu() {
       )}
 
       {sonuc && (
-        <div className="bg-white p-6 rounded-xl shadow space-y-2">
+        <div className="bg-white p-6 rounded-xl shadow space-y-4">
           <h2 className="font-bold text-slate-800">Sorgu Sonucu</h2>
+
+          {(sonuc.efatura !== undefined || sonuc.earsiv !== undefined || sonuc.eirsaliye !== undefined) && (
+            <div className="flex flex-wrap gap-2">
+              <span className="text-slate-500 text-xs font-medium">Mükelleflik:</span>
+              {sonuc.efatura && (
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium">
+                  E-Fatura
+                </span>
+              )}
+              {sonuc.earsiv && (
+                <span className="px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">
+                  E-Arşiv
+                </span>
+              )}
+              {sonuc.eirsaliye && (
+                <span className="px-2.5 py-0.5 rounded-full bg-violet-100 text-violet-700 text-xs font-medium">
+                  E-İrsaliye
+                </span>
+              )}
+              {!sonuc.efatura && !sonuc.earsiv && !sonuc.eirsaliye && (
+                <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs">
+                  Kayıt bulunamadı
+                </span>
+              )}
+            </div>
+          )}
+
           <dl className="grid grid-cols-1 gap-2 text-sm">
             {sonuc.unvan && (
               <>
@@ -111,7 +173,10 @@ export default function MukellefSorgu() {
               </>
             )}
           </dl>
-          {!sonuc.unvan && !sonuc.adres && Object.keys(sonuc).length <= 1 && (
+          {sonuc.message && (
+            <p className="text-amber-600 text-sm">{sonuc.message}</p>
+          )}
+          {!sonuc.unvan && !sonuc.adres && !sonuc.efatura && !sonuc.earsiv && !sonuc.eirsaliye && !sonuc.message && (
             <p className="text-slate-500 text-sm">Kayıt bulunamadı.</p>
           )}
         </div>

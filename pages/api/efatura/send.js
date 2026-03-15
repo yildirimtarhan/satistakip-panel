@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import { createUbl } from "@/lib/efatura/createUbl";
 import { createUblZip } from "@/lib/efatura/createUblZip";
+import { getKontorUsed } from "@/lib/efatura/kontorUsage";
 import axios from "axios";
 import dbConnect from "@/lib/dbConnect";
 import Transaction from "@/models/Transaction";
@@ -13,11 +14,11 @@ import { pushStockToMarketplaces } from "@/lib/pazaryeriStockSync";
 import Counter from "@/models/Counter";
 
 /**
- * Taxten API Hata Kodları ve Açıklamaları
+ * Taxten API Hata Kodları (E-Fatura REST API Kullanım Kılavuzu v1.0)
  */
 const TAXTEN_ERROR_CODES = {
   5: "Zip boyutu aşıldı (max 5MB)",
-  20: "Desteklenmeyen işlem. Zip içindeki fatura sayısını ve OutputType kontrol edin",
+  20: "Desteklenmeyen işlem",
   25: "Şema geçersiz (UBL-TR şema validasyonu hatası)",
   30: "VKN/TCKN e-Fatura mükellefine ait değil",
   35: "Data boyutu aşıldı",
@@ -26,7 +27,7 @@ const TAXTEN_ERROR_CODES = {
   46: "e-Arşiv faturanın göndericisi geçersiz",
   50: "Rapor veri alanları hatalı/eksik",
   56: "IssueDate raporlama periyodu dışında",
-  60: "Zarf database'de mevcut (UUID çakışması)",
+  60: "Zarf database'de mevcut",
   65: "Rapor database'de mevcut",
   70: "e-Arşiv fatura database'de mevcut",
   75: "e-Arşiv fatura ID'si üretilirken hata oluştu",
@@ -48,11 +49,25 @@ const TAXTEN_ERROR_CODES = {
   3012: "Fatura ID sistemde mevcut",
   3013: "Fatura ID otomatik üretiliyor, gönderilmemeli",
   3014: "Fatura ID otomatik üretiliyor, müşteri fatura numarası gönderilmeli",
+  3201: "Uygulama yanıtı UUID sistemde mevcut",
+  3210: "Uygulama yanıtı verilen fatura bulunamadı",
+  3211: "Uygulama yanıtı verilen faturanın zarfı bulunamadı",
+  3215: "Fatura alıcıya ait değil",
+  3216: "Fatura göndericiye ait değil",
+  3220: "Uygulama yanıtı verilen fatura ticari fatura değil",
+  3230: "Faturaya önceki gönderilen uygulama yanıtı sonuçlanmamış",
+  3240: "Fatura geliş tarihi 8 günü geçtiği için yanıt verilemez",
   3410: "UUID'ye ait fatura bulunmadı",
   3420: "CustInvID'ye ait fatura bulunmadı",
   3430: "Fatura gönderilen VKN ve etikete ait değil",
   3440: "Fatura görüntüsü doküman türü desteklenmiyor",
   3450: "Fatura görüntüsü oluşturulamadı",
+  3610: "UUID'ye ait belge bulunmadı",
+  3630: "UBL gönderilen VKN/TCKN ve etikete ait değil",
+  3910: "UUID'ye ait belge bulunamadı",
+  3920: "Belge gönderilen VKN/TCKN ve etikete ait değil",
+  3950: "UUID'ye ait zarf bulunamadı",
+  3960: "Zarf gönderilen VKN/TCKN ve etikete ait değil",
 };
 
 /**
@@ -157,6 +172,31 @@ export default async function handler(req, res) {
       });
     }
 
+    // Kontör kontrolü (sadece gerçek gönderimde – taslakta kontör düşmez)
+    // Giden + gelen tüm belgeler (E-Fatura, E-Arşiv, E-İrsaliye) kontör düşer
+    if (!isDraft) {
+      let limit = company.efaturaKontorLimit;
+      if (typeof limit !== "number" || limit < 0) {
+        const purchaseSum = await db
+          .collection("efatura_kontor_purchases")
+          .aggregate([{ $match: tenantFilter }, { $group: { _id: null, total: { $sum: "$amount" } } }])
+          .toArray();
+        limit = purchaseSum[0]?.total ?? null;
+      }
+      const hasLimit = typeof limit === "number" && limit >= 0;
+      if (hasLimit) {
+        const used = await getKontorUsed(db, tenantFilter);
+        const remaining = limit - used;
+        if (remaining <= 0) {
+          return res.status(402).json({
+            error: "E-Belge kontörünüz tükenmiştir. Fatura kesebilmek için limit güncellemesi yapın.",
+            used,
+            limit,
+          });
+        }
+      }
+    }
+
     // Fatura Numarası Oluştur - YILLIK SAYAÇ (KT-2025-000001)
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10);
@@ -210,6 +250,8 @@ export default async function handler(req, res) {
       email: company.eposta || company.email || "",
       website: company.web || company.website || "",
       country: company.ulke || company.country || "Türkiye",
+      logo: company.logo || "",
+      imza: company.imza || "",
     };
 
     let xml;
@@ -247,16 +289,18 @@ export default async function handler(req, res) {
     const endpoint = isEarsiv ? "/EArchiveInvoice/SendUbl" : "/Invoice/SendUbl";
     const apiUrl = `${baseUrl}${endpoint}`;
 
-    // Kimlik Doğrulama
-    const useClientId = company.efatura?.taxtenClientId && company.efatura?.taxtenApiKey;
+    // Kimlik Doğrulama (efatura altı veya top-level taxten bilgileri)
+    const clientId = company.efatura?.taxtenClientId || company.taxtenClientId;
+    const apiKey = company.efatura?.taxtenApiKey || company.taxtenApiKey;
+    const useClientId = clientId && apiKey;
     const headers = {
       "Content-Type": "application/json",
       "Accept": "application/json",
     };
 
     if (useClientId) {
-      headers["x-client-id"] = company.efatura.taxtenClientId;
-      headers["x-api-key"] = company.efatura.taxtenApiKey;
+      headers["x-client-id"] = clientId;
+      headers["x-api-key"] = apiKey;
     } else if (company.taxtenUsername && company.taxtenPassword) {
       headers.Authorization = `Basic ${Buffer.from(`${company.taxtenUsername}:${company.taxtenPassword}`).toString("base64")}`;
     } else {
@@ -317,11 +361,10 @@ export default async function handler(req, res) {
     }
 
     const responseData = taxtenResponse.data;
-    const finalInvoiceNumber = responseData.invoiceNumber || 
-                              responseData.InvoiceNumber || 
-                              responseData.id || 
-                              responseData.ID || 
-                              invoiceNumber;
+    // E-Arşiv: EnvelopeId, DocumentId, InvoiceUUID, InvoiceNumber | E-Fatura: EnvUUID, UUID, ID
+    const finalInvoiceNumber = responseData.invoiceNumber || responseData.InvoiceNumber || responseData.id || responseData.ID || responseData.Status || invoiceNumber;
+    const docUuid = responseData.uuid || responseData.UUID || responseData.InvoiceUUID || responseData.documentId || responseData.DocumentId || invoice.uuid;
+    const envUuidVal = responseData.envUuid || responseData.EnvUUID || responseData.envelopeId || responseData.EnvelopeId || null;
 
     // Gönderilen Faturayı Kaydet
     const sentDoc = {
@@ -329,8 +372,8 @@ export default async function handler(req, res) {
       invoiceNumber: finalInvoiceNumber,
       invoiceNo: finalInvoiceNumber,
       faturaNo: finalInvoiceNumber,
-      uuid: responseData.uuid || responseData.UUID || invoice.uuid,
-      envUuid: responseData.envUuid || responseData.EnvUUID || null,
+      uuid: docUuid,
+      envUuid: envUuidVal,
       taxtenResponse: responseData,
       sentAt: new Date(),
       status: isDraft ? "draft" : "sent",
@@ -349,7 +392,7 @@ export default async function handler(req, res) {
           invoiceNumber: finalInvoiceNumber,
           issueDate: dateStr,
           status: isDraft ? "draft" : "sent",
-          taxtenUuid: responseData.uuid || responseData.UUID,
+          taxtenUuid: docUuid,
           updatedAt: new Date() 
         } 
       }

@@ -1,8 +1,13 @@
-// GET /api/efatura/draft-pdf?id=... – Taslak fatura PDF indir
+// GET /api/efatura/draft-pdf?id=... – Taslak fatura PDF indir (PdfEngine merkezi kullanır)
 import { connectToDatabase } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 import jwt from "jsonwebtoken";
 import { buildDraftPdfBuffer } from "@/lib/pdf/efaturaDraftPdf";
+
+function isValidPdfBuffer(buf) {
+  if (!buf || !Buffer.isBuffer(buf) || buf.length < 100) return false;
+  return buf.toString("utf8", 0, 5) === "%PDF-";
+}
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
@@ -31,25 +36,32 @@ export default async function handler(req, res) {
     }
 
     const { db } = await connectToDatabase();
-    const draft = await db.collection("efatura_drafts").findOne({
-      _id: oid,
-      userId: String(decoded.userId),
-    });
-    if (!draft) return res.status(404).json({ message: "Taslak bulunamadı" });
-
     const userIdStr = String(decoded.userId || "");
     const companyIdStr = decoded.companyId ? String(decoded.companyId) : null;
+    const draftQuery = companyIdStr
+      ? { _id: oid, companyId: companyIdStr }
+      : { _id: oid, userId: userIdStr };
+    const draft = await db.collection("efatura_drafts").findOne(draftQuery);
+    if (!draft) return res.status(404).json({ message: "Taslak bulunamadı" });
+    const draftId = String(draft._id);
+
     const companyQuery = companyIdStr
       ? { $or: [{ companyId: companyIdStr }, { userId: userIdStr }] }
       : { userId: userIdStr };
     const company = await db.collection("company_settings").findOne(companyQuery) || null;
 
+    // PdfEngine merkezi ile tek sayfa A4 PDF (GİB formatına uygun)
     const buffer = await buildDraftPdfBuffer(draft, company);
+
+    if (!buffer || !isValidPdfBuffer(buffer)) {
+      return res.status(500).json({ message: "PDF oluşturulamadı" });
+    }
+
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Cache-Control", "no-store");
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="E-Fatura-Taslak-${id}.pdf"`
+      `attachment; filename="E-Fatura-Onizleme-${draftId}.pdf"`
     );
     return res.status(200).send(buffer);
   } catch (err) {

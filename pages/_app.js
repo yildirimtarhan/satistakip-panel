@@ -12,6 +12,7 @@ import { ToastProvider } from "@/hooks/useToast";
 export default function App({ Component, pageProps }) {
   const router = useRouter();
   const isDashboard = router.pathname.startsWith("/dashboard");
+  const isPdfRenderMode = router.query?.pdfMode === "1" || router.query?.pdfMode === "true";
 
   async function refreshTokenIfNeeded() {
     const token = Cookies.get("token");
@@ -55,7 +56,9 @@ export default function App({ Component, pageProps }) {
       <Head>
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover" />
       </Head>
-      {isDashboard ? (
+      {isPdfRenderMode ? (
+        <Component {...pageProps} />
+      ) : isDashboard ? (
         <RequireAuth cookieMode={true}>
           <CompanyProvider>
             <ToastProvider>

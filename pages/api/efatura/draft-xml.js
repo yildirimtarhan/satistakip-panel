@@ -73,6 +73,8 @@ export default async function handler(req, res) {
       email: company.eposta || company.email || "",
       website: company.web || company.website || "",
       country: company.ulke || company.country || "Türkiye",
+      logo: company.logo || "",
+      imza: company.imza || "",
     };
 
     const xmlText = createUbl(invoiceForUbl, companyForUbl);

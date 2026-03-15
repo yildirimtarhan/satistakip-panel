@@ -377,6 +377,7 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
 
         <SectionTitle>E-Belge</SectionTitle>
         <MenuItem onLinkClick={handleLinkClick} href="/dashboard/efatura" icon="📄" label="E-Fatura Paneli" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/irsaliye" icon="📋" label="E-İrsaliye" />
 
         {/* ================= ERP MODÜLLERİ ================= */}
         <SectionTitle>ERP Modülleri</SectionTitle>
@@ -454,6 +455,12 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
       href="/dashboard/admin/users"
       icon="🛡️"
       label="Kullanıcı Yönetimi"
+    />
+
+    <MenuItem
+      href="/dashboard/admin/kontor"
+      icon="🧾"
+      label="Kontör Yönetimi"
     />
 
     <MenuItem

@@ -3,9 +3,7 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 import jwt from "jsonwebtoken";
 import { sendMail } from "@/lib/mail/sendMail";
-import { createUbl } from "@/lib/efatura/createUbl";
-import { createUblZip } from "@/lib/efatura/createUblZip";
-import puppeteer from "puppeteer";
+import { buildDraftPdfBuffer } from "@/lib/pdf/efaturaDraftPdf";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -75,15 +73,16 @@ export default async function handler(req, res) {
 
     let attachments = [];
 
-    // PDF oluştur ve ekle
+    // PDF oluştur ve ekle (PdfEngine + efaturaDraft şablonu)
     if (attachPdf) {
       try {
-        const pdfBuffer = await generatePdfFromInvoice(doc, company, token);
-        if (pdfBuffer) {
+        const pdfBuffer = await buildDraftPdfBuffer(doc, company);
+        if (pdfBuffer && pdfBuffer.length > 100) {
+          const safeName = (faturaNo || "fatura").replace(/[^a-zA-Z0-9-_]/g, "_");
           attachments.push({
-            filename: `${faturaNo}.pdf`,
+            filename: `${safeName}.pdf`,
             content: pdfBuffer,
-            contentType: 'application/pdf'
+            contentType: "application/pdf",
           });
         }
       } catch (pdfErr) {
@@ -154,46 +153,5 @@ export default async function handler(req, res) {
     }
     console.error("E-Fatura müşteri mail hatası:", err);
     return res.status(500).json({ message: err.message || "E-posta gönderilemedi" });
-  }
-}
-
-// PDF oluşturma fonksiyonu
-async function generatePdfFromInvoice(doc, company, token) {
-  const browser = await puppeteer.launch({
-    headless: 'new',
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-  });
-  
-  try {
-    const page = await browser.newPage();
-    
-    // Önizleme sayfasına git
-    const previewUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/dashboard/efatura/onizleme?id=${doc._id}`;
-    
-    await page.setExtraHTTPHeaders({
-      'Authorization': `Bearer ${token}`
-    });
-    
-    await page.goto(previewUrl, { 
-      waitUntil: 'networkidle0',
-      timeout: 30000 
-    });
-    
-    // PDF oluştur
-    const pdfBuffer = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      margin: { 
-        top: '20px', 
-        right: '20px', 
-        bottom: '20px', 
-        left: '20px' 
-      }
-    });
-    
-    return pdfBuffer;
-    
-  } finally {
-    await browser.close();
   }
 }
