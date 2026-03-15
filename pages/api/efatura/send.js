@@ -5,13 +5,16 @@ import mongoose from "mongoose";
 import { createUbl } from "@/lib/efatura/createUbl";
 import { createUblZip } from "@/lib/efatura/createUblZip";
 import { getKontorUsed } from "@/lib/efatura/kontorUsage";
+import { invoiceSendUbl } from "@/lib/taxten/taxtenClient";
 import axios from "axios";
 import dbConnect from "@/lib/dbConnect";
 import Transaction from "@/models/Transaction";
 import Product from "@/models/Product";
 import Cari from "@/models/Cari";
+import StockLog from "@/models/StockLog";
 import { pushStockToMarketplaces } from "@/lib/pazaryeriStockSync";
 import Counter from "@/models/Counter";
+import { Types } from "mongoose";
 
 /**
  * Taxten API Hata Kodları (E-Fatura REST API Kullanım Kılavuzu v1.0)
@@ -132,22 +135,33 @@ export default async function handler(req, res) {
     const userId = String(decoded.userId || decoded._id || decoded.id || "");
     const companyId = decoded.companyId ? String(decoded.companyId) : null;
 
-    const { invoiceId, isDraft = false } = req.body;
-    if (!invoiceId) {
-      return res.status(400).json({ error: "invoiceId gerekli" });
+    const { invoiceId, sentId, isDraft = false, resend = false, resendEnvUuid = null } = req.body;
+    if (!invoiceId && !sentId) {
+      return res.status(400).json({ error: "invoiceId veya sentId gerekli" });
     }
 
     // Tenant Filter
     const tenantFilter = companyId ? { companyId } : { userId };
 
-    // Taslak Faturayı Getir
-    const invoice = await db.collection("efatura_drafts").findOne({
-      _id: new ObjectId(invoiceId),
-      ...tenantFilter
-    });
-    
-    if (!invoice) {
-      return res.status(404).json({ error: "Taslak fatura bulunamadı" });
+    let invoice;
+    let fromSentResend = false;
+    let resendEnvUuidUse = resendEnvUuid;
+
+    if (sentId) {
+      // Tekrar gönderim: gönderilen kayıttan (efatura_sent) – 2.1.8
+      invoice = await db.collection("efatura_sent").findOne({
+        _id: new ObjectId(sentId),
+        ...tenantFilter,
+      });
+      if (!invoice) return res.status(404).json({ error: "Gönderilen fatura bulunamadı" });
+      fromSentResend = true;
+      resendEnvUuidUse = invoice.envUuid || invoice.taxtenResponse?.EnvUUID || resendEnvUuid;
+    } else {
+      invoice = await db.collection("efatura_drafts").findOne({
+        _id: new ObjectId(invoiceId),
+        ...tenantFilter,
+      });
+      if (!invoice) return res.status(404).json({ error: "Taslak fatura bulunamadı" });
     }
 
     // Firma Ayarlarını Getir
@@ -197,44 +211,70 @@ export default async function handler(req, res) {
       }
     }
 
-    // Fatura Numarası Oluştur - YILLIK SAYAÇ (KT-2025-000001)
+    // Fatura Numarası ve CustInvID (Taxten: otomatik ID’de CustInvID zorunlu, max 64 karakter, aynı CustInvID = aynı fatura ID / tekrar gönderim)
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10);
-    let invoiceNumber = invoice.invoiceNumber ? String(invoice.invoiceNumber).trim() : "";
-    let custInvId = null;
-    
+    let invoiceNumber = invoice.invoiceNumber || invoice.faturaNo || invoice.invoiceNo
+      ? String(invoice.invoiceNumber || invoice.faturaNo || invoice.invoiceNo).trim() : "";
+    let custInvId = invoice.custInvId ? String(invoice.custInvId).slice(0, 64) : null;
+
     const prefix = company.efaturaFaturaNoPrefix || "KT";
     const useAutoId = company.efaturaAutoId === true;
-    
-    if (!invoiceNumber) {
+
+    if (fromSentResend) {
+      if (!invoiceNumber) invoiceNumber = "AUTO";
+    } else if (!invoiceNumber) {
+      await dbConnect();
+      const year = now.getFullYear();
+      const companyIdForCounter = companyId || userId;
+      const companyIdObj = mongoose.Types.ObjectId.isValid(companyIdForCounter)
+        ? new mongoose.Types.ObjectId(companyIdForCounter)
+        : companyIdForCounter;
+
       if (useAutoId) {
-        custInvId = `CUST-${Date.now()}-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
+        // Taxten otomatik fatura ID: CustInvID zorunlu, GB etiketi + VKN çifti için tekil, tekrar gönderimde aynı ID için aynı CustInvID kullanılır
+        if (!custInvId) {
+          const counter = await Counter.findOneAndUpdate(
+            { key: "efaturaNo", companyId: companyIdObj, year },
+            { $inc: { seq: 1 } },
+            { new: true, upsert: true }
+          );
+          custInvId = `${prefix}-${year}-${String(counter.seq).padStart(6, "0")}`.slice(0, 64);
+        }
         invoiceNumber = "AUTO";
       } else {
-        await dbConnect();
-        const year = now.getFullYear();
-        // YILLIK SAYAÇ - month kaldırıldı
-        const companyIdForCounter = companyId || userId;
-        const companyIdObj = mongoose.Types.ObjectId.isValid(companyIdForCounter)
-          ? new mongoose.Types.ObjectId(companyIdForCounter)
-          : companyIdForCounter;
-          
         const counter = await Counter.findOneAndUpdate(
-          { key: "efaturaNo", companyId: companyIdObj, year }, // month kaldırıldı
+          { key: "efaturaNo", companyId: companyIdObj, year },
           { $inc: { seq: 1 } },
           { new: true, upsert: true }
         );
-        
-        // Format: KT-2025-000001 (yıllık sıralı)
         invoiceNumber = `${prefix}-${year}-${String(counter.seq).padStart(6, "0")}`;
       }
     }
 
+    // E-Fatura mı E-Arşiv mi? (e-Fatura: SATIS/IADE | e-Arşiv: EARSIVFATURA – GİB kod listesi)
+    const rawInvType = String(invoice.invoiceType || "").trim().toUpperCase();
+    const isEarsiv = rawInvType === "EARSIV" || rawInvType === "EARSIVFATURA" || rawInvType.includes("EARSIV");
+    const invoiceTypeForUbl = isEarsiv
+      ? "EARSIVFATURA"
+      : (invoice.invoiceType === "IADE" ? "IADE" : "SATIS");
+
+    // Geçerli UUID (e-Fatura şematron 8-4-4-4-12 formatı ister). Tekrar gönderimde (2.1.8) zarf/fatura UUID yeniden oluşturulmalı.
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const doResend = resend || fromSentResend;
+    const validUuid = doResend
+      ? require("crypto").randomUUID()
+      : (invoice.uuid && uuidRegex.test(String(invoice.uuid).trim())
+          ? String(invoice.uuid).trim().toLowerCase()
+          : require("crypto").randomUUID());
+
     // UBL XML Oluştur
     const invoiceForUbl = {
       ...invoice,
+      uuid: validUuid,
       invoiceNumber,
       issueDate: invoice.issueDate || dateStr,
+      invoiceType: invoiceTypeForUbl,
       custInvId,
     };
 
@@ -246,6 +286,8 @@ export default async function handler(req, res) {
       buildingNumber: company.binaNo || company.buildingNumber || "",
       city: company.sehir || company.city || "",
       district: company.ilce || company.district || "",
+      postalZone: company.postaKodu || company.postalZone || "",
+      region: company.bolge || company.region || "",
       phone: company.telefon || company.phone || "",
       email: company.eposta || company.email || "",
       website: company.web || company.website || "",
@@ -268,7 +310,7 @@ export default async function handler(req, res) {
     // ZIP Oluştur
     let zipBuffer;
     try {
-      zipBuffer = createUblZip(xml, invoice.uuid);
+      zipBuffer = createUblZip(xml, invoiceForUbl.uuid);
     } catch (zipErr) {
       console.error("ZIP oluşturma hatası:", zipErr);
       return res.status(500).json({
@@ -279,37 +321,8 @@ export default async function handler(req, res) {
     
     const zipBase64 = zipBuffer.toString("base64");
 
-    // Taxten API Ayarları
+    // Taxten API: E-Fatura = /Invoice/SendUbl (PascalCase), E-Arşiv = /EArchiveInvoice/SendUbl
     const isTestMode = company.taxtenTestMode !== false;
-    const baseUrl = isTestMode
-      ? "https://devrest.taxten.com/api/v1"
-      : "https://rest.taxten.com/api/v1";
-
-    const isEarsiv = (invoice.invoiceType || "").toUpperCase().includes("EARSIV");
-    const endpoint = isEarsiv ? "/EArchiveInvoice/SendUbl" : "/Invoice/SendUbl";
-    const apiUrl = `${baseUrl}${endpoint}`;
-
-    // Kimlik Doğrulama (efatura altı veya top-level taxten bilgileri)
-    const clientId = company.efatura?.taxtenClientId || company.taxtenClientId;
-    const apiKey = company.efatura?.taxtenApiKey || company.taxtenApiKey;
-    const useClientId = clientId && apiKey;
-    const headers = {
-      "Content-Type": "application/json",
-      "Accept": "application/json",
-    };
-
-    if (useClientId) {
-      headers["x-client-id"] = clientId;
-      headers["x-api-key"] = apiKey;
-    } else if (company.taxtenUsername && company.taxtenPassword) {
-      headers.Authorization = `Basic ${Buffer.from(`${company.taxtenUsername}:${company.taxtenPassword}`).toString("base64")}`;
-    } else {
-      return res.status(400).json({
-        error: "Taxten API bilgisi eksik. ClientId+ApiKey veya Username+Password girilmeli.",
-      });
-    }
-
-    // Taxten API İsteği
     const senderVkn = company.vergiNo || company.vkn || "";
     const receiverVkn = invoice.customer?.vknTckn || invoice.customer?.vkn || invoice.customer?.identifier || "";
 
@@ -319,52 +332,103 @@ export default async function handler(req, res) {
       });
     }
 
-    const payload = {
-      vkN_TCKN: senderVkn,
-      senderIdentifier: company.senderIdentifier || `urn:mail:${company.taxtenUsername || senderVkn}`,
-      receiverIdentifier: `urn:mail:${receiverVkn}`,
-      docType: "INVOICE",
-      docData: zipBase64,
-    };
+    // Taxten kimlik kontrolü
+    const clientId = (company.efatura?.taxtenClientId || company.taxtenClientId || "").toString().trim();
+    const apiKey = (company.efatura?.taxtenApiKey || company.taxtenApiKey || "").toString().trim();
+    const taxtenUser = (company.taxtenUsername || "").toString().trim();
+    const taxtenPass = (company.taxtenPassword || "").toString().trim();
+    if (!(clientId && apiKey) && !(taxtenUser && taxtenPass)) {
+      return res.status(400).json({
+        error: "Taxten API bilgisi eksik. ClientId+ApiKey veya Kullanıcı adı+Şifre girilmeli.",
+      });
+    }
+
+    let taxtenResponse;
 
     if (isEarsiv) {
-      payload.Branch = company.taxtenBranch || company.branch || "default";
-      payload.OutputType = company.taxtenOutputType || "PDF";
-    }
-
-    if (isDraft) {
-      payload.parameters = ["IS_DRAFT"];
-    }
-
-    // Taxten API Çağrısı
-    let taxtenResponse;
-    try {
-      taxtenResponse = await axios.post(apiUrl, payload, { 
-        headers,
-        timeout: 300000,
-        maxBodyLength: 10 * 1024 * 1024,
-        maxContentLength: 10 * 1024 * 1024,
-      });
-    } catch (apiErr) {
+      // E-Arşiv: EArchiveInvoice/SendUbl (mevcut axios çağrısı)
+      const baseUrl = isTestMode ? "https://devrest.taxten.com/api/v1" : "https://rest.taxten.com/api/v1";
+      const apiUrl = `${baseUrl}/EArchiveInvoice/SendUbl`;
+      const headers = {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      };
+      if (clientId && apiKey) {
+        headers["x-client-id"] = clientId;
+        headers["x-api-key"] = apiKey;
+      } else {
+        headers.Authorization = `Basic ${Buffer.from(`${taxtenUser}:${taxtenPass}`).toString("base64")}`;
+      }
+      const payload = {
+        VKN_TCKN: senderVkn,
+        DocType: "INVOICE",
+        DocData: zipBase64,
+        Branch: company.taxtenBranch || company.branch || "default",
+        OutputType: company.taxtenOutputType || "PDF",
+      };
+      if (isDraft) payload.Parameters = ["IS_DRAFT"];
+      try {
+        taxtenResponse = await axios.post(apiUrl, payload, {
+          headers,
+          timeout: 300000,
+          maxBodyLength: 10 * 1024 * 1024,
+          maxContentLength: 10 * 1024 * 1024,
+        });
+      } catch (apiErr) {
+        const parsedError = parseTaxtenError(apiErr);
+        const status = apiErr.response?.status || 502;
+        let suggestion = "Lütfen daha sonra tekrar deneyin";
+        if (status === 401 || parsedError.code === 401) suggestion = "Firma Ayarları → Taxten: Test modu açıksa Taxten TEST hesap bilgileri, kapalıysa CANLI hesap bilgileri girin.";
+        else if (parsedError.code === 37) suggestion = "XSLT şablonu eksik";
+        else if (parsedError.code === 25) suggestion = "UBL şema hatası";
+        return res.status(status).json({ error: "Taxten API hatası", message: parsedError.message, code: parsedError.code, suggestion });
+      }
+    } else {
+      // E-Fatura: /Invoice/SendUbl – dokümana uygun PascalCase, zarfsız tek fatura (DocType: INVOICE)
+      const senderIdentifier = company.senderIdentifier || `urn:mail:${company.taxtenUsername || senderVkn}`;
+      const receiverIdentifier = `urn:mail:${receiverVkn}`;
+      const parameters = [];
+      if (isDraft) parameters.push("IS_DRAFT");
+      if (doResend && resendEnvUuidUse && String(resendEnvUuidUse).trim()) parameters.push(`RESEND:${String(resendEnvUuidUse).trim()}`);
+      try {
+        taxtenResponse = { data: await invoiceSendUbl({
+          company,
+          isTest: isTestMode,
+          VKN_TCKN: senderVkn,
+          SenderIdentifier: senderIdentifier,
+          ReceiverIdentifier: receiverIdentifier,
+          DocType: "INVOICE",
+          DocData: zipBase64,
+          Parameters: parameters.length ? parameters : undefined,
+        }) };
+      } catch (apiErr) {
       console.error("Taxten API hatası:", apiErr.response?.data || apiErr.message);
       const parsedError = parseTaxtenError(apiErr);
-      
-      return res.status(apiErr.response?.status || 502).json({
+      const status = apiErr.response?.status || 502;
+
+      let suggestion = "Lütfen daha sonra tekrar deneyin";
+      if (status === 401 || parsedError.code === 401) {
+        suggestion = "Firma Ayarları → Taxten: Test modu açıksa Taxten TEST hesap bilgileri, kapalıysa CANLI hesap bilgileri girin. Kullanıcı adı/şifre veya Client ID+API Key doğru ve başında/sonunda boşluk olmamalı.";
+      } else if (parsedError.code === 37) suggestion = "XSLT şablonu eksik";
+      else if (parsedError.code === 25) suggestion = "UBL şema hatası";
+      else if (parsedError.code === 1100) suggestion = "GİB kaydı bulunamadı";
+
+      return res.status(status).json({
         error: "Taxten API hatası",
         message: parsedError.message,
         code: parsedError.code,
-        suggestion: parsedError.code === 37 ? "XSLT şablonu eksik" :
-                   parsedError.code === 25 ? "UBL şema hatası" :
-                   parsedError.code === 1100 ? "GİB kaydı bulunamadı" :
-                   "Lütfen daha sonra tekrar deneyin",
+        suggestion,
       });
+      }
     }
 
-    const responseData = taxtenResponse.data;
-    // E-Arşiv: EnvelopeId, DocumentId, InvoiceUUID, InvoiceNumber | E-Fatura: EnvUUID, UUID, ID
-    const finalInvoiceNumber = responseData.invoiceNumber || responseData.InvoiceNumber || responseData.id || responseData.ID || responseData.Status || invoiceNumber;
-    const docUuid = responseData.uuid || responseData.UUID || responseData.InvoiceUUID || responseData.documentId || responseData.DocumentId || invoice.uuid;
-    const envUuidVal = responseData.envUuid || responseData.EnvUUID || responseData.envelopeId || responseData.EnvelopeId || null;
+    // Taxten cevabı tek nesne veya dizi olabilir (zarflı çoklu fatura)
+    const rawData = taxtenResponse.data;
+    const responseData = Array.isArray(rawData) && rawData.length > 0 ? rawData[0] : rawData;
+    // E-Arşiv: EnvelopeId, DocumentId, InvoiceUUID, InvoiceNumber | E-Fatura: EnvUUID, UUID, ID (PascalCase)
+    const finalInvoiceNumber = responseData?.invoiceNumber || responseData?.InvoiceNumber || responseData?.id || responseData?.ID || responseData?.CustInvID || responseData?.Status || invoiceNumber;
+    const docUuid = responseData?.uuid || responseData?.UUID || responseData?.InvoiceUUID || responseData?.documentId || responseData?.DocumentId || invoice.uuid;
+    const envUuidVal = responseData?.envUuid || responseData?.EnvUUID || responseData?.envelopeId || responseData?.EnvelopeId || null;
 
     // Gönderilen Faturayı Kaydet
     const sentDoc = {
@@ -384,22 +448,24 @@ export default async function handler(req, res) {
 
     await db.collection("efatura_sent").insertOne(sentDoc);
 
-    // Taslağı Güncelle
-    await db.collection("efatura_drafts").updateOne(
-      { _id: new ObjectId(invoiceId), ...tenantFilter },
-      { 
-        $set: { 
-          invoiceNumber: finalInvoiceNumber,
-          issueDate: dateStr,
-          status: isDraft ? "draft" : "sent",
-          taxtenUuid: docUuid,
-          updatedAt: new Date() 
-        } 
-      }
-    );
+    // Taslağı Güncelle (otomatik ID’de CustInvID saklanır; tekrar gönderimde aynı fatura ID alınır)
+    if (!fromSentResend && invoiceId) {
+      const draftUpdate = {
+        invoiceNumber: finalInvoiceNumber,
+        issueDate: dateStr,
+        status: isDraft ? "draft" : "sent",
+        taxtenUuid: docUuid,
+        updatedAt: new Date(),
+      };
+      if (custInvId) draftUpdate.custInvId = custInvId;
+      await db.collection("efatura_drafts").updateOne(
+        { _id: new ObjectId(invoiceId), ...tenantFilter },
+        { $set: draftUpdate }
+      );
+    }
 
-    // ERP İşlemleri
-    if (!isDraft) {
+    // ERP İşlemleri (yalnızca ilk gönderimde; tekrar gönderimde atlanır)
+    if (!isDraft && !fromSentResend) {
       await processErpTransactions(invoice, finalInvoiceNumber, userId, companyId);
     }
 
@@ -422,80 +488,165 @@ export default async function handler(req, res) {
   }
 }
 
+/**
+ * Fatura kesildiğinde: Cari hareket, stok düşümü, cari bakiye güncellemesi.
+ * Multi-tenant uyumlu (companyId ile filtre).
+ */
 async function processErpTransactions(invoice, invoiceNumber, userId, companyId) {
   try {
     await dbConnect();
-    
+
     const isSale = (invoice.invoiceType || "").toUpperCase() !== "IADE";
     const accountId = invoice.accountId;
     const items = Array.isArray(invoice.items) ? invoice.items : [];
     const hasProductIds = items.some((it) => it.productId);
-    
+
     if (!isSale || !accountId || !hasProductIds) return;
 
-    const existingTx = await Transaction.findOne({
+    // Multi-tenant: mevcut işlem kontrolü
+    const txMatch = {
       type: "sale",
       saleNo: invoiceNumber,
-      userId,
       isDeleted: { $ne: true },
-    }).lean();
-    
+    };
+    if (companyId) txMatch.$or = [{ companyId: String(companyId) }, { companyId: new Types.ObjectId(companyId) }];
+    else txMatch.userId = userId;
+    const existingTx = await Transaction.findOne(txMatch).lean();
     if (existingTx) return;
 
-    const cari = await Cari.findById(accountId).lean();
-    const accountName = cari ? (cari.ad || cari.unvan || cari.firmaAdi || invoice.customer?.title || "") : (invoice.customer?.title || "");
+    // Cari – multi-tenant: companyId veya userId ile eşleşmeli
+    const cariQuery = { _id: Types.ObjectId.isValid(accountId) ? new Types.ObjectId(accountId) : accountId };
+    if (companyId) {
+      const uid = Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : userId;
+      cariQuery.$or = [
+        { companyId: new Types.ObjectId(companyId) },
+        { companyId: String(companyId) },
+        { userId: uid },
+        { companyId: { $exists: false } },
+      ];
+    } else {
+      cariQuery.userId = Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : userId;
+    }
+    const cari = await Cari.findOne(cariQuery).lean();
+    if (!cari) return;
+    const accountName = cari.ad || cari.unvan || cari.firmaAdi || invoice.customer?.title || "";
     const totalTRY = Number(invoice.totals?.total ?? 0);
 
-    const normalizedItems = items.map((i) => {
-      const qty = Number(i.quantity ?? i.miktar ?? 0);
-      const price = Number(i.price ?? i.birimFiyat ?? 0);
-      const vatRate = Number(i.kdvOran ?? 20);
-      const iskontoOrani = Number(i.iskonto ?? i.iskontoOrani ?? 0);
-      
-      let net = qty * price;
-      if (iskontoOrani > 0) net -= (net * iskontoOrani) / 100;
-      const lineTotal = net * (1 + vatRate / 100);
-      
-      return {
-        productId: i.productId ? (mongoose.Types.ObjectId.isValid(i.productId) ? new mongoose.Types.ObjectId(i.productId) : null) : null,
-        name: i.name ?? i.urunAd ?? "",
-        quantity: qty,
-        unitPrice: price,
-        vatRate,
-        total: lineTotal,
-        ...(iskontoOrani > 0 && { iskontoOrani }),
-      };
-    }).filter((i) => i.productId);
+    const normalizedItems = items
+      .map((i) => {
+        const qty = Number(i.quantity ?? i.miktar ?? 0);
+        const price = Number(i.price ?? i.birimFiyat ?? 0);
+        const vatRate = Number(i.kdvOran ?? 20);
+        const iskontoOrani = Number(i.iskonto ?? i.iskontoOrani ?? 0);
+        let net = qty * price;
+        if (iskontoOrani > 0) net -= (net * iskontoOrani) / 100;
+        const lineTotal = net * (1 + vatRate / 100);
+        const pid = i.productId && Types.ObjectId.isValid(i.productId) ? new Types.ObjectId(i.productId) : null;
+        if (!pid) return null;
+        return {
+          productId: pid,
+          name: i.name ?? i.urunAd ?? "",
+          quantity: qty,
+          unitPrice: price,
+          vatRate,
+          total: lineTotal,
+        };
+      })
+      .filter(Boolean);
 
-    await Transaction.create({
-      userId,
-      companyId: companyId || "",
-      createdBy: userId,
-      type: "sale",
-      saleNo: invoiceNumber,
-      accountId: mongoose.Types.ObjectId.isValid(accountId) ? new mongoose.Types.ObjectId(accountId) : accountId,
-      accountName,
-      date: new Date(),
-      paymentMethod: "open",
-      note: `E-Fatura satışı (${invoiceNumber})`,
-      currency: "TRY",
-      fxRate: 1,
-      items: normalizedItems,
-      totalTRY,
-      direction: "borc",
-      amount: totalTRY,
-    });
-
-    const affectedIds = [];
-    for (const it of items) {
-      if (it.productId && mongoose.Types.ObjectId.isValid(it.productId)) {
-        const qty = Number(it.quantity ?? it.miktar ?? 0);
-        if (qty > 0) {
-          await Product.findByIdAndUpdate(it.productId, { $inc: { stock: -qty } });
-          affectedIds.push(it.productId);
+    const companyIdObj = companyId ? (Types.ObjectId.isValid(companyId) ? new Types.ObjectId(companyId) : companyId) : null;
+    const accountIdObj = Types.ObjectId.isValid(accountId) ? new Types.ObjectId(accountId) : accountId;
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+      // 1) Stok düşümü – multi-tenant (companyId/userId) + yetersiz stok kontrolü
+      for (const it of normalizedItems) {
+        const prodFilter = { _id: it.productId, stock: { $gte: it.quantity } };
+        if (companyId) {
+          prodFilter.$or = [
+            { companyId: new Types.ObjectId(companyId) },
+            { companyId: String(companyId) },
+          ];
+        } else {
+          prodFilter.userId = userId;
         }
+        const updated = await Product.findOneAndUpdate(prodFilter, { $inc: { stock: -it.quantity } }, { new: true, session });
+        if (!updated) throw new Error(`Yetersiz stok veya ürün bulunamadı: ${it.name || it.productId}`);
       }
+
+      // 2) Cari hareket (Transaction)
+      await Transaction.create(
+        [
+          {
+            userId,
+            companyId: companyId || "",
+            createdBy: userId,
+            type: "sale",
+            saleNo: invoiceNumber,
+            accountId: accountIdObj,
+            accountName,
+            date: new Date(),
+            paymentMethod: "open",
+            note: `E-Fatura satışı (${invoiceNumber})`,
+            currency: "TRY",
+            fxRate: 1,
+            items: normalizedItems,
+            totalTRY,
+            direction: "borc",
+            amount: totalTRY,
+          },
+        ],
+        { session }
+      );
+
+      // 3) Cari bakiye güncellemesi (satış = borç = bakiye artar)
+      const cariUpdateFilter = { _id: accountIdObj };
+      if (companyId) {
+        cariUpdateFilter.$or = [
+          { companyId: companyIdObj },
+          { companyId: String(companyId) },
+          { companyId: { $exists: false } },
+        ];
+      } else {
+        cariUpdateFilter.userId = userId;
+      }
+      await Cari.updateOne(
+        cariUpdateFilter,
+        { $inc: { bakiye: totalTRY, totalSales: totalTRY }, $set: { updatedAt: new Date() } },
+        { session }
+      );
+
+      // 4) Stok log (opsiyonel – takip için)
+      for (const it of normalizedItems) {
+        await StockLog.create(
+          [
+            {
+              productId: it.productId,
+              accountId: accountIdObj,
+              type: "sale",
+              quantity: it.quantity,
+              unitPrice: it.unitPrice,
+              total: it.total,
+              currency: "TRY",
+              fxRate: 1,
+              totalTRY: it.total,
+              createdAt: new Date(),
+            },
+          ],
+          { session }
+        );
+      }
+
+      await session.commitTransaction();
+    } catch (txErr) {
+      await session.abortTransaction();
+      throw txErr;
+    } finally {
+      session.endSession();
     }
+
+    // Pazaryeri stok senkronizasyonu (transaction dışında)
+    const affectedIds = normalizedItems.map((i) => i.productId).filter(Boolean);
     if (affectedIds.length && companyId) {
       pushStockToMarketplaces(affectedIds, { companyId: String(companyId), userId: String(userId) });
     }

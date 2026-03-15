@@ -315,7 +315,7 @@ export default async function handler(req, res) {
     // ---------------- PTT AVM ----------------
     if (sendTo.pttavm) {
       try {
-        const result = await pttAvmCreateProduct(newProduct);
+        const result = await pttAvmCreateProduct(newProduct, req);
         marketplaceResults.pttavm = {
           status: result.success ? "Success" : "Error",
           productId: result.productId || null,

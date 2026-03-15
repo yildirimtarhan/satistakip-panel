@@ -69,6 +69,8 @@ export default async function handler(req, res) {
       buildingNumber: company.binaNo || company.buildingNumber || "",
       city: company.sehir || company.city || "Şehir",
       district: company.ilce || company.district || "İlçe",
+      postalZone: company.postaKodu || company.postalZone || "",
+      region: company.bolge || company.region || "",
       phone: company.telefon || company.phone || "",
       email: company.eposta || company.email || "",
       website: company.web || company.website || "",

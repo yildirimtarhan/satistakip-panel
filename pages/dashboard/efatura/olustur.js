@@ -19,11 +19,15 @@ export default function EFaturaOlustur() {
   const [siparisNo, setSiparisNo] = useState("");
   const [platform, setPlatform] = useState("");
   const [odemeYontemi, setOdemeYontemi] = useState("");
+  const [custInvId, setCustInvId] = useState("");
   const [company, setCompany] = useState(null);
   const [senaryo, setSenaryo] = useState("TICARI");
+  const [belgeTuru, setBelgeTuru] = useState("EARSIV"); // E-Fatura | E-Arşiv Fatura
   const [faturaTuru, setFaturaTuru] = useState("SATIS");
   const [paraBirimi, setParaBirimi] = useState("TRY");
   const [onizlemeOpen, setOnizlemeOpen] = useState(false);
+  const [mukellefSonuc, setMukellefSonuc] = useState(null);
+  const [mukellefLoading, setMukellefLoading] = useState(false);
 
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
@@ -42,6 +46,37 @@ export default function EFaturaOlustur() {
       .then(setCompany)
       .catch(() => setCompany(null));
   }, [token]);
+
+  const selectedCariObj = cariler.find((c) => String(c._id) === String(selectedCari));
+  const vergiNo = (selectedCariObj?.vergiNo || "").replace(/\D/g, "");
+
+  // Cari seçildiğinde mükellef (e-fatura / e-arşiv) sorgula
+  useEffect(() => {
+    if (!token || !selectedCariObj || vergiNo.length !== 10 && vergiNo.length !== 11) {
+      setMukellefSonuc(null);
+      return;
+    }
+    setMukellefSonuc(null);
+    setMukellefLoading(true);
+    fetch("/api/efatura/mukellef-sorgu", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ vknTckn: vergiNo }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.efatura !== undefined || data.earsiv !== undefined || data.eirsaliye !== undefined || data.message) {
+          setMukellefSonuc(data);
+        } else {
+          setMukellefSonuc(null);
+        }
+      })
+      .catch(() => setMukellefSonuc(null))
+      .finally(() => setMukellefLoading(false));
+  }, [token, selectedCari, vergiNo]);
 
   useEffect(() => {
     if (!draftId || !token || cariler.length === 0 || urunler.length === 0) {
@@ -64,13 +99,16 @@ export default function EFaturaOlustur() {
           if (cari) setSelectedCari(String(cari._id));
         }
         setSenaryo(draft.scenario === "TEMEL" ? "TEMEL" : "TICARI");
-        setFaturaTuru((draft.invoiceType || draft.tip) === "IADE" ? "IADE" : "SATIS");
+        const invType = (draft.invoiceType || draft.tip || "").toUpperCase();
+        setBelgeTuru(invType.includes("EARSIV") ? "EARSIV" : "EFATURA");
+        setFaturaTuru(invType === "IADE" ? "IADE" : "SATIS");
         setParaBirimi(draft.paraBirimi || "TRY");
         setNotlar(draft.notlar ?? draft.notes ?? draft.not ?? "");
         setAciklama(draft.aciklama ?? "");
         setVadeTarihi(draft.vadeTarihi ? new Date(draft.vadeTarihi).toISOString().slice(0, 10) : "");
         setSiparisNo(draft.siparisNo ?? draft.orderNumber ?? "");
         setPlatform(draft.platform ?? "");
+        setCustInvId(draft.custInvId ?? "");
         const rows = (draft.items || []).map((k) => {
           const urun = urunler.find(
             (u) =>
@@ -133,8 +171,6 @@ export default function EFaturaOlustur() {
   );
   const tutarYaziliMetin = tutarYazili(genelToplam);
 
-  const selectedCariObj = cariler.find((c) => String(c._id) === String(selectedCari));
-
   const faturaOlustur = async () => {
     if (!selectedCari || !selectedCariObj) return alert("Cari seçin");
     if (items.length === 0) return alert("En az 1 ürün ekleyin");
@@ -148,6 +184,10 @@ export default function EFaturaOlustur() {
         identifier: selectedCariObj.vergiNo || "",
         vergiDairesi: selectedCariObj.vergiDairesi || "",
         adres: selectedCariObj.adres || "",
+        street: selectedCariObj.adres || "",
+        city: selectedCariObj.sehir || selectedCariObj.il || "",
+        district: selectedCariObj.ilce || "",
+        postaKodu: selectedCariObj.postaKodu || "",
       };
       const draftItems = items.map((row) => {
         const urun = urunler.find((u) => String(u._id) === String(row.urunId));
@@ -177,7 +217,7 @@ export default function EFaturaOlustur() {
         notes: [aciklama, notlar].filter(Boolean).join("\n\n"),
         aciklama: aciklama || undefined,
         notlar: notlar || undefined,
-        invoiceType: faturaTuru === "IADE" ? "IADE" : "EARSIV",
+        invoiceType: belgeTuru === "EARSIV" ? "EARSIV" : (faturaTuru === "IADE" ? "IADE" : "SATIS"),
         scenario: senaryo,
         paraBirimi: paraBirimi || "TRY",
         totals: { subtotal: araToplamIskontolu, total: genelToplam },
@@ -185,6 +225,7 @@ export default function EFaturaOlustur() {
         siparisNo: siparisNo?.trim() || undefined,
         platform: platform?.trim() || undefined,
         odemeYontemi: odemeYontemi?.trim() || undefined,
+        ...(custInvId?.trim() && { custInvId: custInvId.trim().slice(0, 64) }),
       };
       const url = draftId
         ? `/api/efatura/drafts?id=${draftId}`
@@ -270,6 +311,43 @@ export default function EFaturaOlustur() {
         {selectedCariObj && (selectedCariObj.email || selectedCariObj.eposta) && (
           <p className="text-xs text-green-600 mt-1">Müşteri e-posta: {selectedCariObj.email || selectedCariObj.eposta}</p>
         )}
+        {/* Mükellef (E-Fatura / E-Arşiv) bilgisi */}
+        {selectedCariObj && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {mukellefLoading && (
+              <span className="text-xs text-slate-500">Mükellef sorgulanıyor...</span>
+            )}
+            {!mukellefLoading && mukellefSonuc && (
+              <>
+                <span className="text-slate-500 text-xs font-medium">Mükelleflik:</span>
+                {mukellefSonuc.efatura && (
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium">
+                    E-Fatura
+                  </span>
+                )}
+                {mukellefSonuc.earsiv && (
+                  <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">
+                    E-Arşiv
+                  </span>
+                )}
+                {mukellefSonuc.eirsaliye && (
+                  <span className="px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 text-xs font-medium">
+                    E-İrsaliye
+                  </span>
+                )}
+                {!mukellefSonuc.efatura && !mukellefSonuc.earsiv && !mukellefSonuc.eirsaliye && mukellefSonuc.message && (
+                  <span className="text-amber-600 text-xs">{mukellefSonuc.message}</span>
+                )}
+              </>
+            )}
+            {!mukellefLoading && selectedCariObj?.vergiNo && vergiNo.length !== 10 && vergiNo.length !== 11 && (
+              <span className="text-amber-600 text-xs">VKN/TCKN 10 veya 11 haneli olmalı (mükellef sorgulanamadı)</span>
+            )}
+            <Link href="/dashboard/efatura/mukellef-sorgu" className="text-xs text-orange-600 hover:underline ml-1">
+              Mükellef Sorgula →
+            </Link>
+          </div>
+        )}
       </div>
 
       {/* Fatura numarası bilgisi */}
@@ -277,8 +355,22 @@ export default function EFaturaOlustur() {
         <strong>Fatura numarası:</strong> Taslağı gönderdiğinizde otomatik atanır (format: <code className="bg-white px-1 rounded">FT2026-00001</code>). Her yıl 1’den başlayan sıralı numara kullanılır.
       </div>
 
-      {/* Fatura senaryosu, türü ve para birimi */}
-      <div className="bg-white p-4 rounded-xl shadow grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Belge türü (E-Fatura / E-Arşiv), senaryo, fatura türü ve para birimi */}
+      <div className="bg-white p-4 rounded-xl shadow grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div>
+          <label className="font-semibold">Belge türü</label>
+          <select
+            className="input mt-1 w-full"
+            value={belgeTuru}
+            onChange={(e) => setBelgeTuru(e.target.value)}
+          >
+            <option value="EFATURA">E-Fatura (GİB mükelleflerine)</option>
+            <option value="EARSIV">E-Arşiv Fatura (diğer alıcılara)</option>
+          </select>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {belgeTuru === "EFATURA" ? "E-Fatura mükellefi alıcıya gider." : "E-Arşiv tüm alıcılara kesilebilir."}
+          </p>
+        </div>
         <div>
           <label className="font-semibold">Fatura senaryosu</label>
           <select
@@ -291,7 +383,7 @@ export default function EFaturaOlustur() {
           </select>
         </div>
         <div>
-          <label className="font-semibold">Fatura türü</label>
+          <label className="font-semibold">Fatura tipi</label>
           <select
             className="input mt-1 w-full"
             value={faturaTuru}
@@ -373,6 +465,18 @@ export default function EFaturaOlustur() {
               <option value="Banka">Banka</option>
               <option value="Platform Öder">Platform Öder</option>
             </select>
+          </div>
+          <div>
+            <label className="font-semibold">Müşteri Fatura No (CustInvID)</label>
+            <input
+              type="text"
+              className="input mt-1 w-full"
+              placeholder="Taxten otomatik ID kullanıyorsanız zorunlu (max 64 karakter)"
+              value={custInvId}
+              onChange={(e) => setCustInvId(e.target.value.slice(0, 64))}
+              maxLength={64}
+            />
+            <p className="text-xs text-gray-500 mt-1">Fatura ID’si Taxten’de otomatik üretiliyorsa bu alan gönderimde kullanılır; tekrar gönderimde aynı değer aynı fatura ID’yi alır.</p>
           </div>
         </div>
         <div>
@@ -626,10 +730,11 @@ export default function EFaturaOlustur() {
                   <div className="border border-blue-300">
                     <div className="bg-blue-600 text-white font-bold p-1 text-xs uppercase tracking-wider text-center">Fatura Bilgileri</div>
                     <div className="p-2 space-y-1 text-[11px]">
-                      <div className="flex justify-between"><span className="font-semibold">Özelleştirme No:</span><span>TR1.2</span></div>
+                      <div className="flex justify-between"><span className="font-semibold">Belge:</span><span>{belgeTuru === "EFATURA" ? "E-Fatura" : "E-Arşiv Fatura"}</span></div>
                       <div className="flex justify-between"><span className="font-semibold">Senaryo:</span><span>{senaryo === "TEMEL" ? "TEMEL FATURA" : "TİCARİ FATURA"}</span></div>
                       <div className="flex justify-between"><span className="font-semibold">Fatura Tipi:</span><span>{faturaTuru === "IADE" ? "İADE" : "SATIŞ"}</span></div>
                       <div className="flex justify-between"><span className="font-semibold">Fatura No:</span><span className="italic text-gray-500">Gönderimde Atanacak</span></div>
+                      {custInvId && <div className="flex justify-between"><span className="font-semibold">CustInvID:</span><span className="text-emerald-600">{custInvId}</span></div>}
                       <div className="flex justify-between"><span className="font-semibold">Fatura Tarihi:</span><span>{new Date().toLocaleDateString("tr-TR")}</span></div>
                       {vadeTarihi && <div className="flex justify-between"><span className="font-semibold">Ödeme Vadesi:</span><span>{new Date(vadeTarihi).toLocaleDateString("tr-TR")}</span></div>}
                     </div>

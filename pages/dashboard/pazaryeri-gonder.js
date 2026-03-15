@@ -52,6 +52,8 @@ const MARKETPLACES = [
   { key: "trendyol",    label: "Trendyol",     color: "bg-orange-600" },
   { key: "hepsiburada", label: "Hepsiburada",  color: "bg-blue-600"   },
   { key: "pazarama",    label: "Pazarama",     color: "bg-red-600"    },
+  { key: "pttavm",      label: "PTT AVM",      color: "bg-green-600"  },
+  { key: "idefix",      label: "İdefix",       color: "bg-emerald-600" },
 ];
 
 const fmt = (n) =>
@@ -553,6 +555,9 @@ export default function PazaryeriGonderPage() {
       alert("Pazarama için kategori ve marka seçin.");
       return;
     }
+    if (activeTab === "pttavm" || activeTab === "idefix") {
+      return;
+    }
     setSending(true);
     setTaskResult(null);
     try {
@@ -746,6 +751,7 @@ export default function PazaryeriGonderPage() {
     }`;
 
   const canSend = (() => {
+    if (activeTab === "pttavm" || activeTab === "idefix") return false;
     if (activeTab === "pazarama") {
       return (uploadMode === "erp" ? !!selectedId : !!(linkProduct.title)) && !!pzForm.categoryId && !!pzForm.brandId;
     }
@@ -804,7 +810,7 @@ export default function PazaryeriGonderPage() {
 
       {uploadMode === "link" && (
         <div className="mb-6 p-4 bg-slate-50 border rounded-lg space-y-4">
-          <p className="text-sm font-medium text-slate-700">Link ve kategori ile ürün yükle (N11, Trendyol, Hepsiburada, Pazarama)</p>
+          <p className="text-sm font-medium text-slate-700">Link ve kategori ile ürün yükle (N11, Trendyol, Hepsiburada, Pazarama; PTT AVM ve İdefix için ilgili menü sayfalarını kullanın)</p>
           <div className="flex gap-2">
             <input
               type="url"
@@ -1530,6 +1536,20 @@ export default function PazaryeriGonderPage() {
                 <a href="/dashboard/api-settings" className="text-red-600 hover:underline font-medium">API Ayarları</a>
                 {" "}→ Pazarama sekmesinden API Key ve API Secret girin. En az 1 görsel URL zorunlu.
               </div>
+            </div>
+          )}
+
+          {activeTab === "pttavm" && (
+            <div className="space-y-4">
+              <p className="text-slate-600">PTT AVM ürün gönderimi için PTT AVM menüsündeki Ürün Listesi sayfasını kullanın.</p>
+              <a href="/dashboard/pttavm/products" className="inline-block text-blue-600 hover:underline font-medium">PTT AVM Ürün Listesi →</a>
+            </div>
+          )}
+
+          {activeTab === "idefix" && (
+            <div className="space-y-4">
+              <p className="text-slate-600">İdefix ürün gönderimi için İdefix menüsündeki Ürün Güncelleme sayfasını kullanın.</p>
+              <a href="/dashboard/idefix/products" className="inline-block text-blue-600 hover:underline font-medium">İdefix Ürün Güncelleme →</a>
             </div>
           )}
         </div>

@@ -110,6 +110,24 @@ const TRENDYOL_MENU = [
   { href: "/dashboard/pazaryeri/buybox", label: "BuyBox", icon: "💱" },
 ];
 
+const PTTAVM_MENU = [
+  { href: "/dashboard/api-settings?tab=pttavm", label: "PTT AVM API Ayarları", icon: "⚙️" },
+  { href: "/dashboard/pttavm/products", label: "Ürün Listesi", icon: "📦" },
+  { href: "/dashboard/pttavm/orders", label: "Siparişler", icon: "🧾" },
+  { href: "/dashboard/pazaryeri-gonder", label: "Ürün Gönder", icon: "🚀" },
+];
+
+const IDEFIX_MENU = [
+  { href: "/dashboard/api-settings?tab=idefix", label: "İdefix API Ayarları", icon: "⚙️" },
+  { href: "/dashboard/idefix/orders", label: "Siparişler", icon: "🧾" },
+  { href: "/dashboard/idefix/products", label: "Ürün Güncelleme", icon: "📦" },
+  { href: "/dashboard/idefix/qa", label: "Soru Cevap", icon: "❓" },
+  { href: "/dashboard/idefix/accounting", label: "Muhasebe", icon: "💰" },
+  { href: "/dashboard/idefix/cargo", label: "Kargo Şablonu", icon: "🚚" },
+  { href: "/dashboard/idefix/efatura", label: "e-Fatura İşleme", icon: "📄" },
+  { href: "/dashboard/pazaryeri-gonder", label: "Ürün Gönder", icon: "🚀" },
+];
+
 function HepsiburadaSubmenu({ onLinkClick }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -274,6 +292,98 @@ function TrendyolSubmenu({ onLinkClick }) {
   );
 }
 
+function PttAvmSubmenu({ onLinkClick }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const isActive = PTTAVM_MENU.some((m) => {
+    if (m.href.includes("?tab=pttavm")) return router.pathname === "/dashboard/api-settings" && router.query?.tab === "pttavm";
+    return router.pathname === m.href || router.pathname.startsWith(m.href + "/");
+  });
+  return (
+    <div className="mb-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`flex items-center justify-between w-full gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition touch-manipulation
+          ${open || isActive ? "bg-slate-100 text-slate-800" : "text-slate-700 hover:bg-slate-100"}`}
+      >
+        <span className="flex items-center gap-3">
+          <span className="text-lg">📮</span>
+          <span>PTT AVM</span>
+        </span>
+        {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+      </button>
+      {(open || isActive) && (
+        <div className="mt-1 space-y-0.5">
+          {PTTAVM_MENU.map((item) => {
+            const active = item.href.includes("?tab=pttavm")
+                ? router.pathname === "/dashboard/api-settings" && router.query?.tab === "pttavm"
+                : (router.pathname === item.href || router.pathname.startsWith(item.href + "/"));
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={onLinkClick}
+                className={`flex items-center gap-2 pl-8 pr-3 py-2.5 rounded-lg text-sm transition touch-manipulation
+                  ${active ? "bg-orange-50 text-orange-700" : "text-slate-600 hover:bg-slate-50"}`}
+              >
+                <span>{item.icon}</span>
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function IdefixSubmenu({ onLinkClick }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const isActive = IDEFIX_MENU.some((m) => {
+    if (m.href.includes("?tab=idefix")) return router.pathname === "/dashboard/api-settings" && router.query?.tab === "idefix";
+    return router.pathname === m.href || router.pathname.startsWith(m.href + "/");
+  });
+  return (
+    <div className="mb-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`flex items-center justify-between w-full gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition touch-manipulation
+          ${open || isActive ? "bg-slate-100 text-slate-800" : "text-slate-700 hover:bg-slate-100"}`}
+      >
+        <span className="flex items-center gap-3">
+          <span className="text-lg">📚</span>
+          <span>İdefix</span>
+        </span>
+        {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+      </button>
+      {(open || isActive) && (
+        <div className="mt-1 space-y-0.5">
+          {IDEFIX_MENU.map((item) => {
+            const active = item.href.includes("?tab=idefix")
+                ? router.pathname === "/dashboard/api-settings" && router.query?.tab === "idefix"
+                : (router.pathname === item.href || router.pathname.startsWith(item.href + "/"));
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={onLinkClick}
+                className={`flex items-center gap-2 pl-8 pr-3 py-2.5 rounded-lg text-sm transition touch-manipulation
+                  ${active ? "bg-orange-50 text-orange-700" : "text-slate-600 hover:bg-slate-50"}`}
+              >
+                <span>{item.icon}</span>
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Sidebar({ mobileOpen = false, onClose }) {
   const router = useRouter();
   const [role, setRole] = useState(null);
@@ -373,10 +483,13 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
         <TrendyolSubmenu onLinkClick={handleLinkClick} />
         <PazaramaSubmenu onLinkClick={handleLinkClick} />
         <N11Submenu onLinkClick={handleLinkClick} />
+        <PttAvmSubmenu onLinkClick={handleLinkClick} />
+        <IdefixSubmenu onLinkClick={handleLinkClick} />
         <MenuItem onLinkClick={handleLinkClick} href="/dashboard/pazaryeri-gonder" icon="🚀" label="Pazaryerine Gönder" />
 
         <SectionTitle>E-Belge</SectionTitle>
         <MenuItem onLinkClick={handleLinkClick} href="/dashboard/efatura" icon="📄" label="E-Fatura Paneli" />
+        <MenuItem onLinkClick={handleLinkClick} href="/dashboard/e-donusum/efatura-kontor" icon="🧾" label="E-Fatura Kontör" />
         <MenuItem onLinkClick={handleLinkClick} href="/dashboard/irsaliye" icon="📋" label="E-İrsaliye" />
 
         {/* ================= ERP MODÜLLERİ ================= */}

@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 
 export default function EFaturaPanel() {
   const [access, setAccess] = useState({ loading: true, allowed: false, status: "none" });
+  const [kontor, setKontor] = useState(null);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncResult, setSyncResult] = useState(null);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -25,6 +28,49 @@ export default function EFaturaPanel() {
       }
     })();
   }, []);
+
+  // Kullanıcı kontörü (Taxten + yerel) – erişim varken çek
+  useEffect(() => {
+    if (!access.allowed || access.loading) return;
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    (async () => {
+      try {
+        const res = await fetch("/api/efatura/kontor", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setKontor(data);
+        }
+      } catch {
+        setKontor(null);
+      }
+    })();
+  }, [access.allowed, access.loading]);
+
+  const syncTaxtenBelgeler = async () => {
+    setSyncResult(null);
+    setSyncLoading(true);
+    try {
+      const res = await fetch("/api/efatura/sync-taxten-belgeler", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+      });
+      const data = await res.json();
+      setSyncResult(data);
+      if (data.success && (data.sent > 0 || data.incoming > 0 || data.irsaliyeSent > 0 || data.irsaliyeIncoming > 0)) {
+        setKontor((prev) => prev ? { ...prev } : null);
+      }
+    } catch (err) {
+      setSyncResult({ success: false, message: err.message || "İstek başarısız" });
+    } finally {
+      setSyncLoading(false);
+    }
+  };
 
   if (access.loading) {
     return <div className="p-6 text-center">Yükleniyor...</div>;
@@ -91,6 +137,12 @@ export default function EFaturaPanel() {
   }
 
   // ✅ Onaylı ise mevcut panel
+  const kontorRemaining = kontor?.remaining ?? kontor?.limit != null ? (kontor.limit - (kontor.used ?? 0)) : null;
+  const kontorUsed = kontor?.used ?? 0;
+  const kontorFromTaxten = kontor?.fromTaxten === true;
+  const kontorLow = kontorRemaining != null && kontorRemaining <= 10 && kontorRemaining > 0;
+  const kontorExhausted = kontorRemaining != null && kontorRemaining <= 0;
+
   return (
     <div className="p-6 space-y-6">
 
@@ -99,8 +151,79 @@ export default function EFaturaPanel() {
         📄 E-Fatura, E-Arşiv & E-İrsaliye
       </h1>
 
+      {/* Taxten gelen/giden fatura ve irsaliye senkronu */}
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="font-medium text-slate-800">Taxten panelinden gelen/giden listeler</p>
+          <p className="text-sm text-slate-500">Fatura ve irsaliye listesini Taxten’den çekip ERP’de görüntüleyin (son 30 gün).</p>
+        </div>
+        <button
+          type="button"
+          onClick={syncTaxtenBelgeler}
+          disabled={syncLoading}
+          className="px-4 py-2 rounded-lg bg-orange-600 text-white font-medium hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+        >
+          {syncLoading ? "Çekiliyor..." : "Taxten'den listeyi çek"}
+        </button>
+      </div>
+      {syncResult && (
+        <div className={`rounded-xl p-4 text-sm ${syncResult.success ? "bg-green-50 border border-green-200 text-green-800" : "bg-red-50 border border-red-200 text-red-800"}`}>
+          {syncResult.message}
+          {syncResult.success && (syncResult.sent > 0 || syncResult.incoming > 0 || syncResult.irsaliyeSent > 0 || syncResult.irsaliyeIncoming > 0) && (
+            <span className="block mt-1">
+              Giden fatura: {syncResult.sent ?? 0}, Gelen fatura: {syncResult.incoming ?? 0}, Giden irsaliye: {syncResult.irsaliyeSent ?? 0}, Gelen irsaliye: {syncResult.irsaliyeIncoming ?? 0}
+            </span>
+          )}
+          {syncResult.errors?.length > 0 && (
+            <span className="block mt-1 text-amber-700">{syncResult.errors.join("; ")}</span>
+          )}
+          {syncResult.debug && (
+            <pre className="mt-2 p-2 bg-white/60 rounded text-xs overflow-auto max-h-24">{JSON.stringify(syncResult.debug, null, 2)}</pre>
+          )}
+        </div>
+      )}
+
+      {/* Kontör özeti – Taxten + yerel entegre */}
+      {kontor != null && (
+        <div className="bg-white border rounded-xl shadow-sm p-4 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-6">
+            <div>
+              <span className="text-slate-500 text-sm">Kalan kontör</span>
+              <p className="text-2xl font-bold text-slate-800">
+                {kontorRemaining != null ? kontorRemaining : "—"}
+              </p>
+            </div>
+            <div>
+              <span className="text-slate-500 text-sm">Kullanılan</span>
+              <p className="text-xl font-semibold text-slate-700">{kontorUsed}</p>
+            </div>
+            {kontorFromTaxten && (
+              <span className="inline-flex items-center px-2 py-1 rounded bg-green-100 text-green-700 text-xs font-medium">
+                ✓ Taxten panelden
+              </span>
+            )}
+          </div>
+          <Link
+            href="/dashboard/e-donusum/efatura-kontor"
+            className="text-orange-600 hover:underline font-medium text-sm"
+          >
+            Detay ve kullanım →
+          </Link>
+          {kontorExhausted && (
+            <p className="w-full text-red-600 text-sm mt-1">
+              Kontörünüz tükenmiş. Taxten panelinden yükleme yapın veya admin ile iletişime geçin.
+            </p>
+          )}
+          {kontorLow && !kontorExhausted && (
+            <p className="w-full text-amber-600 text-sm mt-1">
+              Kontörünüz az. Yükleme yapmanız önerilir.
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Üst Hızlı Menü */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
 
         <Link href="/dashboard/efatura/olustur"
           className="p-5 bg-white shadow rounded-xl hover:shadow-md transition text-center border border-orange-200">
@@ -136,6 +259,15 @@ export default function EFaturaPanel() {
           className="p-5 bg-white shadow rounded-xl hover:shadow-md transition text-center border border-orange-200">
           <div className="text-3xl">📋</div>
           <div className="mt-2 font-bold">E-İrsaliye</div>
+        </Link>
+
+        <Link href="/dashboard/e-donusum/efatura-kontor"
+          className="p-5 bg-white shadow rounded-xl hover:shadow-md transition text-center border border-orange-200">
+          <div className="text-3xl">🧾</div>
+          <div className="mt-2 font-bold">Kontör</div>
+          {kontor != null && kontorRemaining != null && (
+            <div className="mt-1 text-sm text-slate-600">Kalan: {kontorRemaining}</div>
+          )}
         </Link>
 
       </div>

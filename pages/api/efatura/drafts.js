@@ -50,6 +50,7 @@ export default async function handler(req, res) {
         siparisNo,
         platform,
         odemeYontemi,
+        custInvId,
       } = body;
 
       if (!customer || !customer.title) {
@@ -79,6 +80,7 @@ export default async function handler(req, res) {
         ...(vadeTarihi && { vadeTarihi }),
         ...(siparisNo != null && { siparisNo: String(siparisNo).trim() || null }),
         ...(platform != null && { platform: String(platform).trim() || null }),
+        ...(custInvId != null && custInvId !== "" && { custInvId: String(custInvId).trim().slice(0, 64) }),
         createdAt: new Date(),
       };
 
@@ -116,15 +118,16 @@ export default async function handler(req, res) {
         siparisNo,
         platform,
         odemeYontemi,
+        custInvId,
       } = body;
-      
+
       if (!customer || !customer.title) {
         return res.status(400).json({ message: "Müşteri bilgisi eksik" });
       }
       if (!Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ message: "En az bir ürün eklemelisiniz" });
       }
-      
+
       const update = {
         invoiceType,
         scenario: scenario === "TEMEL" ? "TEMEL" : "TICARI",
@@ -140,6 +143,7 @@ export default async function handler(req, res) {
         ...(siparisNo !== undefined && { siparisNo: siparisNo ? String(siparisNo).trim() : null }),
         ...(platform !== undefined && { platform: platform ? String(platform).trim() : null }),
         ...(odemeYontemi !== undefined && { odemeYontemi: odemeYontemi ? String(odemeYontemi).trim() : null }),
+        ...(custInvId !== undefined && { custInvId: custInvId ? String(custInvId).trim().slice(0, 64) : null }),
         updatedAt: new Date(),
       };
 

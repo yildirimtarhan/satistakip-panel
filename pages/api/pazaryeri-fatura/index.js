@@ -1,12 +1,18 @@
 /**
  * Pazaryeri Fatura Ekle – PDF yükleme ve listeleme
  * GET: Kullanıcının yüklediği faturalar
- * POST: marketplace, orderNumber, pdf (base64) kaydet
+ * POST: marketplace, orderNumber, pdf (base64) kaydet → dönen url ile Pazarama vb. fatura linki olarak kullanılır
  */
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import { connectToDatabase } from "@/lib/mongodb";
 
 const MAX_PDF_SIZE = 5 * 1024 * 1024; // 5MB
+
+function createServeSig(orderNumber, marketplace) {
+  const secret = process.env.JWT_SECRET || "pazaryeri-fatura-serve";
+  return crypto.createHmac("sha256", secret).update(String(orderNumber) + "|" + String(marketplace)).digest("hex");
+}
 
 function getToken(req) {
   const auth = req.headers.authorization;
@@ -61,10 +67,16 @@ export default async function handler(req, res) {
       const update = { $set: { pdf: base64, updatedAt: now }, $setOnInsert: { companyId: companyId || null, createdAt: now } };
       const result = await col.findOneAndUpdate(filter, update, { upsert: true, returnDocument: "after" });
       const doc = result?.value || result;
+      const base = process.env.NEXT_PUBLIC_APP_URL || req.headers?.origin || "";
+      const orderNum = String(orderNumber).trim();
+      const market = String(marketplace).trim();
+      const sig = createServeSig(orderNum, market);
+      const serveUrl = base ? `${base}/api/pazaryeri-fatura/serve?orderNumber=${encodeURIComponent(orderNum)}&marketplace=${encodeURIComponent(market)}&sig=${sig}` : null;
       return res.status(200).json({
         success: true,
         message: doc?.updatedAt ? "Fatura güncellendi" : "Fatura yüklendi",
         id: doc?._id?.toString?.() || null,
+        url: serveUrl,
       });
     }
 

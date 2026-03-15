@@ -137,10 +137,12 @@ export default function EFaturaTaslaklar() {
               <tr>
                 <th className="px-3 py-2">#</th>
                 <th className="px-3 py-2 text-left">Cari</th>
+                <th className="px-3 py-2 text-left">Belge</th>
                 <th className="px-3 py-2 text-left">Senaryo</th>
                 <th className="px-3 py-2 text-left">Tür</th>
                 <th className="px-3 py-2">Oluşturma</th>
                 <th className="px-3 py-2 text-right">Toplam</th>
+                <th className="px-3 py-2 text-left">CustInvID</th>
                 <th className="px-3 py-2">Kaynak</th>
                 <th className="px-3 py-2">İşlemler</th>
               </tr>
@@ -154,6 +156,13 @@ export default function EFaturaTaslaklar() {
                     {fatura.customer?.title || fatura.cariAd || "-"}
                   </td>
 
+                  <td className="px-3 py-2">
+                    {((fatura.invoiceType || fatura.tip) || "").toString().toUpperCase().includes("EARSIV") ? (
+                      <span className="inline-block px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded">E-Arşiv</span>
+                    ) : (
+                      <span className="inline-block px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-700 rounded">E-Fatura</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2">{fatura.scenario === "TEMEL" ? "Temel" : "Ticari"}</td>
                   <td className="px-3 py-2">{(fatura.invoiceType || fatura.tip) === "IADE" ? "İade" : "Satış"}</td>
 
@@ -163,6 +172,10 @@ export default function EFaturaTaslaklar() {
 
                   <td className="px-3 py-2 text-right font-bold">
                     ₺{(fatura.totals?.total ?? fatura.genelToplam ?? 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}
+                  </td>
+
+                  <td className="px-3 py-2 text-gray-600 max-w-[120px] truncate" title={fatura.custInvId || ""}>
+                    {fatura.custInvId || "—"}
                   </td>
 
                   <td className="px-3 py-2">

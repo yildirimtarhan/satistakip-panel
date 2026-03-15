@@ -35,6 +35,15 @@ export default async function handler(req, res) {
       pazaramaApiKey,
       pazaramaApiSecret,
       pazaramaStoreName,
+
+      pttavmApiKey,
+      pttavmAccessToken,
+      pttavmStoreName,
+
+      idefixApiKey,
+      idefixApiSecret,
+      idefixVendorId,
+      idefixTestMode,
     } = req.body || {};
 
     const { db } = await connectToDatabase();
@@ -72,6 +81,19 @@ export default async function handler(req, res) {
         apiKey: pazaramaApiKey || "",
         apiSecret: pazaramaApiSecret || "",
         storeName: pazaramaStoreName || "",
+      },
+
+      pttavm: {
+        apiKey: pttavmApiKey || "",
+        accessToken: pttavmAccessToken || "",
+        storeName: pttavmStoreName || "",
+      },
+
+      idefix: {
+        apiKey: idefixApiKey || "",
+        apiSecret: idefixApiSecret || "",
+        vendorId: idefixVendorId || "",
+        testMode: idefixTestMode !== false,
       },
 
       updatedAt: new Date(),

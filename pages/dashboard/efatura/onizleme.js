@@ -88,7 +88,8 @@ export default function EFaturaOnizleme() {
       if (!res.ok) {
         throw new Error(data.message || data.error || "E-fatura gönderilemedi");
       }
-      alert(data.message || "E-fatura entegratöre gönderildi (test hesabı).");
+      // Önce yönlendir; başarı mesajı "Gönderilen Faturalar" sayfasındaki banner'da gösterilir
+      router.push("/dashboard/efatura/gonderilenler?gonderildi=1");
     } catch (err) {
       setError(err.message || "E-fatura gönderilemedi");
     } finally {

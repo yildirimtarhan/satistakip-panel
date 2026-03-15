@@ -208,14 +208,6 @@ export default function FirmaAyarları() {
               <label>IBAN</label>
               <input name="iban" value={form.iban || ""} onChange={handleChange} className="border p-2 rounded w-full" placeholder="TR00 0000 0000 0000 0000 0000 00" />
             </div>
-            <div className="md:col-span-3">
-              <label>Kredi Kartı Ödeme Bilgisi (E-Fatura altında gösterilir)</label>
-              <input name="krediKartiBilgisi" value={form.krediKartiBilgisi || ""} onChange={handleChange} className="border p-2 rounded w-full" placeholder="Örn: Vade farkı uygulanmaz, taksit imkanı" />
-            </div>
-            <div className="md:col-span-3">
-              <label>Hizmetlerimiz (E-Fatura altında gösterilir, satır veya virgülle ayırın)</label>
-              <textarea name="hizmetlerimiz" value={form.hizmetlerimiz || ""} onChange={handleChange} className="border p-2 rounded w-full min-h-[80px]" placeholder="Pazar Yeri Entegrasyonu, Yazılım, E-İmza-Mali Mühür-KEP Adresi, ERP-E-Fatura Entegrasyonu" />
-            </div>
           </div>
         </div>
 

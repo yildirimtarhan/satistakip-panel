@@ -31,7 +31,10 @@ export default function PazaramaOrdersPage() {
   const [error, setError] = useState("");
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [erpLoading, setErpLoading] = useState(false);
-  const [invoiceLoading, setInvoiceLoading] = useState(null);
+  const [invoiceModal, setInvoiceModal] = useState(null);
+  const [invoiceFile, setInvoiceFile] = useState(null);
+  const [invoiceUrl, setInvoiceUrl] = useState("");
+  const [invoiceSending, setInvoiceSending] = useState(false);
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 30);
@@ -124,26 +127,70 @@ export default function PazaramaOrdersPage() {
     }
   };
 
-  const handleInvoiceLink = async (order) => {
+  const openInvoiceModal = (order) => {
     const oid = order.orderId || order.orderNumber || order.id;
     if (!oid) return;
-    const url = window.prompt("Fatura PDF linkini girin:", "");
-    if (!url || !url.trim()) return;
-    setInvoiceLoading(oid);
+    setInvoiceModal(oid);
+    setInvoiceUrl("");
+    setInvoiceFile(null);
+  };
+
+  const handleSendInvoice = async () => {
+    const oid = invoiceModal;
+    if (!oid) return;
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    let invoiceLink = invoiceUrl.trim() || null;
+    if (invoiceFile) {
+      const reader = new FileReader();
+      const base64 = await new Promise((resolve, reject) => {
+        reader.onload = () => {
+          const b = reader.result;
+          const m = typeof b === "string" && b.match(/^data:application\/pdf;base64,(.+)$/);
+          resolve(m ? m[1] : (b && b.split(",")[1]) || null);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(invoiceFile);
+      });
+      if (!base64) {
+        alert("PDF okunamadı.");
+        return;
+      }
+      setInvoiceSending(true);
+      try {
+        const uploadRes = await fetch("/api/pazaryeri-fatura", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ marketplace: "pazarama", orderNumber: String(oid), pdf: base64 }),
+        });
+        const uploadData = await uploadRes.json();
+        if (uploadData.url) invoiceLink = uploadData.url;
+        else throw new Error(uploadData.message || "Fatura yüklenemedi");
+      } catch (e) {
+        alert(e.message || "Fatura yüklenemedi.");
+        setInvoiceSending(false);
+        return;
+      }
+    }
+    if (!invoiceLink) {
+      alert("PDF dosyası yükleyin veya fatura URL girin.");
+      return;
+    }
+    setInvoiceSending(true);
     try {
-      const token = localStorage.getItem("token");
       const res = await fetch("/api/pazarama/orders/invoice-link", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ orderId: oid, invoiceLink: url.trim() }),
+        body: JSON.stringify({ orderId: oid, invoiceLink }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || data.message || "İşlem başarısız");
-      alert(data.message || "Fatura linki güncellendi.");
+      alert(data.message || "E-Fatura linki güncellendi.");
+      setInvoiceModal(null);
     } catch (e) {
-      alert(e.message || "Fatura linki güncellenirken hata oluştu.");
+      alert(e.message || "Gönderilemedi.");
     } finally {
-      setInvoiceLoading(null);
+      setInvoiceSending(false);
     }
   };
 
@@ -247,7 +294,7 @@ export default function PazaramaOrdersPage() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Durum</th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Tutar</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tarih</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fatura</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">İşlem</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -276,20 +323,45 @@ export default function PazaramaOrdersPage() {
                       {o.orderAmount != null ? `₺${Number(o.orderAmount).toFixed(2)}` : "-"}
                     </td>
                     <td className="px-4 py-3 text-gray-600">{o.orderDate || "-"}</td>
-                    <td className="px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={() => handleInvoiceLink(o)}
-                        disabled={invoiceLoading === (oid || "")}
-                        className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50"
-                      >
-                        {invoiceLoading === (oid || "") ? "..." : "Fatura Ekle"}
-                      </button>
+<td className="px-4 py-3">
+                        <a href={`/api/pazarama/orders/kargo-etiket?orderNumber=${encodeURIComponent(oid)}`} target="_blank" rel="noopener noreferrer" className="text-xs px-2 py-1 bg-amber-100 text-amber-800 rounded hover:bg-amber-200 mr-2">Kargo Etiketi (A5)</a>
+                        <button
+                          type="button"
+                          onClick={() => openInvoiceModal(o)}
+                          disabled={invoiceModal === (oid || "") || invoiceSending}
+                          className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded hover:bg-green-200 disabled:opacity-50"
+                        >
+                          E-Fatura Yükle
+                        </button>
                     </td>
                   </tr>
                 );})}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {invoiceModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => !invoiceSending && setInvoiceModal(null)}>
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-gray-800 mb-4">E-Fatura Yükle — {invoiceModal}</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">PDF URL (isteğe bağlı)</label>
+                <input type="url" value={invoiceUrl} onChange={(e) => setInvoiceUrl(e.target.value)} placeholder="https://..." className="w-full border rounded-lg px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">veya PDF dosyası</label>
+                <input type="file" accept="application/pdf" onChange={(e) => setInvoiceFile(e.target.files?.[0] || null)} className="w-full text-sm" />
+              </div>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button type="button" onClick={handleSendInvoice} disabled={invoiceSending} className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 text-sm font-medium">
+                {invoiceSending ? "Gönderiliyor..." : "Gönder"}
+              </button>
+              <button type="button" onClick={() => setInvoiceModal(null)} disabled={invoiceSending} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm">İptal</button>
+            </div>
           </div>
         </div>
       )}

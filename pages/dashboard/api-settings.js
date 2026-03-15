@@ -6,11 +6,11 @@ export default function ApiSettings() {
   const router = useRouter();
   const tabFromUrl = router.query?.tab;
   const [activeTab, setActiveTab] = useState(
-    tabFromUrl === "trendyol" ? "trendyol" : tabFromUrl === "n11" ? "n11" : tabFromUrl === "pazarama" ? "pazarama" : "hepsiburada"
+    tabFromUrl === "trendyol" ? "trendyol" : tabFromUrl === "n11" ? "n11" : tabFromUrl === "pazarama" ? "pazarama" : tabFromUrl === "pttavm" ? "pttavm" : tabFromUrl === "idefix" ? "idefix" : "hepsiburada"
   );
 
   useEffect(() => {
-    if (["trendyol", "n11", "pazarama"].includes(tabFromUrl)) setActiveTab(tabFromUrl);
+    if (["trendyol", "n11", "pazarama", "pttavm", "idefix"].includes(tabFromUrl)) setActiveTab(tabFromUrl);
   }, [tabFromUrl]);
 
   const [form, setForm] = useState({
@@ -34,6 +34,15 @@ export default function ApiSettings() {
     pazaramaApiKey: "",
     pazaramaApiSecret: "",
     pazaramaStoreName: "",
+
+    pttavmApiKey: "",
+    pttavmAccessToken: "",
+    pttavmStoreName: "",
+
+    idefixApiKey: "",
+    idefixApiSecret: "",
+    idefixVendorId: "",
+    idefixTestMode: true,
   });
 
   const [message, setMessage] = useState("");
@@ -44,6 +53,10 @@ export default function ApiSettings() {
   const [testResultTrendyol, setTestResultTrendyol] = useState(null);
   const [testingPazarama, setTestingPazarama] = useState(false);
   const [testResultPazarama, setTestResultPazarama] = useState(null);
+  const [testingPttavm, setTestingPttavm] = useState(false);
+  const [testResultPttavm, setTestResultPttavm] = useState(null);
+  const [testingIdefix, setTestingIdefix] = useState(false);
+  const [testResultIdefix, setTestResultIdefix] = useState(null);
 
   useEffect(() => {
     const t = Cookies.get("token") || localStorage.getItem("token") || "";
@@ -130,6 +143,39 @@ export default function ApiSettings() {
     setTestingPazarama(false);
   };
 
+  const testPttavmConnection = async () => {
+    setTestingPttavm(true);
+    setTestResultPttavm(null);
+    try {
+      const res = await fetch("/api/pttavm/test-connection", {
+        method: "GET",
+        credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const data = await res.json();
+      setTestResultPttavm({ success: data.success, message: data.message || data.error });
+    } catch (e) {
+      setTestResultPttavm({ success: false, message: e.message });
+    }
+    setTestingPttavm(false);
+  };
+
+  const testIdefixConnection = async () => {
+    setTestingIdefix(true);
+    setTestResultIdefix(null);
+    try {
+      const res = await fetch("/api/idefix/test-connection", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      const data = await res.json();
+      setTestResultIdefix({ success: data.success, message: data.message || data.error });
+    } catch (e) {
+      setTestResultIdefix({ success: false, message: e.message });
+    }
+    setTestingIdefix(false);
+  };
+
   const inp = "border border-gray-300 rounded-lg p-2.5 w-full text-sm focus:outline-none focus:ring-2 focus:ring-orange-400";
   const lbl = "block text-sm font-medium text-gray-700 mb-1 mt-3";
 
@@ -143,6 +189,8 @@ export default function ApiSettings() {
           { id: "n11", label: "N11" },
           { id: "trendyol", label: "Trendyol" },
           { id: "pazarama", label: "Pazarama" },
+          { id: "pttavm", label: "PTT AVM" },
+          { id: "idefix", label: "İdefix" },
         ].map((tab) => (
           <button key={tab.id}
             className={`px-4 py-2 rounded-t-lg font-medium text-sm transition-colors ${activeTab === tab.id ? "bg-orange-500 text-white shadow" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
@@ -279,6 +327,75 @@ export default function ApiSettings() {
           {testResultPazarama && (
             <div className={`mt-3 p-3 rounded-lg text-sm ${testResultPazarama.success ? "bg-green-50 border border-green-200 text-green-700" : "bg-red-50 border border-red-200 text-red-700"}`}>
               {testResultPazarama.success ? "✅ " : "❌ "}{testResultPazarama.message}
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === "pttavm" && (
+        <div>
+          <h2 className="text-lg font-semibold mb-1 text-gray-800">PTT AVM API Ayarları</h2>
+          <p className="text-xs text-gray-500 mb-4">
+            tedarikci.pttavm.com → Hesap Yönetimi → Entegrasyon Bilgileri (API BİLGİLERİM & ENTEGRATÖR FİRMALARIM) bölümünden Api-Key ve access-token alın.
+          </p>
+          <label className={lbl}>Api-Key</label>
+          <input className={inp} value={form.pttavmApiKey} onChange={(e) => setForm((p) => ({ ...p, pttavmApiKey: e.target.value }))}
+            placeholder="PTT AVM Api-Key" />
+          <label className={lbl}>Access Token</label>
+          <input className={inp} type="password" value={form.pttavmAccessToken} onChange={(e) => setForm((p) => ({ ...p, pttavmAccessToken: e.target.value }))}
+            placeholder="PTT AVM access-token" />
+          <label className={lbl}>Satıcı / Mağaza adı</label>
+          <input className={inp} placeholder="Kargo çıktılarında görünecek mağaza adı" value={form.pttavmStoreName}
+            onChange={(e) => setForm((p) => ({ ...p, pttavmStoreName: e.target.value }))} />
+          <button
+            type="button"
+            onClick={testPttavmConnection}
+            disabled={testingPttavm || !form.pttavmApiKey || !form.pttavmAccessToken}
+            className="mt-4 px-4 py-2 bg-orange-100 text-orange-700 border border-orange-300 rounded-lg text-sm font-medium hover:bg-orange-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {testingPttavm ? "Test ediliyor..." : "Bağlantı Test Et"}
+          </button>
+          {testResultPttavm && (
+            <div className={`mt-3 p-3 rounded-lg text-sm ${testResultPttavm.success ? "bg-green-50 border border-green-200 text-green-700" : "bg-red-50 border border-red-200 text-red-700"}`}>
+              {testResultPttavm.success ? "✅ " : "❌ "}{testResultPttavm.message}
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === "idefix" && (
+        <div>
+          <h2 className="text-lg font-semibold mb-1 text-gray-800">İdefix API Ayarları</h2>
+          <p className="text-xs text-gray-500 mb-4">
+            Satıcı paneli → Hesap Bilgilerim → Entegrasyon Bilgileri → Yeni API Oluştur (API Key ve Secret e-posta ile gelir). Auth: X-API-KEY = base64(ApiKey:ApiSecret).
+          </p>
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-amber-800">Test ortamı (stage)</p>
+              <p className="text-xs text-amber-600">Aktifken ide-pimapi.idefiks.net / ide-omsapi.idefiks.net kullanılır. Test için IP yetkilendirmesi gerekebilir.</p>
+            </div>
+            <button onClick={() => setForm((p) => ({ ...p, idefixTestMode: !p.idefixTestMode }))}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.idefixTestMode ? "bg-amber-500" : "bg-gray-300"}`}>
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${form.idefixTestMode ? "translate-x-6" : "translate-x-1"}`} />
+            </button>
+          </div>
+          <label className={lbl}>API Key</label>
+          <input className={inp} type="password" value={form.idefixApiKey} onChange={(e) => setForm((p) => ({ ...p, idefixApiKey: e.target.value }))} placeholder="İdefix API Key" />
+          <label className={lbl}>API Secret</label>
+          <input className={inp} type="password" value={form.idefixApiSecret} onChange={(e) => setForm((p) => ({ ...p, idefixApiSecret: e.target.value }))} placeholder="İdefix API Secret" />
+          <label className={lbl}>Satıcı ID (Vendor ID)</label>
+          <input className={inp} value={form.idefixVendorId} onChange={(e) => setForm((p) => ({ ...p, idefixVendorId: e.target.value }))} placeholder="Satıcı panelinden" />
+          <button
+            type="button"
+            onClick={testIdefixConnection}
+            disabled={testingIdefix || !form.idefixApiKey || !form.idefixApiSecret || !form.idefixVendorId}
+            className="mt-4 px-4 py-2 bg-amber-100 text-amber-800 border border-amber-300 rounded-lg text-sm font-medium hover:bg-amber-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {testingIdefix ? "Test ediliyor..." : "Bağlantı Test Et"}
+          </button>
+          {testResultIdefix && (
+            <div className={`mt-3 p-3 rounded-lg text-sm ${testResultIdefix.success ? "bg-green-50 border border-green-200 text-green-700" : "bg-red-50 border border-red-200 text-red-700"}`}>
+              {testResultIdefix.success ? "✅ " : "❌ "}{testResultIdefix.message}
             </div>
           )}
         </div>

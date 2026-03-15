@@ -41,6 +41,15 @@ export default async function handler(req, res) {
       pazaramaApiKey:     settingsDoc.pazarama?.apiKey     || "",
       pazaramaApiSecret:  settingsDoc.pazarama?.apiSecret  || "",
       pazaramaStoreName:  settingsDoc.pazarama?.storeName  || "",
+
+      pttavmApiKey:       settingsDoc.pttavm?.apiKey       || "",
+      pttavmAccessToken:  settingsDoc.pttavm?.accessToken  || "",
+      pttavmStoreName:    settingsDoc.pttavm?.storeName    || "",
+
+      idefixApiKey:       settingsDoc.idefix?.apiKey       || "",
+      idefixApiSecret:    settingsDoc.idefix?.apiSecret    || "",
+      idefixVendorId:     settingsDoc.idefix?.vendorId     || "",
+      idefixTestMode:    settingsDoc.idefix?.testMode !== false,
     };
 
     return res.status(200).json({ settings: safeSettings });
